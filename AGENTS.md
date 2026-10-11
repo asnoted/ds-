@@ -164,5 +164,12 @@ Five canonical roles, label strings equal to the role names (`needs-triage` / `n
 ### Domain docs
 
 Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+**找决策先看 `docs/adr/README.md` 那份索引**(21 篇的标题/状态/日期/谁取代了谁,一眼看完),
+别一篇篇 `ls` 然后读文件名. 它是**生成的**: 新写一篇 ADR 就跑
+`uv run scripts/adrs-index.py`,漏了会被 `pnpm quality` 的 `adrs` 守卫判红.
+
+其他工具的入口**不许复制这里的内容** -- `CLAUDE.md` 只有一行 `@AGENTS.md`,
+照 Firefox 的做法(它根目录 `CLAUDE.md` 同样只有一行),要改就改这一份.
 接受过的 ADR 不改,要推翻就写新 ADR 并在 `Supersedes:` 点名旧篇.输出提到领域概念时用 `GLOSSARY.md` 里的词;
 与 ADR 冲突要挑明,别默默盖过.

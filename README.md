@@ -30,18 +30,24 @@ root 内(`DSB_WORK_ROOT` 配置,缺省本仓根),不给任何命令执行;见 `d
 
 ## 限额与超时
 
-| 项             | 默认                         | 落在哪                         |
-| -------------- | ---------------------------- | ------------------------------ |
-| 单次结果       | 64K 字(超了截断并写明原长)   | 网关 `MAX_RESULT_CHARS`        |
-| 单服务工具     | 128 件(超了只注册前 128 件)  | 网关 `MAX_TOOLS_PER_SERVER`    |
-| 一轮围栏       | 8 块(超了剩下的下一轮再排)   | 扩展 `MAX_CALLS_PER_ROUND`     |
-| 自动续聊       | 8 轮(到顶停手,等用户开口)    | 扩展 `MAX_CONTINUATION_ROUNDS` |
-| 给模型看的结果 | 2000 字(超了截断并写明原长)  | 扩展 `MAX_RESULT_CHARS`        |
-| 握手超时       | 30s(`DSB_CONNECT_TIMEOUT`)   | 起子进程 + `initialize`        |
-| 发现超时       | 20s(`DSB_DISCOVERY_TIMEOUT`) | `tools/list`                   |
-| 调用超时       | 120s(`DSB_TOOL_TIMEOUT`)     | 一次 `tools/call`              |
+| 项                    | 默认                                                | 落在哪                         |
+| --------------------- | --------------------------------------------------- | ------------------------------ |
+| 单次结果              | 64K 字(超了截断并写明原长)                          | 网关 `MAX_RESULT_CHARS`        |
+| 单服务工具            | 128 件(超了只注册前 128 件)                         | 网关 `MAX_TOOLS_PER_SERVER`    |
+| 一轮围栏              | 8 块(超了剩下的下一轮再排)                          | 扩展 `MAX_CALLS_PER_ROUND`     |
+| 自动续聊              | 8 轮(到顶停手,等用户开口)                           | 扩展 `MAX_CONTINUATION_ROUNDS` |
+| 给模型看的结果        | 16000 字(超了截断并写明原长)                        | 扩展 `MAX_RESULT_CHARS`        |
+| 单条输入的 token 预算 | 900,000 token(实测硬墙约 98 万,差额是余量,ADR-0028) | 扩展 `MAX_SAFE_INPUT_TOKENS`   |
+| 握手超时              | 30s(`DSB_CONNECT_TIMEOUT`)                          | 起子进程 + `initialize`        |
+| 发现超时              | 20s(`DSB_DISCOVERY_TIMEOUT`)                        | `tools/list`                   |
+| 调用超时              | 120s(`DSB_TOOL_TIMEOUT`)                            | 一次 `tools/call`              |
 
 三个超时键都认进程环境与 `.env`(认不出或非正数落默认);其余是常量,改常量有测试钉着.
+
+**表里的数以代码为准**:两处 `MAX_RESULT_CHARS` 各管一段,别混(网关那道在
+`dsb/gateway.py` 是 64K 字,扩展这道在 `src/lib/continuation.ts` 是 16000 字).
+2026-10-11 对过一次账:表里"给模型看的结果"还写着 2000 字,而代码早在 ADR-0027
+就改成了 16000 -- 表是人手抄的,抄完就没人回头看.
 
 ## 结构
 
