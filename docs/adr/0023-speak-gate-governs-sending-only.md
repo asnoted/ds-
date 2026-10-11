@@ -84,8 +84,11 @@
 本篇改的全是**真机可见的行为**,而本轮没有起 ds-browser 实跑,以下均**未验证**:
 
 - ~~**闸关着时续聊真的只落草稿,不按发送**~~ -- **已真机验证(2026-10-11)**, 见下节.
-- **选项页勾选即时生效**(`storage.onChanged` → 广播 → MAIN 世界下一次决策照新值走),
-  以及 MAIN 世界收到的 `speak` 缺字段时按关.
+- ~~**选项页勾选即时生效**~~ -- **已验(2026-10-11)**, 见下节第二跑.
+  **留一句精确的**: 验的是"写 `storage.local` 的 `speak` 键, 不重载页面, 下一次
+  决策就照新值走", 即 `storage.onChanged → syncFromStorage → 广播` 那条路; 选项页
+  的复选框写的是同一个键(background 注释: 真源就是 storage.local), 但**没有真的去
+  点那个复选框**. `speak` 缺字段按关那条也顺带验了(第一跑 storage 里就没有该键).
 - **看门狗催办在闸关着时整跳跳过**(`deliverNudge` 里的 `context.speak` 判断),以及
   跳过时不计数.
 - **`send.page` 在闸关着时写入草稿,发送步回 `disabled`**:那一步的行为由闸名单推出来
@@ -121,3 +124,28 @@
 `storage.local`, 写入触发 background 的 `storage.onChanged -> syncFromStorage`,
 与产品路径的 `toggle.set` 走同一条路. 判据读**钩子装没装**(内容脚本 `apply(true)`
 会替换 `window.fetch`), 别只读 storage -- 那是真源, 不是效果.
+
+## 真机验证(第二跑, 2026-10-11): 闸**开着**的那一半
+
+同一设置只把 `speak` 打开(`storage set --data '{"toggle":true,"speak":true}'`),
+问"用 read 工具读 GLOSSARY.md 的第一行, 只读一行, 然后告诉我那一行".
+
+**全程没按回车**: 从回车到模型给出最终答复, 探针只做了"读页面", 一次 `send.enter`
+都没再发. 会话区最后一条是"GLOSSARY.md 的第一行是: `# ds-`", 写作框是空的.
+
+独立 `head -1 GLOSSARY.md` 核对, 逐字一致.
+
+**与第一跑的对照才是证据**:
+
+| `speak` | 写作框                          | 要不要人按回车       |
+| ------- | ------------------------------- | -------------------- |
+| 关      | 压着 `agent:\n继续` 不动, 70 秒 | 要人按, 按了模型才续 |
+| 开      | 空                              | 没人按, 模型自己续完 |
+
+**这才是闸的两半**: 同一段代码, 只因 `planContinuation` 收到的 `speak` 不同,
+一支落草稿,一支自动发. 前一版只有单测钉住 `stage-only` 那一支"没有发送动作",
+现在两支都在真机上各自走了一遍.
+
+**顺带**: `speak` 写进 storage 后**不必重载页面**下一次决策就生效, 这条路与
+`toggle` 同源(`storage.onChanged → syncFromStorage`), 上面那条"勾选即时生效"
+验的就是它.
