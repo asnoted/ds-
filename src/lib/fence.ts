@@ -119,5 +119,33 @@ export function parseToolCall(text: string): ToolCall | null {
 
 /** 围栏排坏了时回灌的正文(`status: ok` 的一条,进对话流,让模型自己改). */
 export const MALFORMED_CALL_HINT =
-  '围栏里不是合法的工具调用.期望形状:{"tool": "工具名", "arguments": {...按该工具的入参...}},' +
+  '围栏里不是合法的工具调用.期望形状:{"tool":"工具名","arguments":{...按该工具的入参...}},' +
   "arguments 是对象(没有参数写 {});每块围栏里只放一条调用(一次可以排多块).";
+
+/**
+ * 围栏正文压成**紧凑 JSON**(转发给中继前,#93).
+ *
+ * 模型爱写带空格的 `{"tool": "read", "arguments": {...}}`,多行 pretty JSON 也常见.
+ * 那是给**人看**的写法;转给中继的那份只需要机器读,压紧能省掉每个调用几十到
+ * 几百字符(一次回答最多 8 块,ADR-0015),也让两边的报文可比对.
+ *
+ * **认不出就原样透传**:不是合法 JSON,或解析出来不是对象,一律照原样送--压紧是
+ * 锦上添花,猜错了就是把模型写的东西改坏(与 `parseToolCall` 同一个脾气:排坏的不在
+ * 这里修,交给上一层报 `MALFORMED_CALL_HINT`).
+ *
+ * 键序保持模型写的样子(不重排):`JSON.stringify` 保住插入序,diff 友好.
+ */
+export function compactToolCall(text: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!isPlainObject(parsed)) return text;
+  try {
+    return JSON.stringify(parsed);
+  } catch {
+    return text; // 循环引用之类:压不动就照原样送
+  }
+}

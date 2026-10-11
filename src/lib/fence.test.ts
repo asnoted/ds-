@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { fixtureCases, type FenceCase } from "./fixtures";
-import { parseAskFence, parseSendFence, parseSendFences } from "./fence";
+import { compactToolCall, parseAskFence, parseSendFence, parseSendFences } from "./fence";
 
 describe("parseSendFences / 共享 fixture", () => {
   for (const { name, input, expectedCalls } of fixtureCases<FenceCase>("fence.json")) {
@@ -11,6 +11,24 @@ describe("parseSendFences / 共享 fixture", () => {
       expect(parseSendFence(input)).toBe(expectedCalls[0] ?? null);
     });
   }
+});
+
+describe("parseSendFences / 只管取正文,压紧是出口那一步的事(#93)", () => {
+  it("pretty JSON 逐字取出:一个空格都不动", () => {
+    const pretty =
+      '```send\n{\n  "tool": "read",\n  "arguments": {\n    "path": "README.md"\n  }\n}\n```';
+    expect(parseSendFences(pretty)).toEqual([
+      '{\n  "tool": "read",\n  "arguments": {\n    "path": "README.md"\n  }\n}',
+    ]);
+  });
+
+  it("出口(detectToolCalls)拿到的已经是紧凑形态", () => {
+    const pretty =
+      '```send\n{\n  "tool": "read",\n  "arguments": {\n    "path": "README.md"\n  }\n}\n```';
+    expect(parseSendFences(pretty).map(compactToolCall)).toEqual([
+      '{"tool":"read","arguments":{"path":"README.md"}}',
+    ]);
+  });
 });
 
 describe("parseSendFence / 边界", () => {
@@ -116,5 +134,58 @@ describe("parseAskFence / 边界(#26)", () => {
   it("只认第一块:后面再排也不追加", () => {
     const text = "```ask\n第一个\n```\n```ask\n第二个\n```";
     expect(parseAskFence(text)).toBe("第一个");
+  });
+});
+
+describe("compactToolCall / 转发给中继前压成紧凑 JSON(#93)", () => {
+  it("带空格的单行:冒号后与逗号后的空白都去掉", () => {
+    expect(compactToolCall('{"tool": "read", "arguments": {"path": "README.md"}}')).toBe(
+      '{"tool":"read","arguments":{"path":"README.md"}}',
+    );
+  });
+
+  it("多行 pretty JSON:压成一行", () => {
+    const pretty = '{\n  "tool": "read",\n  "arguments": {\n    "path": "README.md"\n  }\n}';
+    expect(compactToolCall(pretty)).toBe('{"tool":"read","arguments":{"path":"README.md"}}');
+  });
+
+  it("本来就紧凑的:原样返回(幂等)", () => {
+    const compact = '{"tool":"a","arguments":{}}';
+    expect(compactToolCall(compact)).toBe(compact);
+    expect(compactToolCall(compactToolCall(compact))).toBe(compact);
+  });
+
+  it("已经压过的不再变(幂等是这条能进契约夹具的前提)", () => {
+    const once = compactToolCall('{"tool": "a", "arguments": {}}');
+    expect(compactToolCall(once)).toBe(once);
+  });
+
+  it("键序照模型写的样子,不重排", () => {
+    expect(compactToolCall('{"z": 1, "a": 2, "m": 3}')).toBe('{"z":1,"a":2,"m":3}');
+  });
+
+  it("非 JSON / 不是对象:原样透传(不猜,不改坏模型写的东西)", () => {
+    expect(compactToolCall("不是 JSON")).toBe("不是 JSON");
+    expect(compactToolCall("")).toBe("");
+    expect(compactToolCall("[1, 2]")).toBe("[1, 2]"); // 数组不是对象
+    expect(compactToolCall("42")).toBe("42");
+    expect(compactToolCall('"字符串"')).toBe('"字符串"');
+  });
+
+  it("半截 JSON(模型写到一半):原样透传,交给上一层报排坏", () => {
+    const half = '{"tool": "read", "argum';
+    expect(compactToolCall(half)).toBe(half);
+  });
+
+  it("中文与转义原样保住(不因为压紧而改内容)", () => {
+    expect(compactToolCall('{"路径": "中文/目录", "n": 1.5, "b": true, "z": null}')).toBe(
+      '{"路径":"中文/目录","n":1.5,"b":true,"z":null}',
+    );
+  });
+
+  it("嵌套结构也压紧", () => {
+    expect(compactToolCall('{"a": {"b": [1, 2]}, "c": [{"d": 1}]}')).toBe(
+      '{"a":{"b":[1,2]},"c":[{"d":1}]}',
+    );
   });
 });

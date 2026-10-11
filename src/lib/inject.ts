@@ -9,6 +9,7 @@
  * 注意这里不是站点闸:站点范围由 manifest 权限钉死,总开关也不参与站点判定.
  */
 
+import { matchesMarker } from "./armed";
 import { INSTRUCTIONS_HEADER, prependInstructions } from "./instructions";
 import { hasReplyAnchor } from "./reply";
 import type { ToolInfo } from "./relay";
@@ -74,6 +75,11 @@ function prependOnce(text: string, tools: readonly ToolInfo[] | null): string | 
  * 认得出的形状两条:`prompt`(站点原生发消息只带这一条新消息)与 `messages`
  * (整段历史一起带的形状,换最后一条 user).**认不出返回 null**,调用方据此把
  * 挂起的续聊作废--宁可少一轮,也不要把用户下一条真消息吃掉.
+ *
+ * **钥匙(#49)**:只有这条请求里待发那条用户消息**逐字等于短标记**时才替换
+ * (`armed.ts` 的 `matchesMarker`,比对着 `prompt` 或最后一条 user 的 `content`).
+ * 用户在武装期间手打的任何话都不等于标记,于是原样放行并撤销武装--时间不再是
+ * 安全判据,武装 TTL 得以从 30s 收紧到 10s.
  */
 export function rewriteContinuationBody(bodyText: string, continuation: string): string | null {
   let payload: unknown;
@@ -85,6 +91,7 @@ export function rewriteContinuationBody(bodyText: string, continuation: string):
   if (!isPlainObject(payload)) return null;
 
   if (typeof payload["prompt"] === "string" && payload["prompt"].trim() !== "") {
+    if (!matchesMarker(payload["prompt"])) return null;
     payload["prompt"] = continuation;
     return JSON.stringify(payload);
   }
@@ -95,8 +102,45 @@ export function rewriteContinuationBody(bodyText: string, continuation: string):
       const entry = messages[index];
       if (!isPlainObject(entry)) continue;
       if (entry["role"] !== "user" || typeof entry["content"] !== "string") continue;
+      if (!matchesMarker(entry["content"])) return null;
       entry["content"] = continuation;
       return JSON.stringify(payload);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 这条出站请求里**待发那条用户消息**的正文(钥匙比对用,#49).
+ *
+ * 两种形状与 `rewriteContinuationBody` 一致:`prompt`(站点原生只带新消息)与
+ * `messages`(整段历史一起带,取最后一条 user 的 `content`).
+ *
+ * 取不出(不是 JSON,形状认不出,没有 user 消息,字段不是字符串)一律返回 null--
+ * 调用方当钥匙不符处理,原样放行并撤销武装.**只取待发那条**,历史里某条恰好
+ * 等于标记也不算数:站点重放历史不代表用户此刻要发那条.
+ */
+export function outgoingUserTextOf(bodyText: string): string | null {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return null;
+  }
+  if (!isPlainObject(payload)) return null;
+
+  if (typeof payload["prompt"] === "string" && payload["prompt"].trim() !== "") {
+    return payload["prompt"];
+  }
+
+  const { messages } = payload;
+  if (Array.isArray(messages)) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const entry = messages[index];
+      if (!isPlainObject(entry)) continue;
+      if (entry["role"] !== "user" || typeof entry["content"] !== "string") continue;
+      return entry["content"];
     }
   }
 

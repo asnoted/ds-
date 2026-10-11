@@ -11,7 +11,11 @@
  * 它曾经是四步(发问题 → 等页面模型排围栏 → 等回灌 → 取答复),2026-10-05 缩成两步
  * (ADR-0014 之后那三段各自失联,且"取答复"那段根本做不到--页面动作没有 MCP 工具面,
  * 模型读不到页面消息;详见 issue #47).
- * 两步全走 `runAction`,总开关 / 替人发言 / 退避三道闸照拦;失败码全取现成册子,不新增.
+ * 两步全走 `runAction`,总开关 / 退避两道闸照拦;失败码全取现成册子,不新增.
+ *
+ * **"代你发言"闸关着时(#52)**:写步(`composer.type`)放行,发送步(`send.enter`)
+ * 被闸拦下,于是这一件回 `disabled`--**那条问题留在输入框里当草稿**,用户自己按发送.
+ * 失败码不新增:闸拦下时 `runAction` 本来就回 `disabled`,这套两步步序照走即可.
  */
 
 import { ACTION_ERROR_TAB_GONE, ACTION_ERROR_UNKNOWN, type ActionOutcome } from "./action";

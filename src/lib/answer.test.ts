@@ -69,6 +69,20 @@ describe("detectToolCalls / 检测点", () => {
     expect(detectToolCalls(raw)).toEqual(["第一块", "第二块"]);
   });
 
+  it("送出去的那份压成紧凑 JSON(#93):带空格的,多行的都压掉", () => {
+    const spaced = sse(['```send\n{"tool": "read", "arguments": {"path": "a.md"}}\n```']);
+    expect(detectToolCalls(spaced)).toEqual(['{"tool":"read","arguments":{"path":"a.md"}}']);
+    const pretty = sse([
+      '```send\n{\n  "tool": "read",\n  "arguments": {\n    "path": "a.md"\n  }\n}\n```',
+    ]);
+    expect(detectToolCalls(pretty)).toEqual(['{"tool":"read","arguments":{"path":"a.md"}}']);
+  });
+
+  it("认不出的形状照原样送(压紧不越权改模型写的东西)", () => {
+    expect(detectToolCalls(sse(["```send\n不是 JSON\n```"]))).toEqual(["不是 JSON"]);
+    expect(detectToolCalls(sse(["```send\n[1, 2]\n```"]))).toEqual(["[1, 2]"]);
+  });
+
   it("围栏没闭合按无效输入处理", () => {
     const raw = sse(["```send\n问题还没有收尾"]);
     expect(detectToolCalls(raw)).toEqual([]);

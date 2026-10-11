@@ -1,0 +1,4 @@
+{
+  "*.{ts,tsx,js,mjs,cjs,json,md,html,css}": "prettier --ignore-unknown --write",
+  "*.py": "uv run ruff format"
+}

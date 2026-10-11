@@ -19,6 +19,11 @@ export type ToggleMessage =
       readonly source: typeof TOGGLE_MESSAGE_SOURCE;
       readonly kind: "state";
       readonly enabled: boolean;
+      /**
+       * "代你发言"闸(#52):自动续聊在 MAIN 世界直接写输入框,按发送,不经
+       * `runAction`,所以**必须跨世界拿到这个值**.缺字段的旧信封按关(保守).
+       */
+      readonly speak: boolean;
     }
   | { readonly source: typeof TOGGLE_MESSAGE_SOURCE; readonly kind: "want-state" };
 
@@ -33,18 +38,19 @@ export function wantStateMessage(): ToggleMessage {
 }
 
 /** 隔离世界把当前状态交给页面世界. */
-export function stateMessage(enabled: boolean): ToggleMessage {
-  return { source: TOGGLE_MESSAGE_SOURCE, kind: "state", enabled };
+export function stateMessage(enabled: boolean, speak = false): ToggleMessage {
+  return { source: TOGGLE_MESSAGE_SOURCE, kind: "state", enabled, speak };
 }
 
 /** 认信封:页面自己 post 的消息,形状不对的消息都返回 null,不猜. */
 export function parseToggleMessage(data: unknown): ToggleMessage | null {
   if (typeof data !== "object" || data === null) return null;
-  const message = data as { source?: unknown; kind?: unknown; enabled?: unknown };
+  const message = data as { source?: unknown; kind?: unknown; enabled?: unknown; speak?: unknown };
   if (message.source !== TOGGLE_MESSAGE_SOURCE) return null;
   if (message.kind === "want-state") return wantStateMessage();
   if (message.kind === "state" && typeof message.enabled === "boolean") {
-    return stateMessage(message.enabled);
+    // speak 缺字段 / 不是布尔一律当关:那条路(自动续聊的发送)宁可等用户按.
+    return stateMessage(message.enabled, message.speak === true);
   }
   return null;
 }

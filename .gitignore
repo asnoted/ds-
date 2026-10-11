@@ -18,6 +18,10 @@ __pycache__/
 .archify/
 screenshots/
 captures/
+# DeepSeek 网页 bundle（dsweb/fetch-dsweb-bundle.py 下载的站点产物；发版即换 hash）
+dsweb/bundle/
+# DeepSeek-V3 分词器（7.8MB；scripts/count-tokens.py 用来离线数 token，取法见 dsweb/README.md）
+dsweb/tokenizer.json
 *.log
 .DS_Store
 # 本机装出来的东西，不进库（守则钉死）

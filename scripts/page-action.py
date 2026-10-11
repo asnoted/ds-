@@ -21,6 +21,22 @@
   uv run scripts/page-action.py toggles-off   # 测试环境:把深度思考,智能搜索都关掉
   uv run scripts/page-action.py evidence      # 存证对账:留档原件 vs 站点当前那一颗(ADR-0018)
 
+两件只有探针知道的事(原先记在 AGENTS.md, 搬进来自带):
+
+1. `target: null` 只有 `tabs.list` 与 `toggle.*` 答得出. `page.state` /
+   `composer.*` / `messages.*` / `chat.new` 要先 `tabs.list` 拿标签页 id 再带上,
+   其余一律落 `ACTION_ERROR_UNKNOWN` -- **那是探针错了, 不是链子坏了**,
+   别照着它去修扩展.
+
+2. **本地工具**(`send.page` 等)不在 `ACTION_ROSTER` 里, `send` 调不到. 唯一触发
+   办法是用 `js` 往页面里注入一条 chain 信封, 让它走 `content.ts` → background:
+
+     uv run scripts/page-action.py js 'window.postMessage({source:"ds-/chain",kind:"call",
+       id:"probe-1",calls:[JSON.stringify({tool:"send.page",arguments:{question:"..."}})]},"*")'
+
+   要页面模型**自己**排围栏的路径(如本地工具)只能这么验; 不要为了验一个动作去
+   诱导模型排围栏.
+
 环境:
   DSB_CDP_PORT   调试口端口,默认 9222
   DSB_EXT_DIR    扩展构建目录,默认 <repo>/.output/chrome-mv3(扩展 id 由它推出)
@@ -159,6 +175,100 @@ def find_target(kind: str, needle: str, timeout: float = 0.0) -> dict | None:
         if time.monotonic() >= deadline:
             return None
         time.sleep(0.3)
+
+
+# 站点把 SSE 收在 **XHR** 里(fetch / EventSource 抓不到,2026-10-09 实测).
+# 这段钩子把它逐帧拆成 JSON 存进 window.__sse;命令末尾再读,**读的是本轮**--
+# 判据自污染就出在"读到上一轮",所以 sse 子命令把装钩/填/发/读闭在一次调用里.
+SSE_HOOK_JS = """(() => {
+  // 清空本轮:不清的话读到的是上一轮的帧,那是判据自污染最隐蔽的一种
+  window.__sse = {frames: [], reqBytes: 0, startedAt: Date.now()};
+  const oo = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (m, u, ...r) {
+    this.__dsUrl = String(u);
+    return oo.call(this, m, u, ...r);
+  };
+  const os = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (b) {
+    if ((this.__dsUrl || "").includes("/chat/")) {
+      if (this.__dsUrl.includes("/completion")) window.__sse.reqBytes =
+        typeof b === "string" ? b.length : 0;
+      const grab = () => (this.responseText || "").split("\\n").forEach(line => {
+        if (!line.startsWith("data: ")) return;
+        try { window.__sse.frames.push(JSON.parse(line.slice(6))); } catch (e) {}
+      });
+      // progress 拿流式增量,loadend 兜最后一包
+      this.addEventListener("progress", grab);
+      this.addEventListener("loadend", grab);
+    }
+    return os.apply(this, arguments);
+  };
+  return "sse-hook-on";
+})()"""
+
+SSE_READ_JS = """(() => {
+  const s = window.__sse || {frames: [], reqBytes: 0, startedAt: 0};
+  const frames = s.frames;
+  // 拒收的硬判据:服务端下发独立 error 帧,**不走** v.response.status(实测那条路
+  // 压根不下发 status,见 dsweb/FINDINGS.md §6.2).
+  const errs = frames.filter(f => f.finish_reason || f.type === "error" || f.type === "warning");
+  const reasons = [...new Set(frames.map(f => f.finish_reason).filter(Boolean))];
+  const statuses = [...new Set(frames.map(f => f.v && f.v.response && f.v.response.status)
+    .filter(Boolean))];
+  return {
+    frames: frames.length,
+    reqBytes: s.reqBytes,
+    rejected: reasons.includes("context_length_exceeded"),
+    reasons: reasons,
+    statuses: statuses,
+    // 只留判据字段,不回吐 content 原文(可能几十万字)
+    errorCount: errs.length,
+    firstError: errs.length ? {type: errs[0].type, reason: errs[0].finish_reason,
+                               content: (errs[0].content || "").slice(0, 60)} : null,
+  };
+})()"""
+
+
+def install_sse_hook(tab: dict) -> None:
+    """在页面里装 SSE 钩子(幂等:每次调用都**清空**上一轮的帧)."""
+    run(tab["webSocketDebuggerUrl"], SSE_HOOK_JS)
+
+
+def read_sse(tab: dict) -> dict:
+    """读本轮录到的帧并给出拒收判定."""
+    return unwrap(run(tab["webSocketDebuggerUrl"], SSE_READ_JS))
+
+
+def wait_composer(tab: dict, timeout: float = 20.0) -> bool:
+    """等写作框真的挂上再返回.
+
+    `chat.new` 会重挂 textarea,`sleep 2` 不够--等不及就填进空页,那一轮的
+    结论全是假的(2026-10-09 踩过).返回是否等到了.
+    """
+    ws = tab["webSocketDebuggerUrl"]
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if unwrap(run(ws, "!!document.querySelector('textarea')")) is True:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def fill_composer(tab: dict, text: str) -> str:
+    """把 text 灌进写作框并返回入框字数.
+
+    走原生 setter + input 事件,与扩展自己的 `writeComposer` 同手法--直接
+    `ta.value = ...` 不触发框架的状态更新.
+    """
+    expr = (
+        "(() => { const ta = document.querySelector('textarea');"
+        " const s = Object.getOwnPropertyDescriptor("
+        "HTMLTextAreaElement.prototype, 'value').set;"
+        f"s.call(ta, {json.dumps(text, ensure_ascii=False)});"
+        " ta.dispatchEvent(new Event('input', {bubbles: true}));"
+        " return String(ta.value.length); })()"
+    )
+    return str(unwrap(run(tab["webSocketDebuggerUrl"], expr)))
 
 
 async def evaluate(ws_url: str, expression: str, timeout: float = 60.0) -> object:
@@ -656,8 +766,32 @@ def evidence(args: argparse.Namespace) -> int:
     return 1 if tally["过时"] else 0
 
 
+class _Parser(argparse.ArgumentParser):
+    """让"全局 flag 放错位置"的报错自己说明该放哪.
+
+    原来这条规矩写在 AGENTS.md 里. 但 argparse 本来就会拒绝放错的写法
+    (`read --no-pace` -> `unrecognized arguments`), 所以那条指令防不住任何
+    错误用法, 只是教人怎么读报错. 与其在 steering 文件里占三行, 不如让报错
+    自己说 -- steering 文件该留给导航指针.
+    """
+
+    def error(self, message: str) -> None:
+        bad = {"--no-pace", "--pace"}
+        if "unrecognized arguments" in message and bad & set(message.split()):
+            self.print_usage(sys.stderr)
+            print(
+                f"\npage-action.py: error: {message}\n"
+                "--pace / --no-pace 是**全局** flag, 要放在子命令**前面**:\n"
+                "  page-action.py --no-pace read     对\n"
+                "  page-action.py read --no-pace     错",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        super().error(message)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="页面动作真机探针(开发用)")
+    parser = _Parser(description="页面动作真机探针(开发用)")
     # 全局:动手前先随机等一下(默认开).理由见 pace().
     parser.add_argument(
         "--pace",
@@ -668,6 +802,18 @@ def main() -> None:
     parser.add_argument("--no-pace", action="store_true", help="别等,立刻动手(默认是等的)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="列 CDP 目标")
+    sub.add_parser("focus", help="把 DeepSeek 标签页置到前台(读页面列表前必须先来一下)")
+    sse = sub.add_parser(
+        "sse",
+        help=('录一轮 SSE 并按 finish_reason 判拒收(判"服务端收没收"的可靠路)'),
+    )
+    sse.add_argument("--text", default="", help="要发的正文;不给就只录当前这轮")
+    sse.add_argument("--file", default="", help="从文件读正文(大输入走它,别塞命令行)")
+    sse.add_argument("--repeat", type=int, default=0, help="把正文重复这么多次(灌大输入用)")
+    sse.add_argument("--wait", type=float, default=35.0, help="发完等多少秒再读帧(默认 35)")
+    sse.add_argument(
+        "--fresh", action="store_true", help="先开新会话(chat.new 会重挂写作框,命令内已等)"
+    )
     sub.add_parser("read", help="读 DeepSeek 页面状态")
     js = sub.add_parser("js", help="在 DeepSeek 页面上下文里跑一段只读 JS,打印结果")
     js.add_argument("expression", help="要 evaluate 的 JS 表达式(建议用 IIFE 返回字符串)")
@@ -715,6 +861,55 @@ def main() -> None:
     if args.command == "list":
         for target in targets():
             print(f"{target.get('type'):<16} {target.get('url', '')[:100]}")
+        return
+
+    if args.command == "focus":
+        # DeepSeek 标签页必须留在**前台**:后台标签页被浏览器节流,虚拟列表不挂行,
+        # `messages.*` 与按位置点控件会读成空(AGENTS.md 记着 2026-10-07 踩过).
+        # 探针自己开别的目标(选项页等)就会把它挤到后台,所以这是个**动作**而不是
+        # 一次性脚本--任何要读页面列表的探针动作前都得先来一下.
+        tab = ensure_site_tab()
+        asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
+        print(json.dumps({"ok": True, "focused": tab.get("url", "")}, ensure_ascii=False))
+        return
+
+    if args.command == "sse":
+        tab = ensure_site_tab()
+        if args.fresh:
+            asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
+            send_action("chat.new", {})
+            if not wait_composer(tab):
+                print(
+                    json.dumps(
+                        {"error": "写作框没挂上(chat.new 后 20s 内没出现)--这一轮不算数"},
+                        ensure_ascii=False,
+                    )
+                )
+                raise SystemExit(4)
+        # 装钩 / 填 / 发 / 读在**同一次调用**里闭合:分几次跑就留了"读到上一轮
+        # 残留"的窗口(2026-10-09 栽在这上面两次,见 dsweb/FINDINGS.md §6).
+        install_sse_hook(tab)
+        sent = 0
+        body = args.text
+        if args.file:
+            # 大输入走文件:命令行参数有长度上限,而正文动辄百万字.
+            body = Path(args.file).read_text(encoding="utf-8")
+        if body:
+            sent = int(fill_composer(tab, body * args.repeat if args.repeat else body) or 0)
+            send_action("send.enter", {})
+        time.sleep(args.wait)
+        asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
+        result = read_sse(tab)
+        if isinstance(result, dict):
+            result["sentChars"] = sent
+            # 0 帧 = 这一轮什么都没抓到.它可能是"真没发",也可能是观测漏了
+            # --**别把它当成没发**:换 `--text` 明确发了却 0 帧才可疑.
+            result["note"] = (
+                "0 帧:请求可能没发出去,也可能观测漏了;两种都见过(net 域漏过)"
+                if not result.get("frames")
+                else ""
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     if args.command == "read":

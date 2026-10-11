@@ -1,0 +1,17 @@
+# 提交前闸（retro 的 finding #1：ADR-0019 删掉唯一那个工作流之后，CI 是空的）
+#
+# 这是本仓**唯一**的自动闸，所以测试必须进来——「跑不跑得到检查」不该靠 agent 记性
+# （#52 那个 bug 就是在没人手动跑检查时混过去的）。
+#
+# 约 22 秒（eslint 1s · tsc 1s · vitest 11s · ruff 0.1s · pytest 9s）。
+# 急着提交可以用 `git commit --no-verify` 绕过——但那等于把闸关了，别惯着。
+#
+# **不比 `pnpm quality`**：那边多一个全仓 `format:check`，与 lint-staged 重复
+# （lint-staged 只管暂存区，快得多）。`pnpm quality` 仍是「一条命令跑全」的入口。
+
+npx lint-staged
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm relay:lint
+pnpm relay:test

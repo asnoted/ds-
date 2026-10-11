@@ -87,6 +87,20 @@ export type StopMessage = {
 };
 
 /**
+ * 页面世界报"续聊这一跳失败了"(#51):发不出去,正文换不进去,钥匙不符...
+ * 报给 background 落一笔失败痕,悬停时回看得到.通知式,不等回话,不进对话流.
+ *
+ * `cause` 是**原因短句**(`continuationfail.ts` 产出),不是错误对象:短句里不含
+ * 任何正文(ADR-0004),抛错时只含错误类型名.
+ */
+export type ContinuationFailMessage = {
+  readonly source: typeof CHAIN_MESSAGE_SOURCE;
+  readonly kind: "continuation-fail";
+  readonly id: string;
+  readonly cause: string;
+};
+
+/**
  * 页面世界认出围栏之外的话:报给 background 记进 said(`said_add`).
  * 报不上不碍事--这条只是"让人看见",不是问答回路.
  */
@@ -112,7 +126,8 @@ export type ChainMessage =
   | AskClearedMessage
   | SaidMessage
   | ToolsMessage
-  | StopMessage;
+  | StopMessage
+  | ContinuationFailMessage;
 
 export type SendRequest = {
   readonly type: typeof SEND_MESSAGE_TYPE;
@@ -133,6 +148,40 @@ export const ASK_CLEARED_MESSAGE_TYPE = "ds-/ask-cleared";
 
 /** 隔离世界 → background 的"续聊到顶停手"上报信封标记. */
 export const STOP_MESSAGE_TYPE = "ds-/stop";
+
+/** 隔离世界 → background 的"续聊这一跳失败了"上报信封标记(#51). */
+export const CONTINUATION_FAIL_MESSAGE_TYPE = "ds-/continuation-fail";
+
+/**
+ * 发送限速的跨世界通报(#61):任一世界替用户发出去一条消息,就通报一声时刻,
+ * 另一个世界并进自己的"最近一次发送时刻".
+ *
+ * 走既有的 `window.postMessage` 通道--**不迁状态,不写 DOM 属性**.带 `world` 是为了
+ * 让自己不认自己的通报(`postMessage` 也投递给发送方自己).
+ */
+export const SEND_NOTE_MESSAGE_SOURCE = "ds-/send-note";
+
+export type SendNoteMessage = {
+  readonly source: typeof SEND_NOTE_MESSAGE_SOURCE;
+  readonly world: "main" | "isolated";
+  /** 那一刻(epoch 毫秒). */
+  readonly at: number;
+};
+
+/** 认通报:形状不对,时刻不是有限数的一律不收,不猜. */
+export function parseSendNote(data: unknown): SendNoteMessage | null {
+  if (typeof data !== "object" || data === null) return null;
+  const message = data as { source?: unknown; world?: unknown; at?: unknown };
+  if (message.source !== SEND_NOTE_MESSAGE_SOURCE) return null;
+  if (message.world !== "main" && message.world !== "isolated") return null;
+  if (typeof message.at !== "number" || !Number.isFinite(message.at)) return null;
+  return { source: SEND_NOTE_MESSAGE_SOURCE, world: message.world, at: message.at };
+}
+
+/** 通报构造(两个世界共用一条构造点). */
+export function sendNoteMessage(world: "main" | "isolated", at: number): SendNoteMessage {
+  return { source: SEND_NOTE_MESSAGE_SOURCE, world, at };
+}
 
 /** 网页排了 ask 围栏问人:记下来,扩展侧露出"在等人回". */
 export type AskReport = {
@@ -165,6 +214,22 @@ export type StopReport = {
 export type SaidReport = {
   readonly type: typeof SAID_MESSAGE_TYPE;
   readonly text: string;
+};
+
+/**
+ * 续聊这一跳失败:页面世界报的,报给 background 落一笔失败痕(#51).
+ *
+ * 这些失败点都在 MAIN 世界(那里写不了 `storage.local`),沿用与 ask / stop 同款
+ * 的上报通道.通知式--不等回话,也不进对话流.
+ *
+ * **只带原因短句,不带任何正文**(ADR-0004):`cause` 是 `continuationfail.ts` 里
+ * 那些常量拼出的话,`sendToPage` 抛错时只含错误类型名.
+ */
+export type ContinuationFailReport = {
+  readonly type: typeof CONTINUATION_FAIL_MESSAGE_TYPE;
+  readonly id: string;
+  readonly cause: string;
+  readonly page: string | null;
 };
 
 /** 隔离世界 → background 的工具目录请求(空请求,回话带目录). */
@@ -228,6 +293,11 @@ export function stopMessage(id: string, cause: string): StopMessage {
   return { source: CHAIN_MESSAGE_SOURCE, kind: "stop", id, cause };
 }
 
+/** 页面世界报"续聊这一跳失败"→ 隔离世界 → background 落失败痕(#51). */
+export function continuationFailMessage(id: string, cause: string): ContinuationFailMessage {
+  return { source: CHAIN_MESSAGE_SOURCE, kind: "continuation-fail", id, cause };
+}
+
 /** 页面世界认出围栏之外的话 → 隔离世界 → background 记进 said. */
 export function saidMessage(id: string, text: string): SaidMessage {
   return { source: CHAIN_MESSAGE_SOURCE, kind: "said", id, text };
@@ -277,6 +347,15 @@ export function stopReportMessage(
   page: string | null = null,
 ): StopReport {
   return { type: STOP_MESSAGE_TYPE, id, cause, page };
+}
+
+/** 页面世界报"续聊这一跳失败"→ 隔离世界 → background 落失败痕(#51). */
+export function continuationFailReportMessage(
+  id: string,
+  cause: string,
+  page: string | null = null,
+): ContinuationFailReport {
+  return { type: CONTINUATION_FAIL_MESSAGE_TYPE, id, cause, page };
 }
 
 export function toolsRequestMessage(): ToolsRequest {
@@ -345,6 +424,11 @@ export function parseChainMessage(data: unknown): ChainMessage | null {
     if (!isValidText(cause)) return null;
     return stopMessage(id, cause);
   }
+  if (data["kind"] === "continuation-fail") {
+    const cause = data["cause"];
+    if (!isValidText(cause)) return null;
+    return continuationFailMessage(id, cause);
+  }
   if (data["kind"] === "said") {
     const text = data["text"];
     if (!isValidText(text)) return null;
@@ -401,6 +485,18 @@ export function parseStopReport(data: unknown): StopReport | null {
   const page = pageSessionOf(data);
   if (page === undefined) return null;
   return stopReportMessage(id, cause, page);
+}
+
+/** 认隔离世界 → background 的"续聊失败"上报(#51,同款). */
+export function parseContinuationFailReport(data: unknown): ContinuationFailReport | null {
+  if (!isPlainObject(data)) return null;
+  if (data["type"] !== CONTINUATION_FAIL_MESSAGE_TYPE) return null;
+  const id = data["id"];
+  const cause = data["cause"];
+  if (!isValidId(id) || !isValidText(cause)) return null;
+  const page = pageSessionOf(data);
+  if (page === undefined) return null;
+  return continuationFailReportMessage(id, cause, page);
 }
 
 /** 认隔离世界 → background 的 said 上报:一段非空文本. */

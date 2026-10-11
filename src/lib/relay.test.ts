@@ -72,7 +72,7 @@ describe("parseToolCall / 围栏正文 → 工具调用", () => {
   });
 
   it("围栏排坏时的回灌正文自带正确形状(status: ok 的一条)", () => {
-    expect(MALFORMED_CALL_HINT).toContain('{"tool": "工具名", "arguments": {...');
+    expect(MALFORMED_CALL_HINT).toContain('{"tool":"工具名","arguments":{...');
     expect(MALFORMED_CALL_HINT).toContain("{}");
   });
 });

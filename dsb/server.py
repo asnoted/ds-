@@ -29,15 +29,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from dsb.config import PORT_ENV_KEY, env_value, find_dotenv, repo_root
+from dsb import config
+from dsb.config import PORT_ENV_KEY, env_value, find_dotenv
 from dsb.gateway import (
     CONNECT_TIMEOUT_ENV_KEY,
     DISCOVERY_TIMEOUT,
     DISCOVERY_TIMEOUT_ENV_KEY,
     MAX_RESULT_CHARS,
     MAX_TOOLS_PER_SERVER,
-    MCP_CONFIG_ENV_KEY,
-    MCP_CONFIG_FILENAME,
     START_TIMEOUT,
     Gateway,
     load_config,
@@ -210,14 +209,11 @@ def resolve_port(env_text: str) -> int:
 
 
 def resolve_config_path(env_text: str) -> Path:
-    """``mcp.json`` 的落点:环境变量/`.env` 的 DSB_MCP_CONFIG 优先,其次当前目录,最后仓库根."""
-    raw = os.environ.get(MCP_CONFIG_ENV_KEY) or env_value(env_text, MCP_CONFIG_ENV_KEY)
-    if raw:
-        return Path(raw).expanduser()
-    for candidate in (Path.cwd() / MCP_CONFIG_FILENAME, repo_root() / MCP_CONFIG_FILENAME):
-        if candidate.is_file():
-            return candidate
-    return repo_root() / MCP_CONFIG_FILENAME  # 默认落点(文件不在就是空表)
+    """``mcp.json`` 的落点.实现已挪到 :mod:`dsb.config`(工作工具的护栏也要用它,#89).
+
+    这里留着这个薄壳:调用方(:func:`main` 与既有测试)照旧从本模块取.
+    """
+    return config.resolve_config_path(env_text)
 
 
 def main() -> None:

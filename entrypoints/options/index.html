@@ -8,12 +8,19 @@
     <h1>ds- 选项</h1>
     <label>
       <input id="speak" type="checkbox" />
-      代你发言：允许协调者替你写输入框、清空输入框、发消息
+      代你发言：允许替你<strong>把消息发出去</strong>
     </label>
     <p>
-      关着的时候，写输入框与发送的动作都回 disabled——不会碰你正在打的东西。
-      与工具栏图标那个「总开关」分开：那个管「接管页面」，这个管「替人开口」。
+      管的是<strong>发送</strong>：协调者的发送、<code>send.page</code>、看门狗催办，
+      以及自动续聊的发送。关着的时候这些一律 <code>disabled</code>——
+      <strong>它们只把内容写进输入框，不会替你按发送</strong>，你自己按了才算。
     </p>
+    <p>
+      自动续聊归<strong>总开关</strong>（工具栏图标那个）授权，另有 8 轮刹车；
+      自动续聊与本闸是两层：闸关着时它从全自动变成半自动（标记落在输入框里等你按）。
+      写输入框本身不受本闸管——协调者写的内容会<strong>覆盖你正在打的草稿</strong>。
+    </p>
+    <p id="last-failure"></p>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

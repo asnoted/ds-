@@ -19,6 +19,8 @@ export default [
       "tests/**",
       // 真机抓下来的站点证据(page-action.py capture),本机产物不进 lint
       "captures/**",
+      // DeepSeek 网页 bundle(站点产物,dsweb/fetch-dsweb-bundle.py 下载)
+      "dsweb/bundle/**",
     ],
   },
   js.configs.recommended,

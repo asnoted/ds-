@@ -15,7 +15,7 @@ export const FAILURE_LOG_STORAGE_KEY = "ds-/failures";
 export const FAILURE_LOG_CAP = 20;
 
 /** 失败发生在哪一环--排查方向完全不同,所以必须留. */
-export type FailureWhere = "health" | "call" | "watchdog" | "rounds";
+export type FailureWhere = "health" | "call" | "watchdog" | "rounds" | "continuation";
 
 export type FailureRecord = {
   /** 故障**开始**的时刻(同一次故障的延续不另起一条). */
@@ -32,6 +32,9 @@ const WHERE_LABELS: Readonly<Record<FailureWhere, string>> = {
   call: "工具调用",
   watchdog: "看门狗",
   rounds: "续聊刹车",
+  // 续聊这一跳的失败(发不出去,正文换不进去,钥匙不符,武装撤销...).此前这些
+  // 只有控制台一行,扩展侧答不出"为什么这轮工具结果没回到模型手上"(#51).
+  continuation: "续聊",
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -44,7 +47,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * 顺带把"认不出的一律丢"这条守住:册子外的词不当环节.
  */
 function isFailureWhere(value: unknown): value is FailureWhere {
-  return value === "health" || value === "call" || value === "watchdog" || value === "rounds";
+  return (
+    value === "health" ||
+    value === "call" ||
+    value === "watchdog" ||
+    value === "rounds" ||
+    value === "continuation"
+  );
 }
 
 /**

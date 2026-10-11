@@ -38,7 +38,15 @@ describe("消息信封", () => {
       source: TOGGLE_MESSAGE_SOURCE,
       kind: "state",
       enabled: true,
+      speak: false, // 缺省按关(#52)
     });
+  });
+
+  it('"代你发言"闸跟着状态消息一起跨世界(#52)', () => {
+    const withSpeak = (message: ReturnType<typeof stateMessage>) =>
+      message.kind === "state" ? message.speak : undefined;
+    expect(withSpeak(stateMessage(true, true))).toBe(true);
+    expect(withSpeak(stateMessage(true, false))).toBe(false);
   });
 });
 
@@ -47,6 +55,17 @@ describe("parseToggleMessage", () => {
     expect(parseToggleMessage(wantStateMessage())).toEqual(wantStateMessage());
     expect(parseToggleMessage(stateMessage(false))).toEqual(stateMessage(false));
     expect(parseToggleMessage(stateMessage(true))).toEqual(stateMessage(true));
+  });
+
+  it("speak 缺字段 / 不是布尔一律当关(#52:那条路宁可等用户按)", () => {
+    const base = { source: TOGGLE_MESSAGE_SOURCE, kind: "state", enabled: true };
+    const speakOf = (raw: unknown): boolean | undefined => {
+      const parsed = parseToggleMessage(raw);
+      return parsed?.kind === "state" ? parsed.speak : undefined;
+    };
+    expect(speakOf(base)).toBe(false);
+    expect(speakOf({ ...base, speak: "yes" })).toBe(false);
+    expect(speakOf({ ...base, speak: true })).toBe(true);
   });
 
   it("页面自己 post 的消息一律不收", () => {

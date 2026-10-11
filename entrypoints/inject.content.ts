@@ -5,21 +5,48 @@ import {
   askClearedMessage,
   askMessage,
   callMessage,
+  continuationFailMessage,
   pageSessionIdOf,
   parseChainMessage,
+  parseSendNote,
   saidMessage,
+  sendNoteMessage,
   stopMessage,
   type ResultMessage,
 } from "../src/lib/channel";
 import {
   buildContinuation,
   CONTINUATION_MARKER,
-  isArmedFresh,
   STOP_CONTINUATION_LIMIT,
 } from "../src/lib/continuation";
+import {
+  describeContinuationFailure,
+  describeThrownFailure,
+  type ContinuationFailure,
+} from "../src/lib/continuationfail";
+import {
+  arm as armState,
+  armedBody,
+  claimArmed,
+  expireIfStale,
+  idleArmed,
+  matchesMarker,
+  pend as pendState,
+  planContinuation,
+  settleArmedAfterSend,
+  type ArmedState,
+} from "../src/lib/armed";
 import { enqueue, newGate, nextOpenAt, release, type Gate } from "../src/lib/gate";
 import {
+  mergeSendPace,
+  newSendPace,
+  realSleep,
+  runPaced,
+  type SendPace,
+} from "../src/lib/sendpace";
+import {
   isOutgoingChatRequest,
+  outgoingUserTextOf,
   rewriteContinuationBody,
   rewriteOutgoingBody,
 } from "../src/lib/inject";
@@ -80,11 +107,24 @@ export default defineContentScript({
     /** 排着队,还没到出站窗口的续聊正文;放行那一刻才武装(见 `flush`). */
     let queuedContinuation: string | null = null;
 
-    /** 已武装:下一条出站聊天请求的正文会被换成它(一次即作废). */
-    let armedContinuation: string | null = null;
+    /**
+     * 武装状态机(`armed.ts`):idle / armed(有 TTL)/ pending(#52 的"等你按发送").
+     * 显式的态而不是几个布尔量,#52 加态时不用重写判据.
+     */
+    let armed: ArmedState = idleArmed();
 
-    /** 武装的时刻:过期(`ARMED_TTL_MS`)一样作废,见下. */
-    let armedAt = 0;
+    /**
+     * 发送限速(#61):自动续聊这一路的发送也归同一条 3~5 秒的线,与隔离世界那三条
+     * (`send.enter` / 圆键 / `message.retry`)**合成一条**--靠 `send-note` 通报并时刻,
+     * 不迁状态,不写 DOM 属性.
+     */
+    let sendPace: SendPace = newSendPace();
+
+    /**
+     * "代你发言"闸(#52):隔离世界广播过来的,默认关(关 = 续聊只落草稿,等用户按).
+     * 勾选即时生效--选项页改 `storage`,那边立刻再广播一次.
+     */
+    let speak = false;
 
     /** 上一次见过的页面会话 id:换了会话 = 换了条任务,轮数归零. */
     let sessionKey: string | null = null;
@@ -93,31 +133,99 @@ export default defineContentScript({
     const watchingXhrs = new WeakSet<XMLHttpRequest>();
 
     /**
+     * 续聊失败上报(#51):落一笔失败痕,悬停时回看得到"断在哪一步".
+     *
+     * 走 MAIN → 隔离 → background 那条既有通道(ask / stop 走的就是它)--MAIN 世界
+     * 写不了 `storage.local`.
+     *
+     * **一次失败只报一次**不另设去重表,靠调用点自身的结构:每个上报点都在"武装刚
+     * 离开某个态"或"这一次发送刚失败"的分支里,那个转移只发生一次;新一轮续聊挂上
+     * 武装(`armState` 盖掉 `pendState`)是**新**的一轮,那次该报.真正的重复风险在
+     * background 那侧--`rememberFailure` 的"同一次故障只记一笔"与 20 条配额照旧
+     * 照着续聊这条路生效(ADR-0004).
+     */
+    function reportContinuationFailure(failure: ContinuationFailure): void {
+      const id = nextMessageId("cont-fail");
+      const cause = describeContinuationFailure(failure);
+      window.postMessage(continuationFailMessage(id, cause), "*");
+      console.log(`[ds-] 续聊失败:${cause}(已留痕)`);
+    }
+
+    /** `sendToPage` 抛错那一条:短句只带错误类型名(ADR-0004,不带 message). */
+    function reportThrownFailure(error: unknown): void {
+      const id = nextMessageId("cont-fail");
+      const cause = describeThrownFailure(error);
+      window.postMessage(continuationFailMessage(id, cause), "*");
+      console.log(`[ds-] 续聊发送抛错:${cause}(已留痕)`);
+    }
+
+    /**
+     * 发送限速检查点(#61):与隔离世界**共用 `sendpace.runPaced` 这一份时序**
+     * (此前两个世界各写一遍,同一条规则两份实现).这一侧恒是发送(续聊只按短标记
+     * 那一键),所以意图固定 `send`;记账看这次有没有真发出去.
+     *
+     * 等够再发,不拒绝,不新增失败码--agent 侧看不出差别.发出去后向隔离世界通报
+     * 时刻,两边的节奏合成一条线.
+     */
+    async function paceSend<T>(send: () => Promise<T>, sent: (result: T) => boolean): Promise<T> {
+      const run = await runPaced({
+        pace: sendPace,
+        readIntent: () => "send",
+        execute: send,
+        shouldRecord: sent,
+        now: () => Date.now(),
+        random: () => Math.random(),
+        sleep: realSleep,
+      });
+      if (run.waitedMs > 0) {
+        console.log(`[ds-] 发送限速:上一条刚发过,等 ${run.waitedMs}ms 再发`);
+      }
+      if (run.pace !== sendPace) {
+        sendPace = run.pace;
+        window.postMessage(sendNoteMessage("main", sendPace.lastSentAt ?? 0), "*");
+      }
+      return run.result;
+    }
+
+    /**
      * 出站改写:挂着的续聊优先(这一趟就是自动续聊那一趟),否则照旧拼协议说明.
      *
      * 续聊**一次即作废**:替换没成也作废--留着它,下一条出站就是用户自己发的消息,
      * 会被当成续聊那趟,正文被工具结果顶掉(把人说的话吃了,比少一轮严重得多).
      */
     const rewriteOutgoing = (body: string): string | null => {
-      if (armedContinuation !== null && !isArmedFresh(armedAt, Date.now())) {
-        // 挂太久了:多半是那一趟没真发出去.作废--不能让它顶掉用户下一条消息.
+      // armed 态挂太久(ARMED_TTL_MS)就作废--多半是那一趟没真发出去.
+      // pending 态不看时间:等用户自己按发送(#52).
+      const before = armed;
+      armed = expireIfStale(armed, Date.now());
+      if (before.phase === "armed" && armed.phase === "idle") {
         console.log("[ds-] 挂着的续聊已过期,作废(不拿它顶用户的下一句话)");
-        armedContinuation = null;
+        reportContinuationFailure("armed-expired");
       }
-      if (armedContinuation === null) {
-        const next = rewriteOutgoingBody(body, catalog);
-        if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
-        return next;
+
+      // 钥匙(#49):只有"这条出站请求的正文逐字等于短标记"才认领.claimArmed
+      // 顺手做状态迁移--认不走就把武装撤了(用户发的不是我们的标记).
+      const pending = armedBody(armed);
+      if (pending !== null) {
+        const outcome = claimArmed(armed, outgoingUserTextOf(body), true);
+        armed = outcome.state;
+        if (!outcome.claimed) {
+          console.log("[ds-] 这条出站不是我们那条短标记,原样放行(不拿工具结果顶用户的话)");
+          reportContinuationFailure("key-mismatch");
+        } else {
+          const next = rewriteContinuationBody(body, pending);
+          console.log(
+            next === null
+              ? "[ds-] 续聊正文没能替换进出站请求,这一轮作废(结果没送到模型手上)"
+              : "[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)",
+          );
+          if (next === null) reportContinuationFailure("shape-unknown");
+          return next;
+        }
       }
-      const pending = armedContinuation;
-      armedContinuation = null;
-      armedAt = 0;
-      const next = rewriteContinuationBody(body, pending);
-      console.log(
-        next === null
-          ? "[ds-] 续聊正文没能替换进出站请求,这一轮作废(结果没送到模型手上)"
-          : "[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)",
-      );
+
+      const next = rewriteOutgoingBody(body, catalog);
+      if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
       return next;
     };
 
@@ -126,6 +234,39 @@ export default defineContentScript({
       if (!isOutgoingChatRequest(method, url)) return null;
       return rewriteOutgoing(body);
     };
+
+    /**
+     * 半自动那一跳(#52):"代你发言"闸关着时,把短标记**写进输入框**,**不按发送**,
+     * 等用户自己按.
+     *
+     * 三个结果分得清清楚楚(每一件都留痕,见 `continuationfail.ts`):
+     *
+     * - 找不到输入框 → `composer-absent`;
+     * - **输入框里有你的草稿** → **不覆盖**,`draft-in-composer`(宁可少一轮,也不吃人
+     *   正在打的东西--这与"宁可少一轮,也不能吃人说的话"是同一条原则);
+     * - 写不进去 → `composer-unwritable`.
+     *
+     * 返回 true 表示标记已经落在输入框里(pending 态可以挂着等用户按).
+     */
+    function stagePendingMarker(): boolean {
+      const composer = pickComposer();
+      if (composer === null) {
+        reportContinuationFailure("composer-absent");
+        return false;
+      }
+      const draft = readComposer(composer);
+      if (draft.trim() !== "" && !matchesMarker(draft)) {
+        console.log("[ds-] 输入框里还有你正在打的字,这一轮不覆盖");
+        reportContinuationFailure("draft-in-composer");
+        return false;
+      }
+      if (!writeComposer(composer, CONTINUATION_MARKER)) {
+        reportContinuationFailure("composer-unwritable");
+        return false;
+      }
+      console.log('[ds-] "代你发言"闸关着:短标记已写进输入框,等你按发送');
+      return true;
+    }
 
     /** 排下一次开窗:队列空着就不排. */
     function scheduleFlush(): void {
@@ -144,27 +285,44 @@ export default defineContentScript({
         // 武装放在放行这一刻:从入队到开窗有几秒,期间用户可能自己在发消息--
         // 早武装就会把他的真消息换成工具结果.
         const isContinuation = queuedContinuation !== null && message === CONTINUATION_MARKER;
-        if (isContinuation) {
-          armedContinuation = queuedContinuation;
-          armedAt = Date.now();
+        if (isContinuation && queuedContinuation !== null) {
+          const continuation = queuedContinuation;
           queuedContinuation = null;
+          // 走向由纯函数判(armed.ts 的 planContinuation):闸关着时那一支**没有
+          // 发送步骤**,接线层照着做就碰不到 Enter.
+          if (planContinuation(speak).action === "arm-and-send") {
+            armed = armState(continuation, Date.now());
+          } else {
+            armed = pendState(continuation);
+            if (!stagePendingMarker()) armed = idleArmed();
+            // 这一趟的全部动作就是那一次写入,**到此为止**:再往下走 `sendToPage`
+            // 就会按 Enter / 点发送键--那等于闸关着照样自动发(#52 的 AC 首条).
+            continue;
+          }
         }
-        void sendToPage(message)
-          .then((sent) => {
-            // 没发出去就把武装撤掉(发出去的已经被替换那一步消费掉了):
-            // 留着它,下一个出站就是用户自己发的消息,正文会被工具结果顶掉.
-            if (!sent && isContinuation) {
-              armedContinuation = null;
-              armedAt = 0;
+        void paceSend(
+          () => sendToPage(message),
+          (outcome) => outcome.sent,
+        )
+          .then((outcome) => {
+            // 武装怎么落由 armed.ts 的 settleArmedAfterSend 判(#49 的验收点):
+            // 发出去了留着等钥匙认领,没发出去立刻撤.
+            if (isContinuation) {
+              armed = settleArmedAfterSend(armed, outcome.sent);
+              if (!outcome.sent && outcome.failure !== null) {
+                reportContinuationFailure(outcome.failure);
+              }
             }
             console.log(
-              sent ? "[ds-] 续聊已作为一条短标记发出" : "[ds-] 续聊没有发出去,页面里没有新消息",
+              outcome.sent
+                ? "[ds-] 续聊已作为一条短标记发出"
+                : "[ds-] 续聊没有发出去,页面里没有新消息",
             );
           })
           .catch((error) => {
             if (isContinuation) {
-              armedContinuation = null;
-              armedAt = 0;
+              armed = settleArmedAfterSend(armed, false);
+              reportThrownFailure(error);
             }
             console.log("[ds-] 续聊发送出岔,页面里没有新消息", error);
           });
@@ -206,10 +364,16 @@ export default defineContentScript({
     function detect(raw: string): void {
       if (!enabled) return;
       // 换了页面会话 = 换了条任务:轮数归零,别把上一条的刹车额度带过来.
+      // 待发的那条(#52 的 pending 态)同样作废:它写进的是**这条**会话的输入框,
+      // 到了新会话,那条待发的工具结果已经不对话了.
       const key = pageSessionIdOf(location.href);
       if (key !== sessionKey) {
         sessionKey = key;
         rounds = resetRounds();
+        if (armed.phase === "pending") {
+          armed = idleArmed();
+          reportContinuationFailure("session-changed");
+        }
       }
       const calls = detectToolCalls(raw);
       // **围栏之外的话**一律报给协调者:有围栏时围栏转网关,围栏以外那些别的话不能被吞掉.
@@ -355,8 +519,8 @@ export default defineContentScript({
         gate = newGate();
         // 续聊这两笔与轮数也一样作废:关着时挂着的正文不该在下一次开闸时冒出来.
         queuedContinuation = null;
-        armedContinuation = null;
-        armedAt = 0;
+        if (armed.phase !== "idle") reportContinuationFailure("toggle-off");
+        armed = idleArmed();
         rounds = resetRounds();
         sessionKey = null;
       }
@@ -380,7 +544,22 @@ export default defineContentScript({
       }
 
       const toggle = parseToggleMessage(event.data);
-      if (toggle?.kind === "state") apply(toggle.enabled);
+      if (toggle?.kind === "state") {
+        if (toggle.speak !== speak) {
+          speak = toggle.speak;
+          // 闸从开变关:挂着等用户按的那条(pending 态)不该还在--那时它是按"闸开"
+          // 的假设挂上去的,而它的写入前提(输入框空着)多半已经不成立了.
+          if (!speak) armed = idleArmed();
+        }
+        apply(toggle.enabled);
+      }
+
+      // 隔离世界那边(催办 / send.page / message.retry)也发过消息:并进它的时刻,
+      // 两边的发送节奏合成一条线(#61).不认自己发的通报.
+      const note = parseSendNote(event.data);
+      if (note !== null && note.world !== "main") {
+        sendPace = mergeSendPace(sendPace, note.at);
+      }
     });
 
     // 两个内容脚本谁先谁后都可能:这边开口要一次,那边自己也会报一次.
@@ -394,28 +573,35 @@ export default defineContentScript({
 
 const COMPOSER_SELECTORS = ["textarea", '[contenteditable="true"]'];
 
+/** 一次发送的结果:发没发出去,**以及没发出去时断在哪一步**(#51 要这个来留痕). */
+export type SendOutcome = {
+  readonly sent: boolean;
+  /** 发的出去是 null;失败时是 `continuationfail.ts` 里的原因码,三种不合并. */
+  readonly failure: ContinuationFailure | null;
+};
+
 /**
  * 回灌作为一条真实用户消息发进当前会话:把消息填进站点自己的输入框,触发它原生的发送,
  * 于是这条消息走的与 #12 注入同一条路(同一个 `CHAT_SEND_PATH` 闸门内的那次发送).
- * 返回有没有真的发出去;发不出去就把输入框还原,页面里不留半截东西.
+ * 返回有没有真的发出去,失败时带上原因码;发不出去就把输入框还原,页面里不留半截东西.
  */
-async function sendToPage(message: string): Promise<boolean> {
+async function sendToPage(message: string): Promise<SendOutcome> {
   const composer = pickComposer();
   if (composer === null) {
     console.log("[ds-] 没找到站点的输入框,这轮回灌作废");
-    return false;
+    return { sent: false, failure: "composer-absent" };
   }
 
   const before = readComposer(composer);
   if (!writeComposer(composer, message)) {
     console.log("[ds-] 输入框写不进去,这轮回灌作废");
-    return false;
+    return { sent: false, failure: "composer-unwritable" };
   }
 
-  if (await triggerSend(composer)) return true;
+  if (await triggerSend(composer)) return { sent: true, failure: null };
 
   if (readComposer(composer).includes(message)) writeComposer(composer, before);
-  return false;
+  return { sent: false, failure: "send-failed" };
 }
 
 /** 挑站点的输入框:看得见,能写的优先 textarea,其次可编辑区;同级里挑面积最大的. */

@@ -17,6 +17,7 @@ import {
   parseAskClearedReport,
   parseAskReport,
   parseStopReport,
+  parseContinuationFailReport,
   parseSendRequest,
   parseSaidReport,
   parseToolsRequest,
@@ -399,12 +400,19 @@ export default defineBackground(() => {
 
   /**
    * 催办投递:固定正文打进取页作框并发送.两步都走同一套执行门
-   * (`runAction`)--总开关 / 替人发言 / 退避
-   * 三道闸照样拦,拦着就回 false(不算催,下扫再试);前半句
-   * 没成就不发后半句,免得空消息上屏.
+   * (`runAction`)--总开关 / 退避照拦,拦着就回 false(不算催,下扫再试);
+   * 前半句没成就不发后半句,免得空消息上屏.
+   *
+   * **"代你发言"闸关着时整个跳过**(#52):催办是"写 + 发"成对的动作,只写不发
+   * 会在用户的输入框里留下半截"继续".跳过即不算催(计数不动),下扫再试.
+   * 写步本身现在不受 speak 闸管(#52:只管发),所以这个判断必须在这里显式做.
    */
   async function deliverNudge(tabId: number, text: string): Promise<boolean> {
     const context = await actionContext();
+    if (!context.speak) {
+      console.log('[ds-] "代你发言"闸关着,这次催办整个跳过(不留半截在输入框里)');
+      return false;
+    }
     const frame = (action: string, params: Record<string, unknown>): ActionFrame => ({
       type: "action",
       id: nextMessageId("watchdog"),
@@ -799,6 +807,15 @@ export default defineBackground(() => {
     if (stop !== null) {
       console.log(`[ds-] 页面报停手:${stop.cause}`);
       recordFailure("rounds", describeStop(stop.cause));
+      return undefined;
+    }
+    // 续聊这一跳失败(#51):发不出去,正文换不进去,钥匙不符...此前只有控制台
+    // 一行,扩展侧答不出"为什么这轮工具结果没回到模型手上".cause 已是短句,
+    // 这里只落痕(正文进不来,ADR-0004).
+    const continuationFail = parseContinuationFailReport(message);
+    if (continuationFail !== null) {
+      console.log(`[ds-] 页面报续聊失败:${continuationFail.cause}`);
+      recordFailure("continuation", continuationFail.cause);
       return undefined;
     }
     // 账号处境上报(#2):记下最新值并上屏,悬停才说得出"禁言至何时".

@@ -25,6 +25,8 @@ import {
   parseChainMessage,
   parseSaidReport,
   parseStopReport,
+  parseContinuationFailReport,
+  CONTINUATION_FAIL_MESSAGE_TYPE,
   parseToolsRequest,
   parseToolsResponse,
   callMessage,
@@ -33,6 +35,11 @@ import {
   saidReportMessage,
   SAID_MESSAGE_TYPE,
   stopMessage,
+  continuationFailMessage,
+  continuationFailReportMessage,
+  parseSendNote,
+  sendNoteMessage,
+  SEND_NOTE_MESSAGE_SOURCE,
   stopReportMessage,
   STOP_MESSAGE_TYPE,
   TOOLS_REQUEST_MESSAGE_TYPE,
@@ -72,6 +79,64 @@ describe('停手信封(页面世界报"续聊到顶")', () => {
   it("别的 type 不抢这条消息", () => {
     expect(parseStopReport(saidReportMessage("说句话"))).toBeNull();
     expect(parseStopReport({ type: STOP_MESSAGE_TYPE, id: "", cause: "x" })).toBeNull();
+  });
+});
+
+describe('续聊失败信封(页面世界报"这一跳断了",#51)', () => {
+  it("页面世界 → 隔离世界:kind / id / cause 对得上就收", () => {
+    const message = continuationFailMessage("cont-fail-1", "没找到输入框");
+    expect(parseChainMessage(message)).toEqual(message);
+  });
+
+  it("cause 空的 / 缺的一律不收(说不出断在哪一步等于没说)", () => {
+    expect(parseChainMessage({ ...continuationFailMessage("r", "x"), cause: "   " })).toBeNull();
+    expect(
+      parseChainMessage({ source: CHAIN_MESSAGE_SOURCE, kind: "continuation-fail", id: "r" }),
+    ).toBeNull();
+  });
+
+  it("隔离世界 → background:带上页面会话 id,缺省是 null", () => {
+    expect(
+      parseContinuationFailReport(
+        continuationFailReportMessage("cont-fail-1", "没找到输入框", "abc"),
+      ),
+    ).toEqual(continuationFailReportMessage("cont-fail-1", "没找到输入框", "abc"));
+    expect(parseContinuationFailReport(continuationFailReportMessage("r", "x"))?.page).toBeNull();
+    expect(
+      parseContinuationFailReport({ ...continuationFailReportMessage("r", "x"), page: "" }),
+    ).toBeNull();
+  });
+
+  it("别的 type 不抢这条消息", () => {
+    expect(parseContinuationFailReport(saidReportMessage("说句话"))).toBeNull();
+    expect(
+      parseContinuationFailReport({ type: CONTINUATION_FAIL_MESSAGE_TYPE, id: "", cause: "x" }),
+    ).toBeNull();
+  });
+});
+
+describe("发送限速的跨世界通报(#61)", () => {
+  it("构造与解析对上就收,带 world 与时刻", () => {
+    const note = sendNoteMessage("isolated", 1234);
+    expect(parseSendNote(note)).toEqual(note);
+  });
+
+  it("形状不对的一律不收(不猜,不补)", () => {
+    expect(parseSendNote(null)).toBeNull();
+    expect(parseSendNote({ source: "别人的", world: "isolated", at: 1 })).toBeNull();
+    expect(parseSendNote({ source: SEND_NOTE_MESSAGE_SOURCE, world: "别处", at: 1 })).toBeNull();
+    expect(parseSendNote({ source: SEND_NOTE_MESSAGE_SOURCE, world: "isolated" })).toBeNull();
+    expect(
+      parseSendNote({ source: SEND_NOTE_MESSAGE_SOURCE, world: "isolated", at: "刚才" }),
+    ).toBeNull();
+    expect(
+      parseSendNote({ source: SEND_NOTE_MESSAGE_SOURCE, world: "isolated", at: Number.NaN }),
+    ).toBeNull();
+  });
+
+  it("不抢 chain 那路的信封", () => {
+    expect(parseSendNote(stopMessage("r", "continuation-limit"))).toBeNull();
+    expect(parseSendNote(continuationFailMessage("r", "没找到输入框"))).toBeNull();
   });
 });
 

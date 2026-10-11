@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 PORT_ENV_KEY = "DSB_PORT"
@@ -51,4 +52,32 @@ def find_dotenv() -> Path | None:
     return None
 
 
-__all__ = ["PORT_ENV_KEY", "env_value", "find_dotenv", "repo_root"]
+#: ``mcp.json`` 的文件名与它的配置键(``DSB_MCP_CONFIG`` 指向别处时用后者).
+MCP_CONFIG_FILENAME = "mcp.json"
+MCP_CONFIG_ENV_KEY = "DSB_MCP_CONFIG"
+
+
+def resolve_config_path(env_text: str) -> Path:
+    """``mcp.json`` 的落点:环境变量/``.env`` 的 ``DSB_MCP_CONFIG`` 优先,其次当前目录,最后仓库根.
+
+    住在这里而不是 :mod:`dsb.server`,是因为**它有两个读者**:中继读它去拉起 servers,
+    工作工具的护栏也要知道'真正生效的那一个配置'是哪个(#89)--各抄一份必然漂.
+    """
+    raw = os.environ.get(MCP_CONFIG_ENV_KEY) or env_value(env_text, MCP_CONFIG_ENV_KEY)
+    if raw:
+        return Path(raw).expanduser()
+    for candidate in (Path.cwd() / MCP_CONFIG_FILENAME, repo_root() / MCP_CONFIG_FILENAME):
+        if candidate.is_file():
+            return candidate
+    return repo_root() / MCP_CONFIG_FILENAME  # 默认落点(文件不在就是空表)
+
+
+__all__ = [
+    "MCP_CONFIG_ENV_KEY",
+    "MCP_CONFIG_FILENAME",
+    "PORT_ENV_KEY",
+    "env_value",
+    "find_dotenv",
+    "repo_root",
+    "resolve_config_path",
+]

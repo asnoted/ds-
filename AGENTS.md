@@ -10,6 +10,10 @@
 默认把子 agent 当成**小模型 / 能力弱**的模型:给它的指令要小,要具体,要能验证,别把开放式的大
 目标整包丢过去.
 
+**判断题在 `CODING_STANDARDS.md`**(判定放纯模块,"修订型 ADR"的写法).本文件是房规与导航,
+那一份是任何护栏替代不了的跨文件一致性--**review 阶段**(`/code-review` 的 Standards 轴,
+`/implement` 的收尾)去读它,写代码时不必.
+
 与用户会话的 agent 只做两件事:**把目标和验收标准交给网页,把链子回来的结果原样喂回去**.
 怎么拆,怎么排围栏,错了怎么修,让**网页**自己想--不替它读文档,不替它诊断,不逐步指派.
 
@@ -18,6 +22,9 @@
 2026-10-07 起用 **Matt 的技能**(上游 `mattpocock/skills`,换掉 OpenSpec,见 ADR-0019).技能在
 `.agents/skills/`,`skills-lock.json` 记版本;装 / 更新:`npx skills@latest add mattpocock/skills -a opencode -s '*' -y --copy`
 / `npx skills update`.别手改技能文件(升级会冲掉);想调整就在 `AGENTS.md` 里写覆盖规则.
+**装了别的技能库同理**(archify 等也是这么装的):`npm 装技能` 要走代理 7897,且装完先**审内容**再
+用(技能以完整 agent 权限运行).`.agents/` 已在 `eslint.config.js` 与 `.prettierignore` 里排除--
+新增别的 vendored 目录时要一并加,否则 `pnpm quality` 会冒出上百条与本仓无关的错.
 
 日常流:想法还不清 → `/grill-with-docs`(边问边补 `GLOSSARY.md` 与 ADR);成型 → `/to-spec`(发成 GitHub issue)
 → `/to-tickets`(拆成 tracer-bullet 票)→ `/implement`(或 `/implement-spec`);坏了 → `/diagnosing-bugs`;
@@ -59,34 +66,45 @@
 
 页面动作没有外露调用面(ADR-0011),要真机验就走 `scripts/page-action.py`:
 `read`(页面状态)/ `send <动作> [--params json]` / `js <表达式>`(页面上下文里跑只读 JS)/
-`stop-test`(端到端)/ `storage get|set|remove` / `capture` / `ax` /
+`sse`(录一轮 SSE 并按 `finish_reason` 判拒收)/ `stop-test`(端到端)/
+`storage get|set|remove` / `capture` / `ax` /
 `toggles-off`(测试环境关掉深度思考与智能搜索,`env-up.sh --debug` 会顺带跑)/
 `evidence`(存证对账:留档按钮原件 vs 站点当前,ADR-0018,只读,按需本地跑,不进 `pnpm quality`).
 
-- **`target: null` 只有 `tabs.list` 与 `toggle.*` 答得出**.`page.state` / `composer.*` /
-  `messages.*` / `chat.new` 要先 `tabs.list` 拿标签页 id 再带上,其余一律落
-  `ACTION_ERROR_UNKNOWN`--**那是探针错了,不是链子坏了**,别照着它去修扩展.
+- **站点自己的上限,配置,请求体长什么样,逆向结论在 [`dsweb/FINDINGS.md`](dsweb/FINDINGS.md)**:
+  测"服务端收没收"先看它 §6.2 的硬判据,别自己搜页面文字.要站点下发的配置
+  (`input_character_limit` 之类)在 `localStorage` 的
+  `__ds_remote_feature_store_model` / `__ds_remote_feature_store_provider` /
+  `__ds_remote_feature_store` 三个键里--**先读配置再猜**,今天的教训是
+  猜"非线性的启发式"写进 ADR,而真值一次 `localStorage` 就到手.
+  要数一段文本几个 token 走 `scripts/count-tokens.py`(分词器取法在
+  [`dsweb/README.md`](dsweb/README.md);**站点服务端用哪个分词器仍未证实**,
+  别把本机口径当定论).
+
+- **`target: null` 只有 `tabs.list` 与 `toggle.*` 答得出**;本地工具(`send.page` 等)
+  不在名册里,只能注入 chain 信封触发.两条都写在 `scripts/page-action.py` 的文件头,
+  用之前先读那里.
 - **DeepSeek 标签页必须留在前台**:后台标签页被浏览器节流,虚拟列表不挂行,历史不加载,
   `messages.*` 与按位置点控件会读成空(2026-10-07 踩过,当时前台被探针开的选项页占了).
   探针开扩展入口页走后台(`open_tab(..., background=True)`);若看到"对话区 0 行"先查
-  `document.visibilityState`,别先怀疑动作.
-- **`--no-pace` / `--pace` 是全局 flag,必须放在子命令前**(`... --no-pace read`,不是
-  `... read --no-pace`).碰站点默认等 8–20 秒随机;**抓瞬态**(生成中,思考期那种几秒的窗口)
-  必须 `--no-pace` 连读,否则限速下根本抓不到.`list` 只读本地目标清单,不等.
-- **本地工具(`send.page` 等)不在 `ACTION_ROSTER` 里**,`send` 调不到.唯一触发办法是用
-  `js` 往页面里注入一条 chain 信封,让它走 `content.ts` → background 那条路:
-
-  ```sh
-  uv run scripts/page-action.py js 'window.postMessage({source:"ds-/chain",kind:"call",
-    id:"probe-1",calls:[JSON.stringify({tool:"send.page",arguments:{question:"..."}})]},"*")'
-  ```
-
-  要页面模型**自己**排围栏的路径(如本地工具)只能这么验;不要为了验一个动作去诱导模型排围栏.
-
+  `document.visibilityState`,别先怀疑动作.**开了新会话后要读列表,先
+  `scripts/page-action.py --no-pace focus`**(`Page.bringToFront`,2026-10-08 补的
+  动作)--新会话在后台时虚拟列表压根不挂行,`messages.*` 恒空,而**开着旧会话读得动**
+  极具迷惑性.
+- **`--no-pace` / `--pace` 抓瞬态时用**(生成中,思考期那种几秒的窗口),必须连读,
+  否则限速下根本抓不到.放错位置时 argparse 会拒绝,报错自己会说该放哪.`list`
+  只读本地目标清单,不等.
 - 登录 DeepSeek 与勾"替人开口"是人做的两件,脚本只打印不代劳;没勾闸则写动作回 `disabled`
   属预期,不是故障.
 - **真机结果只有一半可信时,别硬下结论**:能用探针交叉验证(`messages.list` 读角色+正文)
   就验,拿不到就在票里写明"间接证据"与"未验证项".
+- **判据要抗自污染**(2026-10-09 栽过两次,两次形态不同):
+  - **别拿"读页面/读全局数组"当判据**--全文搜某词会被上一轮的残留渲染命中;
+    `window.__foo` 会被后一轮覆盖,读到旧值时它**看起来是个合法数字**.装观测,填,
+    发,读**闭在同一次调用里**(`sse` 就是照这条做的),或者读之前先清空.
+  - **同一件事两个观测点只有一个有值时,那是观测漏了,不是事实**.今天先把 `net`
+    的 `[]` 当成"前端拒发",推出了互相矛盾的结论--CDP `Network` 域漏抓,页内 XHR
+    钩子同时抓几千帧.**"0 帧 / 空"不能推出"没发生"**.
 
 ## 页面动作
 

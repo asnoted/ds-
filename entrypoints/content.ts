@@ -13,7 +13,10 @@ import {
   parseToolsResponse,
   resultMessage,
   saidReportMessage,
+  continuationFailReportMessage,
   stopReportMessage,
+  parseSendNote,
+  sendNoteMessage,
   toolsMessage,
   toolsRequestMessage,
   unreachableResult,
@@ -21,6 +24,7 @@ import {
   type AskClearedMessage,
   type AskMessage,
   type CallMessage,
+  type ContinuationFailMessage,
   type SaidMessage,
   type StopMessage,
 } from "../src/lib/channel";
@@ -28,12 +32,14 @@ import { nextMessageId } from "../src/lib/id";
 import {
   buttonClick,
   clearComposer,
+  findButton,
   listChats,
   newChat,
   pressEnter,
   readAccount,
   readButton,
   readComposer,
+  readPressed,
   readComposerPresent,
   readPageState,
   readSidebar,
@@ -46,6 +52,16 @@ import {
   typeComposer,
 } from "../src/lib/page";
 import { CONTROL_ACTIONS } from "../src/lib/controls";
+import type { ActionFrame } from "../src/lib/action";
+import {
+  mergeSendPace,
+  newSendPace,
+  realSleep,
+  runPaced,
+  SEND_PRIMITIVES,
+  type SendIntent,
+  type SendPace,
+} from "../src/lib/sendpace";
 import { lastMessage, listMessages } from "../src/lib/messages";
 import { waitFence, waitReply } from "../src/lib/wait";
 import {
@@ -53,6 +69,8 @@ import {
   readToggle,
   stateMessage,
   TOGGLE_STORAGE_KEY,
+  SPEAK_STORAGE_KEY,
+  readSpeak,
 } from "../src/lib/toggle";
 
 /**
@@ -67,9 +85,19 @@ export default defineContentScript({
   matches: ["https://chat.deepseek.com/*"],
   runAt: "document_start",
   async main() {
+    /**
+     * 把两个开关的当前状态广播给页面世界.
+     *
+     * "代你发言"闸一起来了(#52):自动续聊在 MAIN 世界直接写输入框,按发送,不经
+     * `runAction`,所以那个世界拿不到 `storage`--只能由这边每次广播时带上.选项页
+     * 改闸 → `storage.onChanged` → 再广播一次,不必刷新页面.
+     */
     const broadcast = async () => {
-      const stored = await browser.storage.local.get(TOGGLE_STORAGE_KEY);
-      window.postMessage(stateMessage(readToggle(stored[TOGGLE_STORAGE_KEY])), "*");
+      const stored = await browser.storage.local.get([TOGGLE_STORAGE_KEY, SPEAK_STORAGE_KEY]);
+      window.postMessage(
+        stateMessage(readToggle(stored[TOGGLE_STORAGE_KEY]), readSpeak(stored[SPEAK_STORAGE_KEY])),
+        "*",
+      );
     };
 
     /** 页面世界认出的围栏 → background 打网关 → 结果按同一条信封原路回去. */
@@ -127,6 +155,17 @@ export default defineContentScript({
         );
       } catch (error) {
         console.log("[ds-] 停手上报没有送出去", error);
+      }
+    };
+
+    /** 续聊这一跳失败:报给 background 落一笔失败痕(#51),不进对话流. */
+    const reportContinuationFail = async (fail: ContinuationFailMessage): Promise<void> => {
+      try {
+        await browser.runtime.sendMessage(
+          continuationFailReportMessage(fail.id, fail.cause, pageSessionIdOf(location.href)),
+        );
+      } catch (error) {
+        console.log("[ds-] 续聊失败上报没有送出去", error);
       }
     };
 
@@ -209,6 +248,10 @@ export default defineContentScript({
         void reportStop(chain);
         return;
       }
+      if (chain?.kind === "continuation-fail") {
+        void reportContinuationFail(chain);
+        return;
+      }
 
       const message = parseToggleMessage(event.data);
       if (message?.kind === "want-state") void broadcast();
@@ -248,15 +291,86 @@ export default defineContentScript({
       "wait.reply": waitReply,
     };
 
+    /**
+     * 发送限速(#61):三种"替用户把消息发出去"的原语,执行前先过检查点--
+     * 距上一次发送不够 3~5 秒就**等**够(等,不拒,不增失败码).
+     *
+     * 圆键那一下可能不是发送(`readPressed` 分得出发送 / 停止 / 认不出),按
+     * `checkSendIntent` 的三条口径分别处理:**停止永不延迟**,认不出不延迟但照样记账.
+     * 其余两种原语(`send.enter` / `message.retry`)恒是发送.
+     *
+     * 记账之后向页面世界通报一声(`send-note`),让另一边也并进这个时刻--
+     * 两边的发送节奏因此合成一条线.
+     */
+    let sendPace: SendPace = newSendPace();
+
+    function paceRoster(roster: ActionRoster): ActionRoster {
+      const paced: Record<string, (frame: ActionFrame) => unknown> = { ...roster };
+      for (const action of SEND_PRIMITIVES) {
+        const run = roster[action];
+        if (run === undefined) continue;
+        // 圆键那一下的意图要**动手前**与**发完后**各读一次:等的时候它可能变成了"停止".
+        const readIntent = (): SendIntent =>
+          action === "button.click" ? readCircleIntent() : "send";
+        paced[action] = async (frame: ActionFrame) => {
+          const before = sendPace;
+          const result = await runPaced({
+            pace: before,
+            readIntent,
+            execute: () => run(frame),
+            // 圆键重读一次,判出"停止"就不记账;另两种原语恒是发送.
+            shouldRecord: () => readIntent() !== "stop",
+            now: () => Date.now(),
+            random: () => Math.random(),
+            sleep: realSleep,
+          });
+          if (result.pace !== before) {
+            sendPace = result.pace;
+            window.postMessage(sendNoteMessage("isolated", sendPace.lastSentAt ?? 0), "*");
+          }
+          return result.result;
+        };
+      }
+      return paced;
+    }
+
+    /**
+     * 圆键此刻承载的意图:分不出"发送 / 停止 / 认不出"三种.
+     *
+     * 读 `d` 的用法与 `inject.content.ts` 的 `triggerSend` **同款**(那是"同圆键的先例"):
+     * 图标**不参与命中判据**--名册里仍是一个 `button.click` 对这一个元素,不按图标分家;
+     * 这里只是**动手前先读一下**,判出"停止"就别延迟,别记账.认不出(`unknown`)一律
+     * 当"不延迟,但记账":宁可之后多等一次,也不延迟一次中断,也不漏记一次发送.
+     */
+    function readCircleIntent(): SendIntent {
+      const button = findButton();
+      if (button === null) return "unknown";
+      const pressed = readPressed(button);
+      if (pressed === "send") return "send";
+      if (pressed === "stop") return "stop";
+      return "unknown";
+    }
+
+    // 页面世界(自动续聊)也发过消息:并进它的时刻,两边的节奏合成一条线.
+    window.addEventListener("message", (event) => {
+      if (event.source !== window) return;
+      const note = parseSendNote(event.data);
+      if (note === null || note.world === "isolated") return; // 不认自己发的
+      sendPace = mergeSendPace(sendPace, note.at);
+    });
+
     // background 打过来的动作帧(走 `tabs.sendMessage`):当场交回一个 ActionOutcome;
     // 认不出的信封一声不吭,不抢 send 那条路的消息.
-    browser.runtime.onMessage.addListener(actionListener(ACTION_ROSTER));
+    browser.runtime.onMessage.addListener(actionListener(paceRoster(ACTION_ROSTER)));
 
-    // 总开关改了立刻广播,刷新与重启靠 storage 自己保持.
+    // 总开关或"代你发言"闸改了立刻广播,刷新与重启靠 storage 自己保持.
+    // speak 也要广播(#52):自动续聊那一侧靠它决定是自动发还是只落草稿,
+    // 选项页勾一下就生效,不必刷新页面.
     browser.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== "local") return;
-      if (!(TOGGLE_STORAGE_KEY in changes)) return;
+      if (!(TOGGLE_STORAGE_KEY in changes) && !(SPEAK_STORAGE_KEY in changes)) return;
       void broadcast();
+      if (!(TOGGLE_STORAGE_KEY in changes)) return;
       // 账号处境上报跟着总开关走:关着时内容脚本不发声.
       if (readToggle(changes[TOGGLE_STORAGE_KEY].newValue)) {
         startAccountReporting();

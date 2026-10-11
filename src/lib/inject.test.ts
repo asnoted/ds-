@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { isOutgoingChatRequest, rewriteContinuationBody, rewriteOutgoingBody } from "./inject";
+import { CONTINUATION_MARKER } from "./continuation";
+import {
+  isOutgoingChatRequest,
+  outgoingUserTextOf,
+  rewriteContinuationBody,
+  rewriteOutgoingBody,
+} from "./inject";
 import { prependInstructions, protocolInstructions } from "./instructions";
 import type { ToolInfo } from "./relay";
 import { buildReply, okPayload, REPLY_ANCHOR } from "./reply";
@@ -160,6 +166,8 @@ describe("rewriteOutgoingBody", () => {
 
 describe("rewriteContinuationBody / 续聊把正文换成工具结果", () => {
   const CONTINUATION = "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
+  /** 短标记:钥匙只认它(#49). */
+  const MARKER = CONTINUATION_MARKER;
 
   it("prompt 形状:正文整条换掉,其余字段一个不动", () => {
     const body = JSON.stringify({ prompt: "agent:\n继续", session_id: "s-1", stream: true });
@@ -199,9 +207,78 @@ describe("rewriteContinuationBody / 续聊把正文换成工具结果", () => {
   });
 
   it("解码后的正文是物理换行,不是字面反斜杠 n(解码方是模型,不是解析器)", () => {
-    const rewritten = rewriteContinuationBody(JSON.stringify({ prompt: "继续" }), CONTINUATION);
+    const rewritten = rewriteContinuationBody(JSON.stringify({ prompt: MARKER }), CONTINUATION);
     const decoded = String(JSON.parse(rewritten ?? "")["prompt"]);
     expect(decoded).toContain("\n");
     expect(decoded).not.toContain("\\n");
+  });
+
+  // #49 的钥匙:只有正文逐字等于短标记才替换.
+  it("正文不是短标记(用户手打的话):原样放行,null(不吃人说的话)", () => {
+    expect(
+      rewriteContinuationBody(JSON.stringify({ prompt: "帮我看看 README" }), CONTINUATION),
+    ).toBeNull();
+    expect(rewriteContinuationBody(JSON.stringify({ prompt: "继续" }), CONTINUATION)).toBeNull();
+    expect(
+      rewriteContinuationBody(JSON.stringify({ prompt: "agent: 继续" }), CONTINUATION),
+    ).toBeNull();
+    expect(
+      rewriteContinuationBody(
+        JSON.stringify({ messages: [{ role: "user", content: "我手打的" }] }),
+        CONTINUATION,
+      ),
+    ).toBeNull();
+  });
+
+  it("消息形状里最后一条 user 不是标记:原样放行(哪怕历史里有一条恰好是标记)", () => {
+    const body = JSON.stringify({
+      messages: [
+        { role: "user", content: "agent:\n继续" }, // 历史里恰好是标记,不算数
+        { role: "assistant", content: "第一答" },
+        { role: "user", content: "我改主意了,问别的" },
+      ],
+    });
+    expect(rewriteContinuationBody(body, CONTINUATION)).toBeNull();
+  });
+
+  it("首尾空白与 CRLF 不影响钥匙(站点与受控输入框的换行写法差异)", () => {
+    expect(
+      rewriteContinuationBody(JSON.stringify({ prompt: `  ${MARKER}\n` }), CONTINUATION),
+    ).not.toBeNull();
+    expect(
+      rewriteContinuationBody(
+        JSON.stringify({ prompt: MARKER.replace(/\n/g, "\r\n") }),
+        CONTINUATION,
+      ),
+    ).not.toBeNull();
+  });
+});
+
+describe("outgoingUserTextOf / 钥匙比对取的那段正文(#49)", () => {
+  it("prompt 形状取 prompt", () => {
+    expect(outgoingUserTextOf(JSON.stringify({ prompt: CONTINUATION_MARKER }))).toBe(
+      CONTINUATION_MARKER,
+    );
+  });
+
+  it("messages 形状取最后一条 user(只取待发那条)", () => {
+    const body = JSON.stringify({
+      messages: [
+        { role: "user", content: "第一问" },
+        { role: "assistant", content: "第一答" },
+        { role: "user", content: "待发的" },
+      ],
+    });
+    expect(outgoingUserTextOf(body)).toBe("待发的");
+  });
+
+  it("取不出(不是 JSON / 形状认不出 / 没有 user)一律 null", () => {
+    expect(outgoingUserTextOf("不是 JSON")).toBeNull();
+    expect(outgoingUserTextOf(JSON.stringify({}))).toBeNull();
+    expect(outgoingUserTextOf(JSON.stringify({ prompt: "   " }))).toBeNull();
+    expect(outgoingUserTextOf(JSON.stringify({ prompt: 42 }))).toBeNull();
+    expect(
+      outgoingUserTextOf(JSON.stringify({ messages: [{ role: "assistant", content: "x" }] })),
+    ).toBeNull();
   });
 });

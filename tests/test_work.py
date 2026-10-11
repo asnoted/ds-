@@ -10,6 +10,7 @@ import pytest
 
 from dsb.work import (
     ERROR_BAD_PATH,
+    ERROR_BAD_RANGE,
     ERROR_BAD_REGEX,
     ERROR_EDIT_NO_MATCH,
     ERROR_EDIT_NOT_UNIQUE,
@@ -132,17 +133,118 @@ def test_list_dir_refuses_out_of_root(tmp_path: Path) -> None:
 # ---- read_text ----
 
 
-def test_read_returns_the_whole_file(tmp_path: Path) -> None:
+def test_read_returns_the_whole_file_with_line_numbers(tmp_path: Path) -> None:
+    """短文件一次读完:逐行带行号,脚注说读完,共几行(ADR-0026)."""
     (tmp_path / "f.txt").write_text("第一行\n第二行", encoding="utf-8")
-    assert read_text(tmp_path, "f.txt") == "第一行\n第二行"
+    assert read_text(tmp_path, "f.txt") == "1: 第一行\n2: 第二行\n(文件读完:共 2 行)"
 
 
-def test_read_truncates_with_an_annotation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("dsb.work.WORK_READ_LIMIT", 5)
-    (tmp_path / "f.txt").write_text("0123456789", encoding="utf-8")
-    result = read_text(tmp_path, "f.txt")
-    assert result.startswith("01234")
-    assert "已截断,超出 5 字符" in result
+def test_read_says_how_to_continue_when_the_page_ends_early(tmp_path: Path) -> None:
+    """页按行数到头,文件还有 → 脚注给下一读的 offset(原来只写'已截断')."""
+    (tmp_path / "f.txt").write_text("\n".join(f"L{i}" for i in range(1, 11)), encoding="utf-8")
+    result = read_text(tmp_path, "f.txt", 4, 3)
+    assert result == "4: L4\n5: L5\n6: L6\n(第 4-6 行 / 共 10 行,接着读:offset=7)"
+
+
+def test_read_pages_by_line_and_the_footer_tracks_where_it_is(tmp_path: Path) -> None:
+    (tmp_path / "f.txt").write_text("\n".join(f"L{i}" for i in range(1, 11)), encoding="utf-8")
+    assert (
+        read_text(tmp_path, "f.txt", 8, 2)
+        == "8: L8\n9: L9\n(第 8-9 行 / 共 10 行,接着读:offset=10)"
+    )
+    assert read_text(tmp_path, "f.txt", 10, 2) == "10: L10\n(文件读完:共 10 行)"
+
+
+def test_read_offset_past_the_end_says_so_instead_of_an_empty_page(tmp_path: Path) -> None:
+    """offset 越界要说清是越界(模型据此改问法),不是给一页空正文."""
+    (tmp_path / "f.txt").write_text("a\nb", encoding="utf-8")
+    assert read_text(tmp_path, "f.txt", 99, 3) == "(空:offset=99 超出文件总行数 2)"
+
+
+def test_read_limit_is_capped_at_the_maximum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """limit 超上限按上限给(不是报错):模型把 99999 写进来也能拿到一页."""
+    (tmp_path / "f.txt").write_text("\n".join(f"L{i}" for i in range(1, 6)), encoding="utf-8")
+    monkeypatch.setattr("dsb.work.WORK_READ_MAX_LINES", 2)
+    assert (
+        read_text(tmp_path, "f.txt", 1, 999_999)
+        == "1: L1\n2: L2\n(第 1-2 行 / 共 5 行,接着读:offset=3)"
+    )
+
+
+def test_read_rejects_a_nonsense_offset_or_limit(tmp_path: Path) -> None:
+    """从 1 起,至少 1 行:这两个是入参约定,越界当错码回,不静默改成别的."""
+    (tmp_path / "f.txt").write_text("a", encoding="utf-8")
+    for kwargs in ({"offset": 0}, {"limit": 0}, {"limit": -3}):
+        with pytest.raises(WorkError) as exc:
+            read_text(tmp_path, "f.txt", **kwargs)  # type: ignore[arg-type]
+        assert code_of(exc) == ERROR_BAD_RANGE
+
+
+def test_read_byte_budget_cuts_the_page_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """预算砍在半路要说'预算截断'--模型得知道这一页本身不完整.
+
+    这里得是**多行**文件:单行时那一行本来就能放完(见下面那条'宁可超预算也给那一行'),
+    预算砍不出东西来.
+    """
+    monkeypatch.setattr("dsb.work.WORK_READ_BYTES", 20)
+    (tmp_path / "f.txt").write_text("a" * 8 + "\n" + "b" * 8, encoding="utf-8")
+    assert (
+        read_text(tmp_path, "f.txt")
+        == "1: aaaaaaaa\n(字节预算截断,第 1-1 行 / 共 2 行,接着读:offset=2)"
+    )
+
+
+def test_read_marks_an_overlong_line_instead_of_silently_shortening_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """单行超限另标:静默截断会让模型以为那就是整行."""
+    monkeypatch.setattr("dsb.work.WORK_READ_LINE_LIMIT", 5)
+    (tmp_path / "f.txt").write_text("abcdefghij", encoding="utf-8")
+    assert read_text(tmp_path, "f.txt") == "1: abcde...(本行超 5 字)\n(文件读完:共 1 行)"
+
+
+def test_read_does_not_count_an_extra_line_when_the_file_ends_with_a_newline(
+    tmp_path: Path,
+) -> None:
+    """以换行结尾的文件**不多算一行**.
+
+    真机踩到:624 行的文件被报成 625 行(``"a\\nb\\n"`` 切出 3 段而文件只有 2 行),
+    而模型会照抄脚注里那个总数--**总数错就是模型眼里的文件错**.
+    """
+    (tmp_path / "f.txt").write_text("a\nb\n", encoding="utf-8")
+    assert read_text(tmp_path, "f.txt") == "1: a\n2: b\n(文件读完:共 2 行)"
+
+
+def test_read_does_not_count_an_extra_line_when_it_does_not_end_with_one(tmp_path: Path) -> None:
+    (tmp_path / "f.txt").write_text("a\nb", encoding="utf-8")
+    assert read_text(tmp_path, "f.txt") == "1: a\n2: b\n(文件读完:共 2 行)"
+
+
+def test_read_still_counts_blank_lines_in_the_middle(tmp_path: Path) -> None:
+    """中间的空行是行,不该被 join 掉."""
+    (tmp_path / "f.txt").write_text("a\n\nb", encoding="utf-8")
+    assert read_text(tmp_path, "f.txt") == "1: a\n2: \n3: b\n(文件读完:共 3 行)"
+
+
+def test_read_on_an_empty_file_says_zero_lines(tmp_path: Path) -> None:
+    (tmp_path / "empty.txt").write_text("", encoding="utf-8")
+    assert read_text(tmp_path, "empty.txt") == "(空:offset=1 超出文件总行数 0)"
+
+
+def test_read_always_yields_a_page_even_when_the_budget_is_tiny(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """预算小到一行都放不下时**仍然给那一行**:空页对模型最没用,它连翻到哪都不知道."""
+    monkeypatch.setattr("dsb.work.WORK_READ_BYTES", 2)
+    (tmp_path / "f.txt").write_text("abcdef\nsecond", encoding="utf-8")
+    assert (
+        read_text(tmp_path, "f.txt")
+        == "1: abcdef\n(字节预算截断,第 1-1 行 / 共 2 行,接着读:offset=2)"
+    )
 
 
 def test_read_missing_is_not_found(tmp_path: Path) -> None:
@@ -169,7 +271,7 @@ def test_read_inside_dot_git_is_allowed(tmp_path: Path) -> None:
     """读侧不拦 ``.git``--只有写/改拦."""
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("[core]", encoding="utf-8")
-    assert read_text(tmp_path, ".git/config") == "[core]"
+    assert read_text(tmp_path, ".git/config") == "1: [core]\n(文件读完:共 1 行)"
 
 
 # ---- write_text ----
@@ -437,7 +539,7 @@ def test_handlers_round_trip_through_the_tools(tmp_path: Path) -> None:
     assert failed is False and "已写入" in payload["text"]
 
     payload, failed = tools["read"].handler({"path": "a/b.txt"})
-    assert (payload["text"], failed) == ("你好", False)
+    assert (payload["text"], failed) == ("1: 你好\n(文件读完:共 1 行)", False)
 
     payload, failed = tools["ls"].handler({"path": "a"})
     assert (payload["text"], failed) == ("b.txt", False)

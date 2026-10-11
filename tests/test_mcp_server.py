@@ -294,7 +294,7 @@ def test_a_work_tool_round_trips_over_the_service(tmp_path: Path) -> None:
     result = result_of(
         call(service, 2, "tools/call", {"name": "read", "arguments": {"path": "a/b.txt"}})
     )
-    assert result["content"][0]["text"] == "你好"
+    assert result["content"][0]["text"] == "1: 你好\n(文件读完:共 1 行)"
 
     result = result_of(
         call(

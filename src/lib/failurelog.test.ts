@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { describeContinuationFailure } from "./continuationfail";
 import {
   FAILURE_LOG_CAP,
   describeLastFailure,
@@ -28,6 +29,32 @@ describe("readFailureLog / 存储是外部输入", () => {
     expect(readFailureLog(undefined)).toEqual([]);
     expect(readFailureLog("上次红过")).toEqual([]);
     expect(readFailureLog({ at: 1 })).toEqual([]);
+  });
+
+  it("续聊环节能读回(#51 新加的环节在判据与标签表里都对齐)", () => {
+    expect(readFailureLog([{ at: 1, where: "continuation", cause: "没找到输入框" }])).toEqual([
+      { at: 1, where: "continuation", cause: "没找到输入框" },
+    ]);
+  });
+
+  it("续聊失败落进册子:原因短句原样进 where/cause,悬停答得出断在哪一步", () => {
+    // #51 的验收主链:上报(页面世界)→ background 落痕 → 悬停回看.这里钉住"落痕 +
+    // 回看"这一段;上报的收发各有 parse 的单测在 channel.test.ts.
+    const at = localTime(14, 49, 36);
+    const cause = describeContinuationFailure("composer-absent");
+    const log = rememberFailure([], { at, where: "continuation", cause });
+    const shown = describeLastFailure(log, at + 120_000);
+    expect(shown).toContain("续聊");
+    expect(shown).toContain(cause);
+    expect(readFailureLog(log)).toHaveLength(1);
+  });
+
+  it('续聊连续失败不把配额刷满(沿用"同一次故障只记一笔",续聊不开后门)', () => {
+    const first = rememberFailure([], { at: 1, where: "continuation", cause: "没找到输入框" });
+    // 故障还没恢复 → 后续每一次都不另记
+    const second = rememberFailure(first, { at: 2, where: "continuation", cause: "没找到输入框" });
+    expect(second).toBe(first);
+    expect(readFailureLog(second)).toHaveLength(1);
   });
 
   it("长得不对的一条条丢掉,不猜也不补", () => {
@@ -143,6 +170,7 @@ describe("describeLastFailure / 一句里答得出三件事", () => {
     expect(where({ at, where: "call", cause: "x" })).toContain("工具调用");
     expect(where({ at, where: "watchdog", cause: "x" })).toContain("看门狗");
     expect(where({ at, where: "rounds", cause: "x" })).toContain("续聊刹车");
+    expect(where({ at, where: "continuation", cause: "没找到输入框" })).toContain("续聊");
   });
 
   it("册子外的环节名不进记录(免得悬停印出 undefined)", () => {

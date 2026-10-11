@@ -18,6 +18,9 @@ vendor/
 # 本机抓下来的站点证据（page-action.py capture）
 captures/
 
+# DeepSeek 网页 bundle（站点产物，随发版变）
+dsweb/bundle/
+
 # archify 生成的图源文件：按生成原样入库。格式化了就对不上
 # continuation-round.html，而 extract-diagram-svg.py 依赖它取 SVG。
 docs/diagrams/*.html

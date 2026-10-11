@@ -90,12 +90,19 @@ export class PageError extends Error {
 export const TOGGLE_ACTIONS: ReadonlySet<string> = new Set(["toggle.get", "toggle.set"]);
 
 /**
- * "代你发言"闸下的动作:**动写作框的**那些.读(`composer.read`)不受管--
- * 看一眼你写了什么不算替你开口.闸关着时这些一律回 `disabled`.
+ * "代你发言"闸下的动作:**替你把消息发出去**的那些(#52).
+ *
+ * 闸的语义收窄过一次:原先管的是"动写作框的",连 `composer.type` / `composer.clear`
+ * 都算;现在只管**发**.往输入框里写字不叫替人开口--协调者写的内容只落在草稿里,
+ * 人自己按发送才算.读(`composer.read`)照旧不受管.
+ *
+ * 闸关着时这些一律回 `disabled`,而**页面上不留任何东西**:
+ *
+ * - `composer.type` 放行,`send.enter` 拦下 → `send.page` 那条问题留在输入框当草稿,
+ *   用户自己按发送;
+ * - 自动续聊同理:只把短标记写进去,不按发送(`inject.content.ts` 的半自动分支).
  */
 export const SPEAK_GATED_ACTIONS: ReadonlySet<string> = new Set([
-  "composer.type",
-  "composer.clear",
   "send.enter",
   // 重新生成:让账号再生成一条回答,等同发送--按最坏拦(同圆键的先例).
   "message.retry",
@@ -113,6 +120,10 @@ export const SPEAK_GATED_ACTIONS: ReadonlySet<string> = new Set([
  */
 export const BACKOFF_GATED_ACTIONS: ReadonlySet<string> = new Set([
   ...SPEAK_GATED_ACTIONS,
+  // 写作框的写步(#52 之后它们出了 speak 闸,但**仍是写动作**,处罚区里照拦).
+  // 显式列出来,不靠"在 speak 名单里"顺带--那层语义已经换了,靠它会跟着漏.
+  "composer.type",
+  "composer.clear",
   "chat.new",
   // 切换会话:改页面状态是写;不动写作框,不"代你发言",故不进 speak 闸.
   "chat.switch",

@@ -16,7 +16,7 @@
  * 必须先把片段拼成正文,才谈得上认围栏.
  */
 
-import { parseAskFence, parseSendFences } from "./fence";
+import { compactToolCall, parseAskFence, parseSendFences } from "./fence";
 
 /** 围栏起始的字面量:兜底路径要在原文里找到它,再交给围栏解析. */
 const SEND_FENCE_OPENING = "```send";
@@ -259,9 +259,17 @@ function detectFences(
   return parse(cutFencedBlock(restored.slice(start), opening));
 }
 
-/** 响应原文 → 各块 send 围栏里的正文(一段工具调用 JSON 一条),按出现顺序. */
+/**
+ * 响应原文 → **转给中继的那几条**工具调用,按出现顺序.
+ *
+ * 取正文逐字照抄(`parseSendFences`),压紧是这之后的一步(#93):围栏解析只管
+ * "切出哪几块正文","送出去的那份长什么样"是这个出口的事.放到一起是因为
+ * 这就是入口认围栏的**唯一**去处--压紧漏在这里,线上就没有紧凑形态了.
+ */
 export function detectToolCalls(raw: string): readonly string[] {
-  return detectFences(raw, SEND_FENCE_OPENING, parseSendFences);
+  return detectFences(raw, SEND_FENCE_OPENING, (text) =>
+    parseSendFences(text).map(compactToolCall),
+  );
 }
 
 /** 响应原文 → ask 围栏里的问题(网页向人举手,不转给网关;一次只认第一块). */
