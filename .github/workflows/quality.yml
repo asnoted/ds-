@@ -1,0 +1,50 @@
+# 全仓检查闸（retro 的 finding #1）
+#
+# 为什么要有这个：ADR-0019 删掉了当时唯一的工作流, CI 一度是空的, 只剩
+# `.husky/pre-commit`。本地钩子只护得住**在装了钩子的机器上、没加
+# --no-verify 的提交**——它护不住 fork 的 PR、直推 main、或者别人机器上
+# 压根没装依赖的情况。「跑不跑得到检查」不该靠人的记性。
+#
+# 跑 `pnpm quality`(一条命令跑全: eslint · tsc · vitest · prettier ·
+# ruff · pytest · 中文标点守卫), 与本地 `pre-commit` 的覆盖面重合是有意的:
+# 本地钩子为了快只跑暂存区, 这里跑全仓。
+name: quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # 版本从 package.json 的 packageManager / engines 取, 不在这里写死——
+      # 写死的那天就会有人升 Node 而 CI 悄悄在旧版本上跑。
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # dsb 刻意零依赖, 但 dev 组带 pytest/ruff; uv 按 pyproject 装。
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 跑全量检查
+        run: pnpm quality
