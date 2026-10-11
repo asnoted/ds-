@@ -149,6 +149,13 @@
 Issues live in GitHub Issues on `copytht/ds-`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 issue 与 PR 共用一个编号空间,裸 `#42` 可能是 PR;**PR 不是需求面**(本仓不把外部 PR 当 feature request 处理).
 
+**账面自洽用 `uv run scripts/audit-issues.py`**(只读,不进 `pnpm quality` -- 它要 `gh` 与网络).
+它按 `triage-labels.md` 查五件事: 开票缺/多角色标签, 关票还挂 `needs-*`, `wontfix` 与
+`ready-*` 打架, 开票零标签, `needs-info` 正文与评论皆空的僵尸票. **手工点票会算错**
+(2026-10-11 正则写错一次, 把有完整验证记录的 #76 报成"无去向"), 所以清点交给它.
+`--trace` 另报关票在提交历史里有无 `#编号` 点名, 属信息级 -- 早期提交本就没引用编号的惯例,
+要改是改今后的规矩.
+
 ### Triage labels
 
 Five canonical roles, label strings equal to the role names (`needs-triage` / `needs-info` / `ready-for-agent` /
