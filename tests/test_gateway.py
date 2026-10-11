@@ -1,4 +1,4 @@
-"""MCP 网关：stdio 子进程的拉起、汇总、转发、限额，以及三个失败码的册子。"""
+"""MCP 网关:stdio 子进程的拉起,汇总,转发,限额,以及三个失败码的册子."""
 
 from __future__ import annotations
 
@@ -27,11 +27,11 @@ from dsb.gateway import (
     text_of_result,
 )
 
-#: 替身 MCP server：说标准 JSON-RPC over stdio。按 arguments.text 的暗号走四种岔路。
+#: 替身 MCP server:说标准 JSON-RPC over stdio.按 arguments.text 的暗号走四种岔路.
 FAKE_SERVER = """
 import json, os, sys, time
 
-# 工具件数可配：单服务工具数上限那条判据要拿一张超长的表来试（第一件恒叫 echo）。
+# 工具件数可配:单服务工具数上限那条判据要拿一张超长的表来试(第一件恒叫 echo).
 TOOLS = [
     {
         "name": "echo" if index == 0 else "echo%d" % index,
@@ -51,7 +51,7 @@ for line in sys.stdin:
         continue
     method, rid = msg.get("method"), msg.get("id")
     if method is None or rid is None:
-        continue  # 我们的 notifications/initialized：收下不答
+        continue  # 我们的 notifications/initialized:收下不答
     if method == "initialize":
         reply = {"jsonrpc": "2.0", "id": rid, "result": {
             "protocolVersion": "2025-06-18",
@@ -179,7 +179,7 @@ def test_text_of_result_dumps_whole_when_there_is_no_text_block() -> None:
     assert failed is False
 
 
-# ---- 整链：起、列、转 ----
+# ---- 整链:起,列,转 ----
 
 
 def test_gateway_starts_the_server_and_lists_prefixed_tools(gateway: Gateway) -> None:
@@ -203,7 +203,7 @@ def test_a_child_is_error_flows_through_as_failed(gateway: Gateway) -> None:
 
 def test_the_three_codes_of_the_book(gateway: Gateway) -> None:
     handler = gateway.tools()[0].handler
-    # 底层协议层报错 → unexpected-response（它对模型的「话」走 isError，不走这儿）
+    # 底层协议层报错 → unexpected-response(它对模型的"话"走 isError,不走这儿)
     payload, failed = handler({"text": "boom"})
     assert ERROR_UNEXPECTED in payload["text"] and failed
     # 子进程没起 / 中途没了 → tool-not-running
@@ -286,5 +286,5 @@ def test_a_server_with_too_many_tools_is_capped_and_logged(
 def test_stop_takes_the_children_down(fake_script: Path) -> None:
     gate = make_gateway(fake_script)
     gate.stop()
-    # 再停一次是幂等的，不许炸
+    # 再停一次是幂等的,不许炸
     gate.stop()

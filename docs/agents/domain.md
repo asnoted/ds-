@@ -48,6 +48,6 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because..._
 
 ADRs are immutable once accepted: the header's first three lines are `Status` / `Date` / `Supersedes`. To overturn one, write a **new** ADR whose `Supersedes:` names the old one and leave the old file exactly as it was; the supersession graph is how readers tell which ADRs are still in force.

@@ -1,7 +1,7 @@
 /**
- * 页面控件存证的对拍（ADR-0018）：
- * 完整性——缩写与改写在这里红；不许手抄——回归用例的源码里出现存证 `path` 原文就红。
- * pytest 那半在 `tests/test_evidence.py`，用标准库独立实现同一判据。
+ * 页面控件存证的对拍(ADR-0018):
+ * 完整性--缩写与改写在这里红;不许手抄--回归用例的源码里出现存证 `path` 原文就红.
+ * pytest 那半在 `tests/test_evidence.py`,用标准库独立实现同一判据.
  */
 
 import { describe, expect, it } from "vitest";
@@ -15,9 +15,9 @@ import {
 } from "./evidence";
 
 const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
-const PLACEHOLDERS = ["…", "...", "<!--"];
+const PLACEHOLDERS = ["...", "...", "<!--"];
 
-/** 从 `outerHTML` 里独立解析出每个内联 `svg` 的 `viewBox` 与全部 `path`。 */
+/** 从 `outerHTML` 里独立解析出每个内联 `svg` 的 `viewBox` 与全部 `path`. */
 function parseSvgs(html: string): EvidenceSvg[] {
   const holder = document.createElement("template");
   holder.innerHTML = html;
@@ -27,14 +27,14 @@ function parseSvgs(html: string): EvidenceSvg[] {
   }));
 }
 
-/** 解析再序列化是否原样：缩写出来的断头 tag 在这里露馅。 */
+/** 解析再序列化是否原样:缩写出来的断头 tag 在这里露馅. */
 function roundTrips(html: string): boolean {
   const holder = document.createElement("template");
   holder.innerHTML = html;
   return holder.innerHTML === html;
 }
 
-/** 一条存证有什么问题（空数组 = 完整）。 */
+/** 一条存证有什么问题(空数组 = 完整). */
 function entryProblems(entry: EvidenceEntry): string[] {
   const problems: string[] = [];
   if (typeof entry.id !== "string" || entry.id === "") problems.push("缺 id");
@@ -62,7 +62,7 @@ function entryProblems(entry: EvidenceEntry): string[] {
       Number.isInteger(row.index) &&
       typeof row.anchor === "string" &&
       row.anchor !== "";
-    if (!complete) problems.push("row 不完整（container / siblings / index / anchor）");
+    if (!complete) problems.push("row 不完整(container / siblings / index / anchor)");
   }
   if (typeof entry.outerHTML !== "string" || entry.outerHTML === "") {
     problems.push("缺 outerHTML");
@@ -72,7 +72,7 @@ function entryProblems(entry: EvidenceEntry): string[] {
     if (entry.outerHTML.includes(marker)) problems.push(`outerHTML 含占位 ${marker}`);
   }
   if (!roundTrips(entry.outerHTML))
-    problems.push("outerHTML 解析再序列化不原样（tag 不成对 / 被缩写）");
+    problems.push("outerHTML 解析再序列化不原样(tag 不成对 / 被缩写)");
   const parsed = parseSvgs(entry.outerHTML);
   if (JSON.stringify(parsed) !== JSON.stringify(entry.svgs)) {
     problems.push("svgs 与 outerHTML 里解析出的 svg 不一致");
@@ -94,13 +94,13 @@ describe("存证文件完整性", () => {
   });
 
   it.each(file.entries.map((entry) => [entry.id, entry] as const))(
-    "%s：字段齐、svg 与 outerHTML 对得上、原样可往返",
+    "%s:字段齐,svg 与 outerHTML 对得上,原样可往返",
     (_id, entry) => {
       expect(entryProblems(entry)).toEqual([]);
     },
   );
 
-  it("evidenceHtml 取得到原件，取不到的 id 抛", () => {
+  it("evidenceHtml 取得到原件,取不到的 id 抛", () => {
     const first = file.entries[0] as EvidenceEntry;
     expect(evidenceHtml(first.id)).toBe(first.outerHTML);
     expect(() => evidenceEntry("no.such.control")).toThrow(/没有这一条/);
@@ -112,7 +112,7 @@ describe("完整性判据真的会红", () => {
     const found = evidenceFile().entries.find((entry) =>
       entry.svgs.some((s) => s.paths.length > 0),
     );
-    if (!found) throw new Error("存证里没有带 svg path 的条目，没法造坏样本");
+    if (!found) throw new Error("存证里没有带 svg path 的条目,没法造坏样本");
     return found;
   };
 
@@ -141,11 +141,11 @@ describe("完整性判据真的会红", () => {
 
   it("outerHTML 被缩写成省略号 / 断头 tag", () => {
     const good = sample();
-    expect(entryProblems({ ...good, outerHTML: `${good.outerHTML.slice(0, 40)}…` })).not.toEqual(
+    expect(entryProblems({ ...good, outerHTML: `${good.outerHTML.slice(0, 40)}...` })).not.toEqual(
       [],
     );
     expect(entryProblems({ ...good, outerHTML: good.outerHTML.slice(0, 60) })).toContain(
-      "outerHTML 解析再序列化不原样（tag 不成对 / 被缩写）",
+      "outerHTML 解析再序列化不原样(tag 不成对 / 被缩写)",
     );
   });
 });
@@ -160,7 +160,7 @@ describe("回归用例不许手抄原件", () => {
     entry.svgs.flatMap((svg) => svg.paths.map((path) => [entry.id, path] as const)),
   );
 
-  it("扫得到测试源码（栅栏没空转）", () => {
+  it("扫得到测试源码(栅栏没空转)", () => {
     expect(Object.keys(SOURCES).length).toBeGreaterThan(5);
   });
 

@@ -10,7 +10,7 @@ import {
 } from "./toggle";
 
 describe("readToggle", () => {
-  it("缺键即关：总开关默认关，装完不写任何默认值", () => {
+  it("缺键即关:总开关默认关,装完不写任何默认值", () => {
     expect(readToggle(undefined)).toBe(false);
     expect(readToggle(null)).toBe(false);
   });
@@ -19,7 +19,7 @@ describe("readToggle", () => {
     expect(readToggle(true)).toBe(true);
   });
 
-  it("认不出的值一律按关，不猜", () => {
+  it("认不出的值一律按关,不猜", () => {
     expect(readToggle("true")).toBe(false);
     expect(readToggle(1)).toBe(false);
     expect(readToggle(false)).toBe(false);

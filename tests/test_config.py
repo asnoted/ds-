@@ -1,4 +1,4 @@
-"""`.env` 解析（对拍：`protocol/fixtures/config.json`）：只解析，不发任何请求。"""
+"""`.env` 解析(对拍:`protocol/fixtures/config.json`):只解析,不发任何请求."""
 
 from __future__ import annotations
 

@@ -45,23 +45,23 @@ import type { ActionFrame } from "./action";
 import { ACTION_ERROR_COMPOSER_ABSENT, PageError } from "./action";
 import { actionErrorCodes } from "./fixtures";
 
-/** 一个指向某动作的请求帧，`actionListener` 那层收的就是它。 */
+/** 一个指向某动作的请求帧,`actionListener` 那层收的就是它. */
 function requestFor(action: string): unknown {
   return { type: ACTION_MESSAGE_TYPE, frame: { ...ACTION_FRAME, action } };
 }
 
-describe("停手信封（页面世界报「续聊到顶」）", () => {
-  it("页面世界 → 隔离世界：kind/ id / cause 对得上就收", () => {
+describe('停手信封(页面世界报"续聊到顶")', () => {
+  it("页面世界 → 隔离世界:kind/ id / cause 对得上就收", () => {
     const message = stopMessage("rounds-1", "continuation-limit");
     expect(parseChainMessage(message)).toEqual(message);
   });
 
-  it("cause 空的 / 缺的一律不收（停手不说原因等于没说）", () => {
+  it("cause 空的 / 缺的一律不收(停手不说原因等于没说)", () => {
     expect(parseChainMessage({ ...stopMessage("r", "x"), cause: "   " })).toBeNull();
     expect(parseChainMessage({ source: CHAIN_MESSAGE_SOURCE, kind: "stop", id: "r" })).toBeNull();
   });
 
-  it("隔离世界 → background：带上页面会话 id，缺省是 null", () => {
+  it("隔离世界 → background:带上页面会话 id,缺省是 null", () => {
     expect(parseStopReport(stopReportMessage("rounds-1", "continuation-limit", "abc"))).toEqual(
       stopReportMessage("rounds-1", "continuation-limit", "abc"),
     );
@@ -76,7 +76,7 @@ describe("停手信封（页面世界报「续聊到顶」）", () => {
 });
 
 describe("页面世界 ↔ 隔离世界的信封", () => {
-  it("围栏正文信封原样过（一轮一块）", () => {
+  it("围栏正文信封原样过(一轮一块)", () => {
     const message = callMessage("send-1", ['{"tool":"fs_read_file","arguments":{}}']);
     expect(message).toEqual({
       source: CHAIN_MESSAGE_SOURCE,
@@ -87,13 +87,13 @@ describe("页面世界 ↔ 隔离世界的信封", () => {
     expect(parseChainMessage(message)).toEqual(message);
   });
 
-  it("一轮多块也原样过（顺序不动）", () => {
+  it("一轮多块也原样过(顺序不动)", () => {
     const message = callMessage("send-1", ['{"tool":"a","arguments":{}}', '{"tool":"b"}']);
     expect(parseChainMessage(message)?.kind).toBe("call");
     expect(parseChainMessage(message)).toEqual(message);
   });
 
-  it("各块必须是非空文本，空数组不算（一轮至少一块）", () => {
+  it("各块必须是非空文本,空数组不算(一轮至少一块)", () => {
     const base = { source: CHAIN_MESSAGE_SOURCE, kind: "call", id: "send-1" };
     expect(parseChainMessage({ ...base, calls: [] })).toBeNull();
     expect(parseChainMessage({ ...base, calls: ["  "] })).toBeNull();
@@ -101,7 +101,7 @@ describe("页面世界 ↔ 隔离世界的信封", () => {
     expect(parseChainMessage({ ...base, calls: "{}" })).toBeNull();
   });
 
-  it("结果信封带同构载荷，原样过", () => {
+  it("结果信封带同构载荷,原样过", () => {
     const message = resultMessage("send-1", { status: "ok", answer: "答复" });
     expect(parseChainMessage(message)).toEqual(message);
 
@@ -109,7 +109,7 @@ describe("页面世界 ↔ 隔离世界的信封", () => {
     expect(parseChainMessage(failed)).toEqual(failed);
   });
 
-  it("不是我们的标记、形状不对的一律不收", () => {
+  it("不是我们的标记,形状不对的一律不收", () => {
     expect(parseChainMessage(undefined)).toBeNull();
     expect(parseChainMessage(null)).toBeNull();
     expect(parseChainMessage("ds-/chain")).toBeNull();
@@ -192,19 +192,19 @@ describe("隔离世界 ↔ background 的信封", () => {
   });
 });
 
-describe("said 上报（围栏之外的话）", () => {
+describe("said 上报(围栏之外的话)", () => {
   it("链消息与 runtime 上报都原样过", () => {
-    const chain = saidMessage("said-1", "先跟人说一句。");
+    const chain = saidMessage("said-1", "先跟人说一句.");
     expect(chain).toEqual({
       source: CHAIN_MESSAGE_SOURCE,
       kind: "said",
       id: "said-1",
-      text: "先跟人说一句。",
+      text: "先跟人说一句.",
     });
     expect(parseChainMessage(chain)).toEqual(chain);
 
-    const report = saidReportMessage("先跟人说一句。");
-    expect(report).toEqual({ type: SAID_MESSAGE_TYPE, text: "先跟人说一句。" });
+    const report = saidReportMessage("先跟人说一句.");
+    expect(report).toEqual({ type: SAID_MESSAGE_TYPE, text: "先跟人说一句." });
     expect(parseSaidReport(report)).toEqual(report);
   });
 
@@ -219,7 +219,7 @@ describe("said 上报（围栏之外的话）", () => {
   });
 });
 
-describe("工具目录（协议说明照它拼）", () => {
+describe("工具目录(协议说明照它拼)", () => {
   const TOOLS = [
     { name: "fs_read_file", description: "[fs] 读文件内容", params: ["path", "encoding?"] },
     { name: "shell_run", description: "[sh] 跑命令", params: [] },
@@ -230,7 +230,7 @@ describe("工具目录（协议说明照它拼）", () => {
     expect(parseChainMessage(message)).toEqual(message);
   });
 
-  it("请求只认标记，回话带目录或 null（取不到沿用上一份）", () => {
+  it("请求只认标记,回话带目录或 null(取不到沿用上一份)", () => {
     expect(parseToolsRequest(toolsRequestMessage())).toEqual(toolsRequestMessage());
     expect(parseToolsRequest({ type: TOOLS_REQUEST_MESSAGE_TYPE })).toEqual(toolsRequestMessage());
     expect(parseToolsRequest({ type: "ds-/other" })).toBeNull();
@@ -254,14 +254,14 @@ describe("工具目录（协议说明照它拼）", () => {
   });
 });
 
-describe("ask 信封（#26）", () => {
+describe("ask 信封(#26)", () => {
   it("ask 链消息原样过", () => {
-    const message = askMessage("ask-1", "选 A 还是 B？");
+    const message = askMessage("ask-1", "选 A 还是 B?");
     expect(message).toEqual({
       source: CHAIN_MESSAGE_SOURCE,
       kind: "ask",
       id: "ask-1",
-      question: "选 A 还是 B？",
+      question: "选 A 还是 B?",
     });
     expect(parseChainMessage(message)).toEqual(message);
   });
@@ -276,7 +276,7 @@ describe("ask 信封（#26）", () => {
     expect(parseChainMessage(message)).toEqual(message);
   });
 
-  it("ask 上报原样过，页面会话可带可不带", () => {
+  it("ask 上报原样过,页面会话可带可不带", () => {
     const withPage = askReportMessage("ask-1", "问题", "sid-1");
     expect(parseAskReport(withPage)).toEqual(withPage);
     expect(parseAskReport(askReportMessage("ask-1", "问题"))).toEqual(
@@ -284,7 +284,7 @@ describe("ask 信封（#26）", () => {
     );
   });
 
-  it("ask 清除原样过，页面会话可带可不带", () => {
+  it("ask 清除原样过,页面会话可带可不带", () => {
     const withPage = askClearedReportMessage("ask-1", "sid-1");
     expect(parseAskClearedReport(withPage)).toEqual(withPage);
     expect(parseAskClearedReport(askClearedReportMessage("ask-1"))).toEqual(
@@ -299,12 +299,12 @@ describe("ask 信封（#26）", () => {
     expect(parseAskReport({ type: ASK_MESSAGE_TYPE, id: "1", question: "q", page: "" })).toBeNull();
     expect(parseAskClearedReport({ type: ASK_CLEARED_MESSAGE_TYPE, id: "" })).toBeNull();
     expect(parseAskClearedReport({ type: ASK_CLEARED_MESSAGE_TYPE, id: "1", page: 7 })).toBeNull();
-    // 两条 ask 信封互不串：ask 上报的形状对 ask 清除不认。
+    // 两条 ask 信封互不串:ask 上报的形状对 ask 清除不认.
     expect(parseAskClearedReport(askReportMessage("ask-1", "问题"))).toBeNull();
   });
 });
 
-describe("账号处境上报（#2）", () => {
+describe("账号处境上报(#2)", () => {
   it("上报原样过", () => {
     const message = accountReportMessage({
       kind: "muted",
@@ -348,7 +348,7 @@ describe("账号处境上报（#2）", () => {
   });
 });
 
-describe("isReplyPayload · 载荷同构", () => {
+describe("isReplyPayload / 载荷同构", () => {
   it("ok 只认带 string answer 的", () => {
     expect(isReplyPayload({ status: "ok", answer: "" })).toBe(true);
     expect(isReplyPayload({ status: "ok" })).toBe(false);
@@ -367,7 +367,7 @@ describe("isReplyPayload · 载荷同构", () => {
   });
 });
 
-/** 一件带 target 的动作帧：background 打包、内容脚本拆包都用它对拍。 */
+/** 一件带 target 的动作帧:background 打包,内容脚本拆包都用它对拍. */
 const ACTION_FRAME: ActionFrame = {
   type: "action",
   id: "7-x",
@@ -377,7 +377,7 @@ const ACTION_FRAME: ActionFrame = {
 };
 
 describe("background ↔ 内容脚本的动作信封", () => {
-  it("请求原样过，响应是同构载荷", () => {
+  it("请求原样过,响应是同构载荷", () => {
     const request = actionRequestMessage(ACTION_FRAME);
     expect(request.type).toBe(ACTION_MESSAGE_TYPE);
     expect(parseActionRequest(request)?.frame).toEqual(ACTION_FRAME);
@@ -405,8 +405,8 @@ describe("background ↔ 内容脚本的动作信封", () => {
   });
 });
 
-describe("内容脚本的动作收信（entrypoints/content.ts 接的那一层）", () => {
-  /** listener 是同步返回、sendResponse 异步被调：等一轮微任务再断言。 */
+describe("内容脚本的动作收信(entrypoints/content.ts 接的那一层)", () => {
+  /** listener 是同步返回,sendResponse 异步被调:等一轮微任务再断言. */
   async function respond(
     roster: Parameters<typeof actionListener>[0],
     message: unknown,
@@ -419,14 +419,14 @@ describe("内容脚本的动作收信（entrypoints/content.ts 接的那一层�
     return sendResponse;
   }
 
-  it("认得出的动作帧当场回一个 ActionOutcome（本轮名册空 → unknown-action）", async () => {
+  it("认得出的动作帧当场回一个 ActionOutcome(本轮名册空 → unknown-action)", async () => {
     const sendResponse = await respond({}, { type: ACTION_MESSAGE_TYPE, frame: ACTION_FRAME });
 
     expect(sendResponse).toHaveBeenCalledTimes(1);
     expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: "unknown-action" });
   });
 
-  it("名册里有的动作走执行器，结果当 result 收下", async () => {
+  it("名册里有的动作走执行器,结果当 result 收下", async () => {
     const handler = vi.fn(() => ({ state: "idle" }));
     const sendResponse = await respond(
       { "page.state": handler },
@@ -440,7 +440,7 @@ describe("内容脚本的动作收信（entrypoints/content.ts 接的那一层�
     expect(sendResponse).toHaveBeenCalledWith({ ok: true, result: { state: "idle" } });
   });
 
-  it("执行器抛 PageError → 回它自带的码，别一律 tab-gone", async () => {
+  it("执行器抛 PageError → 回它自带的码,别一律 tab-gone", async () => {
     const handler = vi.fn(() => {
       throw new PageError(ACTION_ERROR_COMPOSER_ABSENT, "页面上没有写作框");
     });
@@ -449,7 +449,7 @@ describe("内容脚本的动作收信（entrypoints/content.ts 接的那一层�
     expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: "composer-absent" });
   });
 
-  it("执行器抛别的错 → 折成 tab-gone（这一跳走不通，不该猜是哪一种）", async () => {
+  it("执行器抛别的错 → 折成 tab-gone(这一跳走不通,不该猜是哪一种)", async () => {
     const handler = vi.fn(() => {
       throw new Error("undefined is not a function");
     });
@@ -458,7 +458,7 @@ describe("内容脚本的动作收信（entrypoints/content.ts 接的那一层�
     expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: "tab-gone" });
   });
 
-  it("PageError 的码必须在册——不在册的折成 tab-gone", async () => {
+  it("PageError 的码必须在册--不在册的折成 tab-gone", async () => {
     const handler = vi.fn(() => {
       throw new PageError("随便编一个码", "x");
     });
@@ -469,7 +469,7 @@ describe("内容脚本的动作收信（entrypoints/content.ts 接的那一层�
     expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: "tab-gone" });
   });
 
-  it("认不出的消息不响应（不抢 send 的消息、不回 undefined 当结果）", async () => {
+  it("认不出的消息不响应(不抢 send 的消息,不回 undefined 当结果)", async () => {
     const sendResponse = vi.fn();
     expect(
       actionListener({})(sendRequestMessage("send-1", ["问题"]), undefined, sendResponse),

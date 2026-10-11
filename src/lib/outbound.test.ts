@@ -31,7 +31,7 @@ describe("drawWindowInterval", () => {
     expect(drawWindowInterval(fixedRandom(Number.POSITIVE_INFINITY))).toBe(3000);
   });
 
-  it("任取随机数抽到的间隔都在 3~5 秒内（ADR-0002）", () => {
+  it("任取随机数抽到的间隔都在 3~5 秒内(ADR-0002)", () => {
     for (let i = 0; i <= 100; i += 1) {
       const interval = drawWindowInterval(fixedRandom(i / 100));
       expect(interval).toBeGreaterThanOrEqual(WINDOW_MIN_MS);
@@ -79,7 +79,7 @@ describe("stepOutboundWindow", () => {
     expect(random).not.toHaveBeenCalled();
   });
 
-  it("窗口之间连着推进也不会连发，直到间隔走完", () => {
+  it("窗口之间连着推进也不会连发,直到间隔走完", () => {
     const random = vi.fn(() => 0);
     let window = newOutboundWindow();
     let opens = 0;
@@ -90,7 +90,7 @@ describe("stepOutboundWindow", () => {
       if (step.opened) opens += 1;
     }
 
-    // t=0 开首窗，3000ms 间隔：0s 开、3s 开、6s 开，9s 恰好等到边界。
+    // t=0 开首窗,3000ms 间隔:0s 开,3s 开,6s 开,9s 恰好等到边界.
     expect(opens).toBe(4);
     expect(window).toEqual({ openedAt: 9000, intervalMs: 3000 });
   });

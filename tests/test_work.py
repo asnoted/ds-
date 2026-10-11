@@ -1,4 +1,4 @@
-"""工作工具：路径沙箱、五件行为、截断与上限、``.git`` 护栏、各错码（ADR-0012）。"""
+"""工作工具:路径沙箱,五件行为,截断与上限,``.git`` 护栏,各错码(ADR-0012)."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def test_list_dir_sorts_and_marks_directories(tmp_path: Path) -> None:
 
 
 def test_list_dir_of_an_empty_directory_says_so(tmp_path: Path) -> None:
-    assert list_dir(tmp_path) == "（空）"
+    assert list_dir(tmp_path) == "(空)"
 
 
 def test_list_dir_missing_is_not_found(tmp_path: Path) -> None:
@@ -118,7 +118,7 @@ def test_list_dir_truncates_at_the_limit(tmp_path: Path, monkeypatch: pytest.Mon
     for name in ("a", "b", "c"):
         (tmp_path / name).write_text(name, encoding="utf-8")
     listing = list_dir(tmp_path)
-    assert listing.splitlines() == ["a", "b", "…（已截断，共 3 项）"]
+    assert listing.splitlines() == ["a", "b", "...(已截断,共 3 项)"]
 
 
 def test_list_dir_refuses_out_of_root(tmp_path: Path) -> None:
@@ -142,7 +142,7 @@ def test_read_truncates_with_an_annotation(tmp_path: Path, monkeypatch: pytest.M
     (tmp_path / "f.txt").write_text("0123456789", encoding="utf-8")
     result = read_text(tmp_path, "f.txt")
     assert result.startswith("01234")
-    assert "已截断，超出 5 字符" in result
+    assert "已截断,超出 5 字符" in result
 
 
 def test_read_missing_is_not_found(tmp_path: Path) -> None:
@@ -166,7 +166,7 @@ def test_read_binary_reports_io_failed(tmp_path: Path) -> None:
 
 
 def test_read_inside_dot_git_is_allowed(tmp_path: Path) -> None:
-    """读侧不拦 ``.git``——只有写/改拦。"""
+    """读侧不拦 ``.git``--只有写/改拦."""
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("[core]", encoding="utf-8")
     assert read_text(tmp_path, ".git/config") == "[core]"
@@ -280,7 +280,7 @@ def test_grep_returns_relative_path_line_and_text(tmp_path: Path) -> None:
 
 def test_grep_without_matches_says_so(tmp_path: Path) -> None:
     (tmp_path / "f.txt").write_text("abc", encoding="utf-8")
-    assert grep_tree(tmp_path, "zzz") == "（无命中）"
+    assert grep_tree(tmp_path, "zzz") == "(无命中)"
 
 
 def test_grep_skips_dot_git(tmp_path: Path) -> None:
@@ -310,7 +310,7 @@ def test_grep_skips_symlinks_that_leave_the_root(tmp_path: Path) -> None:
 def test_grep_skips_oversized_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("dsb.work.WORK_FILE_LIMIT", 4)
     (tmp_path / "big.txt").write_text("needle", encoding="utf-8")
-    assert grep_tree(tmp_path, "needle") == "（无命中）"
+    assert grep_tree(tmp_path, "needle") == "(无命中)"
 
 
 def test_grep_truncates_long_lines(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -364,7 +364,7 @@ def test_protected_git_only_covers_dot_git(tmp_path: Path) -> None:
 
 
 def test_protected_git_normalizes_paths_before_comparing(tmp_path: Path) -> None:
-    """护栏不吃「两边指同一处、字面不同」的亏（如 root 是符号链接）：未归一路径也必须挡住。"""
+    """护栏不吃'两边指同一处,字面不同'的亏(如 root 是符号链接):未归一路径也必须挡住."""
     root = tmp_path / "root"
     root.mkdir()
     (root / ".git").mkdir()
@@ -445,7 +445,7 @@ def test_handlers_round_trip_through_the_tools(tmp_path: Path) -> None:
     payload, failed = tools["edit"].handler(
         {"path": "a/b.txt", "old_string": "你好", "new_string": "再见"}
     )
-    assert (payload["text"], failed) == ("已替换 1 处：a/b.txt", False)
+    assert (payload["text"], failed) == ("已替换 1 处:a/b.txt", False)
     assert (tmp_path / "a" / "b.txt").read_text(encoding="utf-8") == "再见"
 
     payload, failed = tools["grep"].handler({"pattern": "再见", "path": "a"})
@@ -491,7 +491,7 @@ def test_ls_accepts_a_missing_path(tmp_path: Path) -> None:
 
 
 def test_arguments_type_is_a_mapping(tmp_path: Path) -> None:
-    """处理器只认 ``Mapping``（与 :data:`dsb.mcp.ToolHandler` 一致）。"""
+    """处理器只认 ``Mapping``(与 :data:`dsb.mcp.ToolHandler` 一致)."""
     handler = tool_by_name(tmp_path, "ls").handler
     arguments: Mapping[str, Any] = {"path": "."}
     assert handler(arguments)[1] is False

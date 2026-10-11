@@ -56,12 +56,12 @@ import {
 } from "../src/lib/toggle";
 
 /**
- * 隔离世界这一层握着 `browser.*`，页面世界没有：总开关从 `storage.local` 读了广播过去，
- * 页面世界认出的围栏从这里转给 background 打本机网关（`POST /mcp`），结果原样送回
- * 页面世界；工具目录反过来每分钟问 background 要一次，广播给页面世界拼协议说明。
+ * 隔离世界这一层握着 `browser.*`,页面世界没有:总开关从 `storage.local` 读了广播过去,
+ * 页面世界认出的围栏从这里转给 background 打本机网关(`POST /mcp`),结果原样送回
+ * 页面世界;工具目录反过来每分钟问 background 要一次,广播给页面世界拼协议说明.
  *
- * 站点范围在 manifest 权限里钉死为 chat.deepseek.com（权限钉死），
- * 总开关不参与站点判定，只决定页面世界要不要接管。
+ * 站点范围在 manifest 权限里钉死为 chat.deepseek.com(权限钉死),
+ * 总开关不参与站点判定,只决定页面世界要不要接管.
  */
 export default defineContentScript({
   matches: ["https://chat.deepseek.com/*"],
@@ -72,7 +72,7 @@ export default defineContentScript({
       window.postMessage(stateMessage(readToggle(stored[TOGGLE_STORAGE_KEY])), "*");
     };
 
-    /** 页面世界认出的围栏 → background 打网关 → 结果按同一条信封原路回去。 */
+    /** 页面世界认出的围栏 → background 打网关 → 结果按同一条信封原路回去. */
     const forwardToRelay = async (call: CallMessage): Promise<void> => {
       try {
         const response = await browser.runtime.sendMessage(sendRequestMessage(call.id, call.calls));
@@ -87,7 +87,7 @@ export default defineContentScript({
       }
     };
 
-    /** 页面世界报上来的围栏之外的话 → background 记进 said；不等回话。 */
+    /** 页面世界报上来的围栏之外的话 → background 记进 said;不等回话. */
     const reportSaid = async (said: SaidMessage): Promise<void> => {
       try {
         await browser.runtime.sendMessage(saidReportMessage(said.text));
@@ -96,8 +96,8 @@ export default defineContentScript({
       }
     };
 
-    /** 网页排了 ask 围栏问人（#26）：报给 background 挂「等人回」。
-     * 不等回话——上报是通知，不是请求。 */
+    /** 网页排了 ask 围栏问人(#26):报给 background 挂"等人回".
+     * 不等回话--上报是通知,不是请求. */
     const reportAsk = async (ask: AskMessage): Promise<void> => {
       try {
         await browser.runtime.sendMessage(
@@ -108,7 +108,7 @@ export default defineContentScript({
       }
     };
 
-    /** 对话继续了（人答了或模型自己往下走了）：通知 background 清掉「等人回」。 */
+    /** 对话继续了(人答了或模型自己往下走了):通知 background 清掉"等人回". */
     const reportAskCleared = async (cleared: AskClearedMessage): Promise<void> => {
       try {
         await browser.runtime.sendMessage(
@@ -119,7 +119,7 @@ export default defineContentScript({
       }
     };
 
-    /** 自动续聊到顶停手：报给 background 留一笔（ADR-0004），不进对话流。 */
+    /** 自动续聊到顶停手:报给 background 留一笔(ADR-0004),不进对话流. */
     const reportStop = async (stop: StopMessage): Promise<void> => {
       try {
         await browser.runtime.sendMessage(
@@ -131,9 +131,9 @@ export default defineContentScript({
     };
 
     /**
-     * 工具目录同步（协议说明要照着它拼）：总开关开着时 60s 问 background 要一次，
-     * 取到就广播给页面世界；没取到（网关没连上）一声不吭——页面世界沿用上一份，
-     * 说明里写着「工具表暂未取到」。
+     * 工具目录同步(协议说明要照着它拼):总开关开着时 60s 问 background 要一次,
+     * 取到就广播给页面世界;没取到(网关没连上)一声不吭--页面世界沿用上一份,
+     * 说明里写着"工具表暂未取到".
      */
     const TOOLS_SYNC_INTERVAL_MS = 60_000;
     let toolsTimer: ReturnType<typeof setInterval> | undefined;
@@ -144,7 +144,7 @@ export default defineContentScript({
         if (parsed === null || parsed.tools === null) return;
         window.postMessage(toolsMessage(nextMessageId("tools"), parsed.tools), "*");
       } catch {
-        // 目录是通知：送不出去不重试，下一轮还在。
+        // 目录是通知:送不出去不重试,下一轮还在.
       }
     };
     const startToolsSync = (): void => {
@@ -159,8 +159,8 @@ export default defineContentScript({
     };
 
     /**
-     * 账号处境上报（#2）：总开关开着时 30s 一报。禁言期写路径全断，
-     * 悬停得把这层说清（「禁言至何时」）——上报是通知，不等回话。
+     * 账号处境上报(#2):总开关开着时 30s 一报.禁言期写路径全断,
+     * 悬停得把这层说清("禁言至何时")--上报是通知,不等回话.
      */
     const ACCOUNT_REPORT_INTERVAL_MS = 30_000;
     let accountTimer: ReturnType<typeof setInterval> | undefined;
@@ -168,9 +168,9 @@ export default defineContentScript({
       try {
         const account = readAccount(readComposerPresent());
         await browser.runtime.sendMessage(accountReportMessage(account));
-        console.log(`[ds-] 账号处境已上报：${account.kind}`);
+        console.log(`[ds-] 账号处境已上报:${account.kind}`);
       } catch {
-        // 上报是通知：送不出去不重试，下一报还在。
+        // 上报是通知:送不出去不重试,下一报还在.
       }
     };
     const startAccountReporting = (): void => {
@@ -184,7 +184,7 @@ export default defineContentScript({
       accountTimer = undefined;
     };
 
-    // 两个内容脚本谁先谁后都可能：页面世界开口要就答一次，这边自己上来也报一次。
+    // 两个内容脚本谁先谁后都可能:页面世界开口要就答一次,这边自己上来也报一次.
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
 
@@ -215,15 +215,15 @@ export default defineContentScript({
     });
 
     /**
-     * 本地名册：动作名 → 执行器。实现的就往这里加一项，收信那层不用动。
-     * 没实现的动作由收信那层当场回 `unknown-action`（不白等中继的 30s）。
+     * 本地名册:动作名 → 执行器.实现的就往这里加一项,收信那层不用动.
+     * 没实现的动作由收信那层当场回 `unknown-action`(不白等中继的 30s).
      */
     const ACTION_ROSTER: ActionRoster = {
       "page.state": readPageState,
       "composer.read": readComposer,
       "composer.type": typeComposer,
       "composer.clear": clearComposer,
-      // 写作框旁边那两个小开关（#30）。
+      // 写作框旁边那两个小开关(#30).
       "think.get": readThink,
       "think.set": setThink,
       "search.get": readSearch,
@@ -232,32 +232,32 @@ export default defineContentScript({
       "button.click": buttonClick,
       "send.enter": pressEnter,
       "chat.new": newChat,
-      // 会话切换（chat-switch-action）：先读列表拿 id，再按 id / 标题切。
+      // 会话切换(chat-switch-action):先读列表拿 id,再按 id / 标题切.
       "chats.list": listChats,
       "chat.switch": switchChat,
-      // 侧栏开关（sidebar-toggle）：读写成对，同一个控件的两态。
+      // 侧栏开关(sidebar-toggle):读写成对,同一个控件的两态.
       "sidebar.get": readSidebar,
       "sidebar.set": setSidebar,
-      // 消息工具栏六项 + 代码块两项（message-and-code-actions）。
+      // 消息工具栏六项 + 代码块两项(message-and-code-actions).
       ...CONTROL_ACTIONS,
-      // 只读那批：读对话走 DOM（#20 口径），不碰站点的响应体。
+      // 只读那批:读对话走 DOM(#20 口径),不碰站点的响应体.
       "messages.list": listMessages,
       "messages.last": lastMessage,
-      // 等动作（#22）：等围栏、等回灌——只读，不动写作框。
+      // 等动作(#22):等围栏,等回灌--只读,不动写作框.
       "wait.fence": waitFence,
       "wait.reply": waitReply,
     };
 
-    // background 打过来的动作帧（走 `tabs.sendMessage`）：当场交回一个 ActionOutcome；
-    // 认不出的信封一声不吭，不抢 send 那条路的消息。
+    // background 打过来的动作帧(走 `tabs.sendMessage`):当场交回一个 ActionOutcome;
+    // 认不出的信封一声不吭,不抢 send 那条路的消息.
     browser.runtime.onMessage.addListener(actionListener(ACTION_ROSTER));
 
-    // 总开关改了立刻广播，刷新与重启靠 storage 自己保持。
+    // 总开关改了立刻广播,刷新与重启靠 storage 自己保持.
     browser.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== "local") return;
       if (!(TOGGLE_STORAGE_KEY in changes)) return;
       void broadcast();
-      // 账号处境上报跟着总开关走：关着时内容脚本不发声。
+      // 账号处境上报跟着总开关走:关着时内容脚本不发声.
       if (readToggle(changes[TOGGLE_STORAGE_KEY].newValue)) {
         startAccountReporting();
         startToolsSync();
@@ -268,7 +268,7 @@ export default defineContentScript({
     });
 
     await broadcast();
-    // 总开关现在开着就立刻开始上报（刷新与重启靠 storage 自己保持）。
+    // 总开关现在开着就立刻开始上报(刷新与重启靠 storage 自己保持).
     const stored = await browser.storage.local.get(TOGGLE_STORAGE_KEY);
     if (readToggle(stored[TOGGLE_STORAGE_KEY])) {
       startAccountReporting();

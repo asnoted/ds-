@@ -1,26 +1,26 @@
-"""MCP 网关：把配好的 MCP servers 接进来，汇总成一张工具表，替扩展转调用（ADR-0011）。
+"""MCP 网关:把配好的 MCP servers 接进来,汇总成一张工具表,替扩展转调用(ADR-0011).
 
-浏览器 spawn 不了 MCP 进程——这正是 dsb 存在的那半条命：真 MCP servers 跑在本机（stdio 子
-进程），扩展只认 dsb 一个地址；工具表由 dsb 汇总，调用由 dsb 转发，**dsb 自己一条工具都不
-编**（除却 ``said_*`` 那两件自家小事）。
+浏览器 spawn 不了 MCP 进程--这正是 dsb 存在的那半条命:真 MCP servers 跑在本机(stdio 子
+进程),扩展只认 dsb 一个地址;工具表由 dsb 汇总,调用由 dsb 转发,**dsb 自己一条工具都不
+编**(除却 ``said_*`` 那两件自家小事).
 
-配置在仓库根的 ``mcp.json``（不进版本库），形状跟 Claude Desktop / MCP-SuperAssistant 一路：
+配置在仓库根的 ``mcp.json``(不进版本库),形状跟 Claude Desktop / MCP-SuperAssistant 一路:
 
 .. code-block:: json
 
     {"mcpServers": {"fs": {"command": ["npx", "-y", "server-filesystem", "/tmp"]}}}
 
-对外的名字带服务器前缀 ``<server>_<tool>``（与 opencode 同一套归一化：字母数字 ``_`` ``-``
-以外一律折成 ``_``），撞名的后到者让位并留一笔。子进程**启动时一次性拉起**（工具表因此是
-静态的：加、换 server 要重启 dsb），死了下次调用再试一次；起不来、答不上、等到超时，分别
-折成册子里的三个码：
+对外的名字带服务器前缀 ``<server>_<tool>``(与 opencode 同一套归一化:字母数字 ``_`` ``-``
+以外一律折成 ``_``),撞名的后到者让位并留一笔.子进程**启动时一次性拉起**(工具表因此是
+静态的:加,换 server 要重启 dsb),死了下次调用再试一次;起不来,答不上,等到超时,分别
+折成册子里的三个码:
 
-- ``tool-not-running``：子进程没起或起崩了（stdio 断了）；
-- ``tool-timeout``：子进程在时限内没答上来；
-- ``unexpected-response``：答了，但答得不成样。
+- ``tool-not-running``:子进程没起或起崩了(stdio 断了);
+- ``tool-timeout``:子进程在时限内没答上来;
+- ``unexpected-response``:答了,但答得不成样.
 
-底层 server 自己报的错**不算这三个**——那是它对模型说的话，原样当工具结果交出去（``isError``
-照它的来），让模型看得见、接得着往下答。
+底层 server 自己报的错**不算这三个**--那是它对模型说的话,原样当工具结果交出去(``isError``
+照它的来),让模型看得见,接得着往下答.
 """
 
 from __future__ import annotations
@@ -40,24 +40,24 @@ from dsb.config import env_value
 from dsb.log import log_event
 from dsb.mcp import Tool
 
-#: 配置落点：仓库根（与 ``.env`` 同一处），不进版本库。
+#: 配置落点:仓库根(与 ``.env`` 同一处),不进版本库.
 MCP_CONFIG_FILENAME = "mcp.json"
 MCP_CONFIG_ENV_KEY = "DSB_MCP_CONFIG"
-#: 一次 ``tools/call`` 等子进程的上限；过线判 ``tool-timeout``（env 可改，单位秒）。
+#: 一次 ``tools/call`` 等子进程的上限;过线判 ``tool-timeout``(env 可改,单位秒).
 TOOL_TIMEOUT_ENV_KEY = "DSB_TOOL_TIMEOUT"
 DEFAULT_TOOL_TIMEOUT = 120.0
-#: 起子进程 + 握手（initialize）的上限：npx 首次下载可能拖，给足但别无限。
+#: 起子进程 + 握手(initialize)的上限:npx 首次下载可能拖,给足但别无限.
 START_TIMEOUT = 30.0
 CONNECT_TIMEOUT_ENV_KEY = "DSB_CONNECT_TIMEOUT"
-#: ``tools/list`` 的上限：发现一次就够，比握手紧、比调用宽。
+#: ``tools/list`` 的上限:发现一次就够,比握手紧,比调用宽.
 DISCOVERY_TIMEOUT = 20.0
 DISCOVERY_TIMEOUT_ENV_KEY = "DSB_DISCOVERY_TIMEOUT"
-#: 单次结果的字符上限：一条失控结果（整份日志、一棵目录树）能同时灌满对话、扩展的
-#: 内存与存储；超了截断并写明原长（见 :func:`cap_result`）。
+#: 单次结果的字符上限:一条失控结果(整份日志,一棵目录树)能同时灌满对话,扩展的
+#: 内存与存储;超了截断并写明原长(见 :func:`cap_result`).
 MAX_RESULT_CHARS = 64 * 1024
-#: 单个 server 最多注册多少件工具：一张撑爆协议说明的表对谁都没好处。
+#: 单个 server 最多注册多少件工具:一张撑爆协议说明的表对谁都没好处.
 MAX_TOOLS_PER_SERVER = 128
-#: 对外的协议版本：与本仓 ``dsb.mcp`` 讲的一致，子进程按它开场。
+#: 对外的协议版本:与本仓 ``dsb.mcp`` 讲的一致,子进程按它开场.
 PROTOCOL_VERSION = "2025-06-18"
 
 ERROR_NOT_RUNNING = "tool-not-running"
@@ -68,7 +68,7 @@ Payload = dict[str, Any]
 
 
 class GatewayError(Exception):
-    """网关自己的三个码（子进程没起 / 超时 / 答不成样）；``code`` 直接是册子里的字面量。"""
+    """网关自己的三个码(子进程没起 / 超时 / 答不成样);``code`` 直接是册子里的字面量."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -76,15 +76,15 @@ class GatewayError(Exception):
 
 
 def normalize(name: str) -> str:
-    """对外工具名的归一化：字母数字与 ``_`` ``-`` 以外一律折成 ``_``（opencode 同款）。"""
+    """对外工具名的归一化:字母数字与 ``_`` ``-`` 以外一律折成 ``_``(opencode 同款)."""
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)
 
 
 def load_config(path: Path | None = None) -> dict[str, dict[str, Any]]:
-    """``mcp.json`` → ``{服务器名: 条目}``；文件不在就是空表（没配 server 不是错）。
+    """``mcp.json`` → ``{服务器名: 条目}``;文件不在就是空表(没配 server 不是错).
 
-    条目两种写法都认：``{"command": ["npx", "-y", "x"]}`` 与 Claude 的
-    ``{"command": "npx", "args": ["-y", "x"]}``；``env`` / ``cwd`` 可选。
+    条目两种写法都认:``{"command": ["npx", "-y", "x"]}`` 与 Claude 的
+    ``{"command": "npx", "args": ["-y", "x"]}``;``env`` / ``cwd`` 可选.
     """
     target = Path(MCP_CONFIG_FILENAME) if path is None else path
     if not target.is_file():
@@ -107,7 +107,7 @@ def load_config(path: Path | None = None) -> dict[str, dict[str, Any]]:
 
 
 def resolve_seconds(env_text: str, key: str, default: float) -> float:
-    """一段秒数：进程环境变量优先，其次 ``.env`` 的同名键，最后默认值（非正数落默认）。"""
+    """一段秒数:进程环境变量优先,其次 ``.env`` 的同名键,最后默认值(非正数落默认)."""
     raw = os.environ.get(key) or env_value(env_text, key)
     if raw is None:
         return default
@@ -119,12 +119,12 @@ def resolve_seconds(env_text: str, key: str, default: float) -> float:
 
 
 def resolve_timeout(env_text: str) -> float:
-    """一次调用的时限——三档超时里的那一档（另两档是握手与发现，见 :mod:`dsb.server`）。"""
+    """一次调用的时限--三档超时里的那一档(另两档是握手与发现,见 :mod:`dsb.server`)."""
     return resolve_seconds(env_text, TOOL_TIMEOUT_ENV_KEY, DEFAULT_TOOL_TIMEOUT)
 
 
 def command_of(entry: Mapping[str, Any]) -> list[str] | None:
-    """配置条目 → argv；两种写法都认，认不出回 None。"""
+    """配置条目 → argv;两种写法都认,认不出回 None."""
     command = entry.get("command")
     if isinstance(command, str) and command.strip():
         args = entry.get("args")
@@ -136,10 +136,10 @@ def command_of(entry: Mapping[str, Any]) -> list[str] | None:
 
 
 def text_of_result(result: Any) -> tuple[str, bool]:
-    """子进程的 ``tools/call`` 结果 → (给模型看的一段文本, isError)。
+    """子进程的 ``tools/call`` 结果 → (给模型看的一段文本, isError).
 
-    文本块依次拼上；一个文本块都没有就把整个结果交成 JSON——**不猜、不丢**：结果是要送进
-    对话里的，模型看得到全貌比看着半截强。
+    文本块依次拼上;一个文本块都没有就把整个结果交成 JSON--**不猜,不丢**:结果是要送进
+    对话里的,模型看得到全貌比看着半截强.
     """
     failed = bool(isinstance(result, Mapping) and result.get("isError"))
     content = result.get("content") if isinstance(result, Mapping) else None
@@ -158,19 +158,19 @@ def text_of_result(result: Any) -> tuple[str, bool]:
 
 
 def cap_result(text: str, limit: int = MAX_RESULT_CHARS) -> str:
-    """给模型看的结果 → 截到上限；截了就在尾巴上写明原长。
+    """给模型看的结果 → 截到上限;截了就在尾巴上写明原长.
 
-    :func:`text_of_result` 的口径是「不猜、不丢」——结果要送进对话，模型看全貌比看半截
-    强。上限是给这句话留的唯一例外：一条失控结果（几十兆的目录树、整份日志）会同时灌满
-    对话、扩展的内存与存储，而截断处写着原长，模型知道自己看的是前多少字、可以改问法。
+    :func:`text_of_result` 的口径是'不猜,不丢'--结果要送进对话,模型看全貌比看半截
+    强.上限是给这句话留的唯一例外:一条失控结果(几十兆的目录树,整份日志)会同时灌满
+    对话,扩展的内存与存储,而截断处写着原长,模型知道自己看的是前多少字,可以改问法.
     """
     if len(text) <= limit:
         return text
-    return f"{text[:limit]}\n\n…（结果已截断：原文 {len(text)} 字，这里是前 {limit} 字）"
+    return f"{text[:limit]}\n\n...(结果已截断:原文 {len(text)} 字,这里是前 {limit} 字)"
 
 
 class StdioServer:
-    """一个配好的 MCP server：stdio 上一行一条 JSON-RPC，按 id 认领回应。"""
+    """一个配好的 MCP server:stdio 上一行一条 JSON-RPC,按 id 认领回应."""
 
     def __init__(
         self,
@@ -202,7 +202,7 @@ class StdioServer:
         return self._proc is not None and self._proc.poll() is None
 
     def start(self, timeout: float | None = None) -> None:
-        """拉起来并过 initialize 握手；已经活着就直接回。"""
+        """拉起来并过 initialize 握手;已经活着就直接回."""
         if self.alive:
             return
         try:
@@ -243,7 +243,7 @@ class StdioServer:
             raise
 
     def stop(self) -> None:
-        """收摊：断 stdin 让它自己退，给一点时间，仍不走就杀。"""
+        """收摊:断 stdin 让它自己退,给一点时间,仍不走就杀."""
         proc, self._proc = self._proc, None
         self._fail_all()
         if proc is None:
@@ -259,7 +259,7 @@ class StdioServer:
     # ---- 读口 ----
 
     def _read_loop(self, proc: subprocess.Popen[str]) -> None:
-        """读口 → 按 id 认领；EOF 只收自己的场：**重启后旧线程不许碰新挂账**。"""
+        """读口 → 按 id 认领;EOF 只收自己的场:**重启后旧线程不许碰新挂账**."""
         assert proc.stdout is not None
         for line in proc.stdout:
             if not line.strip():
@@ -271,16 +271,16 @@ class StdioServer:
             if not isinstance(message, dict):
                 continue
             self._dispatch(message)
-        # EOF：读口退了，把挂着的人全叫醒（没答上来一律按「不在了」收场）。
-        # 别在这儿先拿锁：_fail_all 自己拿锁，非可重入的 Lock 会自锁。
+        # EOF:读口退了,把挂着的人全叫醒(没答上来一律按"不在了"收场).
+        # 别在这儿先拿锁:_fail_all 自己拿锁,非可重入的 Lock 会自锁.
         self._fail_all(proc)
 
     def _dispatch(self, message: dict[str, Any]) -> None:
         request_id = message.get("id")
         if "method" in message:
             if request_id is None:
-                return  # 子进程的 notification（tools/list_changed 之类）：静态表，不接
-            # server → client 的请求：我们声明了空 capabilities，按理不该来；按协议回绝。
+                return  # 子进程的 notification(tools/list_changed 之类):静态表,不接
+            # server → client 的请求:我们声明了空 capabilities,按理不该来;按协议回绝.
             self._write(
                 {
                     "jsonrpc": "2.0",
@@ -298,7 +298,7 @@ class StdioServer:
         box.put(message)
 
     def _fail_all(self, proc: subprocess.Popen[str] | None = None) -> None:
-        """叫醒所有挂着的请求；带 ``proc`` 时只收自己的场（重启后的旧线程不碰新挂账）。"""
+        """叫醒所有挂着的请求;带 ``proc`` 时只收自己的场(重启后的旧线程不碰新挂账)."""
         with self._guard:
             if proc is not None and self._proc is not proc:
                 return
@@ -326,7 +326,7 @@ class StdioServer:
         self._write({"jsonrpc": "2.0", "method": method})
 
     def _request(self, method: str, params: Mapping[str, Any], timeout: float) -> Any:
-        """发一个请求等回应；超时 / 断口 / 答不成样各归各的码。"""
+        """发一个请求等回应;超时 / 断口 / 答不成样各归各的码."""
         if not self.alive:
             raise GatewayError(ERROR_NOT_RUNNING)
         with self._guard:
@@ -358,7 +358,7 @@ class StdioServer:
     # ---- 对外 ----
 
     def list_tools(self) -> list[Payload]:
-        """``tools/list`` 的结果（起一次、留一份；工具表因此是静态的）。"""
+        """``tools/list`` 的结果(起一次,留一份;工具表因此是静态的)."""
         if not self._tools:
             result = self._request("tools/list", {}, self._discovery_timeout)
             if not isinstance(result, Mapping) or not isinstance(result.get("tools"), list):
@@ -367,7 +367,7 @@ class StdioServer:
         return self._tools
 
     def call_tool(self, name: str, arguments: Mapping[str, Any], timeout: float) -> Any:
-        """转一次 ``tools/call``；死了先试着重起一次（子进程重启是常态，别一崩就废）。"""
+        """转一次 ``tools/call``;死了先试着重起一次(子进程重启是常态,别一崩就废)."""
         if not self.alive:
             self.start()
         result = self._request("tools/call", {"name": name, "arguments": dict(arguments)}, timeout)
@@ -375,7 +375,7 @@ class StdioServer:
 
 
 class Gateway:
-    """汇总的工具表 + 路由：对外 ``<server>_<tool>``，对内认服务器再转给它。"""
+    """汇总的工具表 + 路由:对外 ``<server>_<tool>``,对内认服务器再转给它."""
 
     def __init__(
         self,
@@ -385,7 +385,7 @@ class Gateway:
     ) -> None:
         self._servers = dict(servers)
         self._timeout = timeout
-        #: 归一化后的前缀 → 服务器名（撞名归先到，后到的留一笔 tool-clash）。
+        #: 归一化后的前缀 → 服务器名(撞名归先到,后到的留一笔 tool-clash).
         self._prefixes: dict[str, str] = {}
         for name in self._servers:
             prefix = normalize(name)
@@ -393,7 +393,7 @@ class Gateway:
                 log_event("tool-clash", tool=prefix)
                 continue
             self._prefixes[prefix] = name
-        self._tool_names: dict[str, str] = {}  # 对外名 → 底层工具名（原样）
+        self._tool_names: dict[str, str] = {}  # 对外名 → 底层工具名(原样)
 
     @classmethod
     def from_config(
@@ -404,7 +404,7 @@ class Gateway:
         start_timeout: float = START_TIMEOUT,
         discovery_timeout: float = DISCOVERY_TIMEOUT,
     ) -> Gateway:
-        """配置 → 起好子进程的网关；起不来的 server 记一笔、跳过（别的照常）。"""
+        """配置 → 起好子进程的网关;起不来的 server 记一笔,跳过(别的照常)."""
         servers: dict[str, StdioServer] = {}
         for name, entry in config.items():
             argv = command_of(entry)
@@ -434,7 +434,7 @@ class Gateway:
         return tuple(self._servers)
 
     def tools(self) -> list[Tool]:
-        """汇总成注册给 ``McpService`` 的工具表；撞名的后到者让位并留一笔。"""
+        """汇总成注册给 ``McpService`` 的工具表;撞名的后到者让位并留一笔."""
         tools: list[Tool] = []
         seen: set[str] = set()
         for prefix, server_name in self._prefixes.items():
@@ -474,8 +474,8 @@ class Gateway:
                 server, child_name = self._route(external)
                 result = server.call_tool(child_name, arguments, self._timeout)
             except GatewayError as error:
-                # 网关自己的三个码：失败提示在扩展侧折，这里给一段能进对话的说明。
-                return {"text": f"{error.code}（工具 {external}）"}, True
+                # 网关自己的三个码:失败提示在扩展侧折,这里给一段能进对话的说明.
+                return {"text": f"{error.code}(工具 {external})"}, True
             text, failed = text_of_result(result)
             if len(text) > MAX_RESULT_CHARS:
                 log_event("result-capped", tool=external, chars=len(text))
@@ -489,19 +489,19 @@ class Gateway:
             if external.startswith(head):
                 child = self._tool_names.get(external)
                 if child is None:
-                    # 表是 tools() 一边建一边填的，走到这儿说明表自己不自洽——按意外收场。
+                    # 表是 tools() 一边建一边填的,走到这儿说明表自己不自洽--按意外收场.
                     raise GatewayError(ERROR_UNEXPECTED)
                 return self._servers[server_name], child
         raise GatewayError(ERROR_UNEXPECTED)
 
     def stop(self) -> None:
-        """收摊：所有子进程退掉。"""
+        """收摊:所有子进程退掉."""
         for server in self._servers.values():
             server.stop()
 
 
 def _described_text(server_name: str, descriptor: Mapping[str, Any]) -> str:
-    """给模型看的描述：带上出处（``[server]``），免得两张同名表看混。"""
+    """给模型看的描述:带上出处(``[server]``),免得两张同名表看混."""
     description = descriptor.get("description")
     suffix = description if isinstance(description, str) else ""
     return f"[{server_name}] {suffix}".rstrip()

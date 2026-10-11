@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { detectAskQuestion, detectToolCalls, extractAssistantAnswer } from "./answer";
 import { outsideFences } from "./said";
 
-/** 拼一个流式响应：每块一行 `data:` 载荷，形状对齐站点的发消息接口。 */
+/** 拼一个流式响应:每块一行 `data:` 载荷,形状对齐站点的发消息接口. */
 function sse(chunks: string[]): string {
   const lines = chunks.map(
     (content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}`,
@@ -13,8 +13,8 @@ function sse(chunks: string[]): string {
 
 describe("extractAssistantAnswer", () => {
   it("流式响应按块还原成一段正文", () => {
-    const raw = sse(["你好，", "这是回答。"]);
-    expect(extractAssistantAnswer(raw)).toBe("你好，这是回答。");
+    const raw = sse(["你好,", "这是回答."]);
+    expect(extractAssistantAnswer(raw)).toBe("你好,这是回答.");
   });
 
   it("整块 JSON 响应取 message.content", () => {
@@ -36,10 +36,10 @@ describe("extractAssistantAnswer", () => {
   });
 });
 
-describe("detectToolCalls · 检测点", () => {
-  it("流式回答里排了围栏就认出问题（多行问题也认）", () => {
-    const raw = sse(["先说结论。\n```send ", "仓库里 dsb 的入口在哪？\n第二行补充\n```"]);
-    expect(detectToolCalls(raw)).toEqual(["仓库里 dsb 的入口在哪？\n第二行补充"]);
+describe("detectToolCalls / 检测点", () => {
+  it("流式回答里排了围栏就认出问题(多行问题也认)", () => {
+    const raw = sse(["先说结论.\n```send ", "仓库里 dsb 的入口在哪?\n第二行补充\n```"]);
+    expect(detectToolCalls(raw)).toEqual(["仓库里 dsb 的入口在哪?\n第二行补充"]);
   });
 
   it("整块 JSON 回答里的围栏同样认得", () => {
@@ -64,7 +64,7 @@ describe("detectToolCalls · 检测点", () => {
     expect(detectToolCalls(raw)).toEqual([]);
   });
 
-  it("一次排多块：全都要，按顺序", () => {
+  it("一次排多块:全都要,按顺序", () => {
     const raw = sse(["```send\n第一块\n```\n中间\n```send\n第二块\n```"]);
     expect(detectToolCalls(raw)).toEqual(["第一块", "第二块"]);
   });
@@ -80,17 +80,17 @@ describe("detectToolCalls · 检测点", () => {
   });
 
   it("没排围栏的正常回答不触发", () => {
-    const raw = sse(["这是不带围栏的回答。"]);
+    const raw = sse(["这是不带围栏的回答."]);
     expect(detectToolCalls(raw)).toEqual([]);
   });
 
-  it("正文形状认不出时，兜底路径仍从转义原文里认出围栏", () => {
+  it("正文形状认不出时,兜底路径仍从转义原文里认出围栏", () => {
     const raw = `data: ${JSON.stringify({ unknown_shape: "看这里\n```send\n兜底问题\n```" })}\n`;
     expect(extractAssistantAnswer(raw)).toBe("");
     expect(detectToolCalls(raw)).toEqual(["兜底问题"]);
   });
 
-  it("认不出的响应整段返回 null，不猜", () => {
+  it("认不出的响应整段返回 null,不猜", () => {
     expect(detectToolCalls("")).toEqual([]);
     expect(detectToolCalls("<html>502</html>")).toEqual([]);
   });
@@ -103,36 +103,34 @@ describe("detectToolCalls · 检测点", () => {
   });
 });
 
-describe("出完才判（#29）", () => {
+describe("出完才判(#29)", () => {
   /**
-   * 「边收边判」漏检的缩形：正文在前、围栏靠后。前半截（围栏
-   * 还没跟到）判不出围栏——检测点只拿「出完的整条」（响应体
-   * 读到底）来判，半截不判正是这层契约。
+   * "边收边判"漏检的缩形:正文在前,围栏靠后.前半截(围栏
+   * 还没跟到)判不出围栏--检测点只拿"出完的整条"(响应体
+   * 读到底)来判,半截不判正是这层契约.
    */
-  it("流式半截不判，整条出完才判出靠后的围栏", () => {
-    const head = sse(["长回答的正文第一段。\n", "第二段。\n", "第三段。\n"]);
-    const opening = sse(["\n```send\n靠后的围栏问题"]); // 围栏开了，还没闭
+  it("流式半截不判,整条出完才判出靠后的围栏", () => {
+    const head = sse(["长回答的正文第一段.\n", "第二段.\n", "第三段.\n"]);
+    const opening = sse(["\n```send\n靠后的围栏问题"]); // 围栏开了,还没闭
     const closing = sse(["\n```\n"]);
     expect(detectToolCalls(head)).toEqual([]);
-    // 边收边判正是这里漏：围栏没闭合时整段看着像「无围栏的正文」。
+    // 边收边判正是这里漏:围栏没闭合时整段看着像"无围栏的正文".
     expect(detectToolCalls(head + opening)).toEqual([]);
     expect(detectToolCalls(head + opening + closing)).toEqual(["靠后的围栏问题"]);
   });
 
-  it("无围栏的长回答：整条出完也判不出（那条正文走 reportSaid 报协调者）", () => {
-    const whole = sse(["长回答的正文第一段，", "第二段，", "第三段。"]);
+  it("无围栏的长回答:整条出完也判不出(那条正文走 reportSaid 报协调者)", () => {
+    const whole = sse(["长回答的正文第一段,", "第二段,", "第三段."]);
     expect(detectToolCalls(whole)).toEqual([]);
-    expect(outsideFences(extractAssistantAnswer(whole))).toBe(
-      "长回答的正文第一段，第二段，第三段。",
-    );
+    expect(outsideFences(extractAssistantAnswer(whole))).toBe("长回答的正文第一段,第二段,第三段.");
   });
 });
 
-describe("detectToolCalls · 站点那条 OT 增量流", () => {
+describe("detectToolCalls / 站点那条 OT 增量流", () => {
   /**
-   * 真机抓的形状（2026-09-29，chat.deepseek.com/api/v0/chat/completion）：
-   * 正文不在 `content` 键里，而是散在追加操作中；围栏被切成两个载荷下发
-   * （`{"v":"```"}` 紧跟 `{"v":"send"}`）；思考片里还举了一个 ```send 的例子。
+   * 真机抓的形状(2026-09-29,chat.deepseek.com/api/v0/chat/completion):
+   * 正文不在 `content` 键里,而是散在追加操作中;围栏被切成两个载荷下发
+   * (`{"v":"```"}` 紧跟 `{"v":"send"}`);思考片里还举了一个 ```send 的例子.
    */
   const REAL_OT_STREAM = [
     "event: ready",
@@ -143,14 +141,14 @@ describe("detectToolCalls · 站点那条 OT 增量流", () => {
     "",
     'data: {"v":{"response":{"message_id":10,"parent_id":9,"role":"ASSISTANT","thinking_enabled":true,"status":"WIP","fragments":[{"id":2,"type":"THINK","content":"我们需要"}]}}}',
     "",
-    'data: {"p":"response/fragments/-1/content","o":"APPEND","v":"先想清楚。协议要排围栏，例子是："}',
+    'data: {"p":"response/fragments/-1/content","o":"APPEND","v":"先想清楚.协议要排围栏,例子是:"}',
     'data: {"v":"\\n\\n```send\\n模型自己举的例子\\n```"}',
     'data: {"p":"response/fragments/-1/elapsed_secs","o":"SET","v":1.214978037}',
     "",
     'data: {"p":"response/fragments","o":"APPEND","v":[{"id":3,"type":"RESPONSE","content":"```","references":[],"stage_id":1}]}',
     'data: {"p":"response/fragments/-1/content","v":"send"}',
     'data: {"v":"\\n"}',
-    'data: {"v":"CONTEXT.md 这个文件是干什么的？\\n"}',
+    'data: {"v":"CONTEXT.md 这个文件是干什么的?\\n"}',
     'data: {"v":"```"}',
     'data: {"p":"response","o":"BATCH","v":[{"p":"accumulated_token_usage","v":1075},{"p":"quasi_status","v":"FINISHED"}]}',
     'data: {"p":"response/status","o":"SET","v":"FINISHED"}',
@@ -160,31 +158,31 @@ describe("detectToolCalls · 站点那条 OT 增量流", () => {
     "",
   ].join("\n");
 
-  it("正文只在 RESPONSE 片段里，思考片不计入", () => {
+  it("正文只在 RESPONSE 片段里,思考片不计入", () => {
     expect(extractAssistantAnswer(REAL_OT_STREAM)).toBe(
-      "```send\nCONTEXT.md 这个文件是干什么的？\n```",
+      "```send\nCONTEXT.md 这个文件是干什么的?\n```",
     );
   });
 
   it("围栏被切成两个载荷也认得出问题", () => {
-    expect(detectToolCalls(REAL_OT_STREAM)).toEqual(["CONTEXT.md 这个文件是干什么的？"]);
+    expect(detectToolCalls(REAL_OT_STREAM)).toEqual(["CONTEXT.md 这个文件是干什么的?"]);
   });
 
   it("思考片里举的围栏例子不算回答", () => {
-    // 把正文片换成一句没有围栏的话：思考片里的 ```send 不能被捞出来当真。
+    // 把正文片换成一句没有围栏的话:思考片里的 ```send 不能被捞出来当真.
     const noFence = REAL_OT_STREAM.replace(
       'data: {"p":"response/fragments","o":"APPEND","v":[{"id":3,"type":"RESPONSE","content":"```","references":[],"stage_id":1}]}',
-      'data: {"p":"response/fragments","o":"APPEND","v":[{"id":3,"type":"RESPONSE","content":"好的。","references":[],"stage_id":1}]}',
+      'data: {"p":"response/fragments","o":"APPEND","v":[{"id":3,"type":"RESPONSE","content":"好的.","references":[],"stage_id":1}]}',
     )
       .replace('data: {"p":"response/fragments/-1/content","v":"send"}\n', "")
       .replace('data: {"v":"\\n"}\n', "")
-      .replace('data: {"v":"CONTEXT.md 这个文件是干什么的？\\n"}\n', "")
+      .replace('data: {"v":"CONTEXT.md 这个文件是干什么的?\\n"}\n', "")
       .replace('data: {"v":"```"}\n', "");
-    expect(extractAssistantAnswer(noFence)).toBe("好的。");
+    expect(extractAssistantAnswer(noFence)).toBe("好的.");
     expect(detectToolCalls(noFence)).toEqual([]);
   });
 
-  it("状态、计时、token 这些非正文操作不产生正文", () => {
+  it("状态,计时,token 这些非正文操作不产生正文", () => {
     const onlyOps = [
       'data: {"v":{"response":{"fragments":[]}}}',
       'data: {"p":"response/fragments/-1/elapsed_secs","o":"SET","v":1.2}',
@@ -197,10 +195,10 @@ describe("detectToolCalls · 站点那条 OT 增量流", () => {
   });
 });
 
-describe("detectAskQuestion · 检测点（#26）", () => {
+describe("detectAskQuestion / 检测点(#26)", () => {
   it("流式回答里排了 ask 围栏就认出问题", () => {
-    const raw = sse(["想一下。\n```ask ", "选 A 还是 B？\n```"]);
-    expect(detectAskQuestion(raw)).toBe("选 A 还是 B？");
+    const raw = sse(["想一下.\n```ask ", "选 A 还是 B?\n```"]);
+    expect(detectAskQuestion(raw)).toBe("选 A 还是 B?");
   });
 
   it("整块 JSON 回答里的 ask 围栏同样认得", () => {
@@ -210,20 +208,20 @@ describe("detectAskQuestion · 检测点（#26）", () => {
     expect(detectAskQuestion(raw)).toBe("问题正文");
   });
 
-  it("正文形状认不出时，兜底路径仍从转义原文里认出 ask 围栏", () => {
+  it("正文形状认不出时,兜底路径仍从转义原文里认出 ask 围栏", () => {
     const raw = `data: ${JSON.stringify({ unknown_shape: "看这里\n```ask\n兜底问题\n```" })}\n`;
     expect(extractAssistantAnswer(raw)).toBe("");
     expect(detectAskQuestion(raw)).toBe("兜底问题");
   });
 
-  it("send 围栏不被 ask 检测器认（别误伤现有路径）", () => {
-    const raw = sse(["```send\n仓库入口在哪？\n```"]);
+  it("send 围栏不被 ask 检测器认(别误伤现有路径)", () => {
+    const raw = sse(["```send\n仓库入口在哪?\n```"]);
     expect(detectAskQuestion(raw)).toBeNull();
-    expect(detectToolCalls(raw)).toEqual(["仓库入口在哪？"]);
+    expect(detectToolCalls(raw)).toEqual(["仓库入口在哪?"]);
   });
 
   it("ask 围栏不被 send 检测器认", () => {
-    const raw = sse(["```ask\n选哪个？\n```"]);
+    const raw = sse(["```ask\n选哪个?\n```"]);
     expect(detectToolCalls(raw)).toEqual([]);
   });
 
@@ -238,7 +236,7 @@ describe("detectAskQuestion · 检测点（#26）", () => {
   });
 
   it("没排 ask 围栏的正常回答不触发", () => {
-    const raw = sse(["这是不带围栏的回答。"]);
+    const raw = sse(["这是不带围栏的回答."]);
     expect(detectAskQuestion(raw)).toBeNull();
   });
 });

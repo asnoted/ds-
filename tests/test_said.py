@@ -1,4 +1,4 @@
-"""网页说给人听的话：两件工具的收与取（原来那条 `/said` 路随 HTTP 面一起废了）。"""
+"""网页说给人听的话:两件工具的收与取(原来那条 `/said` 路随 HTTP 面一起废了)."""
 
 from __future__ import annotations
 

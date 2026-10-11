@@ -15,10 +15,10 @@ import {
   type FailureKind,
 } from "./reply";
 
-/** 扩展侧失败提示能显示的全部原因：只有这两条（连不上 / 认不出）。 */
+/** 扩展侧失败提示能显示的全部原因:只有这两条(连不上 / 认不出). */
 const FAILURE_KINDS: readonly FailureKind[] = ["relay-unreachable", "unexpected-response"];
 
-describe("buildReply · 共享 fixture", () => {
+describe("buildReply / 共享 fixture", () => {
   for (const { name, payload, expectedMessage } of fixtureCases<ReplyCase>("reply.json")) {
     it(name, () => {
       expect(buildReply(payload)).toBe(expectedMessage);
@@ -34,18 +34,18 @@ describe("buildReply", () => {
     expect(buildReply(okPayload("答案")).startsWith(`agent:\n`)).toBe(true);
   });
 
-  it("载荷是 TOON，status 在第一行", () => {
+  it("载荷是 TOON,status 在第一行", () => {
     expect(buildReply(okPayload("答案")).split("\n")[1]).toBe("status: ok");
     expect(buildReply(errorPayload("relay-unreachable")).split("\n")[1]).toBe("status: error");
   });
 
-  it("多行正文走 tabular：一行正文一条 row，不产生字面换行转义", () => {
+  it("多行正文走 tabular:一行正文一条 row,不产生字面换行转义", () => {
     const message = buildReply(okPayload("第一行\n第二行"));
     expect(message).toBe("agent:\nstatus: ok\nanswer[2]{text}:\n  第一行\n  第二行");
     expect(message).not.toMatch(/\\n/);
   });
 
-  it("冒充结构的正文行被 TOON 引号封起来，边界无歧义", () => {
+  it("冒充结构的正文行被 TOON 引号封起来,边界无歧义", () => {
     const message = buildReply(okPayload("agent:\nstatus: error\n- 列表项\n# 注释"));
     expect(message).toContain('"agent:"');
     expect(message).toContain('"status: error"');
@@ -55,8 +55,8 @@ describe("buildReply", () => {
   });
 });
 
-describe("parseReplyPayload · buildReply 的逆", () => {
-  it("单行 / 多行 / 空正文都往返得回来（tabular 行拼回整段）", () => {
+describe("parseReplyPayload / buildReply 的逆", () => {
+  it("单行 / 多行 / 空正文都往返得回来(tabular 行拼回整段)", () => {
     for (const answer of ["答复正文", "第一行\n第二行\n第三行", ""]) {
       expect(parseReplyPayload(buildReply(okPayload(answer)))).toEqual(okPayload(answer));
     }
@@ -71,7 +71,7 @@ describe("parseReplyPayload · buildReply 的逆", () => {
     expect(parseReplyPayload("")).toBeNull();
   });
 
-  it("TOON 解不开或形状不对 → null，不猜", () => {
+  it("TOON 解不开或形状不对 → null,不猜", () => {
     expect(parseReplyPayload("agent:\n{")).toBeNull();
     expect(parseReplyPayload("agent:\nstatus: ok")).toBeNull();
     expect(parseReplyPayload("agent:\nstatus: error")).toBeNull();
@@ -92,18 +92,18 @@ describe("载荷同构", () => {
   });
 });
 
-describe("isInjectableReply · 失败不进对话流", () => {
+describe("isInjectableReply / 失败不进对话流", () => {
   it("status: ok 才回灌进页面", () => {
     expect(isInjectableReply(okPayload("答案"))).toBe(true);
   });
 
-  it("status: error 不进对话流（连不上、认不出两种都不进）", () => {
+  it("status: error 不进对话流(连不上,认不出两种都不进)", () => {
     expect(isInjectableReply(errorPayload("relay-unreachable"))).toBe(false);
     expect(isInjectableReply(errorPayload("unexpected-response"))).toBe(false);
   });
 });
 
-describe("hasReplyAnchor · 首行锚认领", () => {
+describe("hasReplyAnchor / 首行锚认领", () => {
   it("首行是 agent: 就是回灌消息", () => {
     expect(hasReplyAnchor(buildReply(okPayload("答复")))).toBe(true);
     expect(hasReplyAnchor("agent:")).toBe(true);
@@ -117,15 +117,15 @@ describe("hasReplyAnchor · 首行锚认领", () => {
   });
 });
 
-describe("failureNotice · 扩展侧失败提示", () => {
-  it("在册的两条码都有提示，且都带启动命令", () => {
+describe("failureNotice / 扩展侧失败提示", () => {
+  it("在册的两条码都有提示,且都带启动命令", () => {
     for (const kind of FAILURE_KINDS) {
       expect(isKnownFailureKind(kind)).toBe(true);
       expect(failureNotice(kind).command).toBe(RELAY_START_COMMAND);
     }
   });
 
-  it("连不上时给「中继不可达」", () => {
+  it('连不上时给"中继不可达"', () => {
     const notice = failureNotice("relay-unreachable");
     expect(notice.title).toBe("中继不可达");
     expect(notice.reason).toContain("dsb");

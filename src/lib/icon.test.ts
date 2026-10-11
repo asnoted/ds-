@@ -36,7 +36,7 @@ function whitePixelCount(pixels: Uint8ClampedArray): number {
 }
 
 describe("图标三态", () => {
-  it("正好三态：关 / 开且中继可达 / 开但中继不可达", () => {
+  it("正好三态:关 / 开且中继可达 / 开但中继不可达", () => {
     expect(ICON_STATES).toEqual(["off", "on-reachable", "on-unreachable"]);
   });
 
@@ -65,7 +65,7 @@ describe("renderIcon", () => {
     }
   });
 
-  it("每态都画得出白色图样（横杠 / 对勾 / 叹号）", () => {
+  it("每态都画得出白色图样(横杠 / 对勾 / 叹号)", () => {
     for (const state of ICON_STATES) {
       expect(whitePixelCount(renderIcon(state))).toBeGreaterThan(0);
     }
@@ -77,8 +77,8 @@ describe("renderIcon", () => {
   });
 });
 
-describe("iconTitle · 悬停文案", () => {
-  it("关着的时候说清楚没接管页面、点一下能开", () => {
+describe("iconTitle / 悬停文案", () => {
+  it("关着的时候说清楚没接管页面,点一下能开", () => {
     const title = iconTitle("off");
     expect(title).toContain("总开关已关");
     expect(title).toContain("点击打开开关面板");
@@ -90,7 +90,7 @@ describe("iconTitle · 悬停文案", () => {
     expect(title).toContain("点击打开开关面板");
   });
 
-  it("开着但中继不可达：原因与启动命令同框（补充要求）", () => {
+  it("开着但中继不可达:原因与启动命令同框(补充要求)", () => {
     const title = iconTitle("on-unreachable", failureNotice("relay-unreachable"));
     expect(title).toContain("中继不可达");
     expect(title).toContain("dsb");
@@ -107,7 +107,7 @@ describe("iconTitle · 悬停文案", () => {
     }
   });
 
-  it("没带原因也不至于空着：兜底补上原因与启动命令", () => {
+  it("没带原因也不至于空着:兜底补上原因与启动命令", () => {
     const title = iconTitle("on-unreachable");
     expect(title).toContain("中继不可达");
     expect(title).toContain("uv run dsb");
@@ -119,47 +119,47 @@ describe("iconTitle · 悬停文案", () => {
   });
 });
 
-describe("afterHealthProbe · 周期探活 → 状态位", () => {
-  it("总开关关着：探到什么一律原样，不上屏", () => {
+describe("afterHealthProbe / 周期探活 → 状态位", () => {
+  it("总开关关着:探到什么一律原样,不上屏", () => {
     expect(afterHealthProbe("off", true)).toEqual({ state: "off", notice: null });
     expect(afterHealthProbe("off", false)).toEqual({ state: "off", notice: null });
   });
 
-  it("可达就翻回绿、清掉原因", () => {
+  it("可达就翻回绿,清掉原因", () => {
     expect(afterHealthProbe("on-unreachable", true)).toEqual({
       state: "on-reachable",
       notice: null,
     });
   });
 
-  it("不可达就翻红，挂上原因与启动命令", () => {
+  it("不可达就翻红,挂上原因与启动命令", () => {
     const next = afterHealthProbe("on-reachable", false);
     expect(next.state).toBe("on-unreachable");
     expect(next.notice).toEqual(failureNotice("relay-unreachable"));
     expect(next.notice?.command).toBe(RELAY_START_COMMAND);
   });
 
-  it("同一种探测结果给同一个 notice 引用——background 靠引用判断「没变就别重画」", () => {
+  it('同一种探测结果给同一个 notice 引用--background 靠引用判断"没变就别重画"', () => {
     const first = afterHealthProbe("on-reachable", false);
     const second = afterHealthProbe("on-reachable", false);
     expect(first.notice).toBe(second.notice);
   });
 });
 
-describe("badgeText · 角标", () => {
-  it("关与不可达是硬状态，压过一切——像素画不出来时它要独自把三态撑住", () => {
+describe("badgeText / 角标", () => {
+  it("关与不可达是硬状态,压过一切--像素画不出来时它要独自把三态撑住", () => {
     expect(badgeText("off")).toBe("关");
     expect(badgeText("off", true)).toBe("关");
     expect(badgeText("on-unreachable")).toBe("!");
     expect(badgeText("on-unreachable", true)).toBe("!");
   });
 
-  it("开着且可达、没有调用在途：不占角标", () => {
+  it("开着且可达,没有调用在途:不占角标", () => {
     expect(badgeText("on-reachable")).toBe("");
     expect(badgeText("on-reachable", false)).toBe("");
   });
 
-  it("调用在途就报一个字「调」，给了转速帧就转起来", () => {
+  it('调用在途就报一个字"调",给了转速帧就转起来', () => {
     expect(badgeText("on-reachable", true)).toBe("调");
     expect(badgeText("on-reachable", true, false, 0)).toBe("|");
     expect(badgeText("on-reachable", true, false, 2)).toBe("-");
@@ -167,52 +167,52 @@ describe("badgeText · 角标", () => {
   });
 });
 
-describe("等人回（#26）", () => {
-  it("有人等着：角标亮「人」，压过在途转框", () => {
+describe("等人回(#26)", () => {
+  it('有人等着:角标亮"人",压过在途转框', () => {
     expect(badgeText("on-reachable", false, true)).toBe("人");
     expect(badgeText("on-reachable", true, true)).toBe("人");
   });
 
-  it("关与不可达仍是硬状态，「人」压不过", () => {
+  it('关与不可达仍是硬状态,"人"压不过', () => {
     expect(badgeText("off", false, true)).toBe("关");
     expect(badgeText("on-unreachable", false, true)).toBe("!");
   });
 
-  it("没人等着：角标照常（不在途时帧号也不转）", () => {
+  it("没人等着:角标照常(不在途时帧号也不转)", () => {
     expect(badgeText("on-reachable", false, false)).toBe("");
     expect(badgeText("on-reachable", false, false, 1)).toBe("");
   });
 
-  it("悬停里摆出「等人回」的一句话", () => {
-    const title = iconTitle("on-reachable", null, false, null, "网页在等人回：选 A 还是 B？");
-    expect(title).toContain("网页在等人回：选 A 还是 B？");
+  it('悬停里摆出"等人回"的一句话', () => {
+    const title = iconTitle("on-reachable", null, false, null, "网页在等人回:选 A 还是 B?");
+    expect(title).toContain("网页在等人回:选 A 还是 B?");
   });
 
   it("悬停里调用在途与等人回都在", () => {
-    const title = iconTitle("on-reachable", null, true, null, "网页在等人回：选 A 还是 B？");
+    const title = iconTitle("on-reachable", null, true, null, "网页在等人回:选 A 还是 B?");
     expect(title).toContain("工具调用在途");
-    expect(title).toContain("网页在等人回：选 A 还是 B？");
+    expect(title).toContain("网页在等人回:选 A 还是 B?");
   });
 
-  it("不可达时手里那句等人回作废，不进悬停", () => {
+  it("不可达时手里那句等人回作废,不进悬停", () => {
     const title = iconTitle(
       "on-unreachable",
       failureNotice("relay-unreachable"),
       true,
       null,
-      "网页在等人回：选 A 还是 B？",
+      "网页在等人回:选 A 还是 B?",
     );
     expect(title).not.toContain("等人回");
   });
 
   it("关着时也没有等人回", () => {
-    const title = iconTitle("off", null, false, null, "网页在等人回：选 A 还是 B？");
+    const title = iconTitle("off", null, false, null, "网页在等人回:选 A 还是 B?");
     expect(title).not.toContain("等人回");
   });
 });
 
-describe("iconTitle · 调用在途进悬停", () => {
-  it("开着且可达时把「在途」摆出来", () => {
+describe("iconTitle / 调用在途进悬停", () => {
+  it('开着且可达时把"在途"摆出来', () => {
     const title = iconTitle("on-reachable", null, true);
     expect(title).toContain("中继可达");
     expect(title).toContain("工具调用在途");
@@ -224,7 +224,7 @@ describe("iconTitle · 调用在途进悬停", () => {
     expect(iconTitle("on-reachable", null, true)).not.toBe(iconTitle("on-reachable"));
   });
 
-  it("不可达时手里那趟在途已经作废，不上屏", () => {
+  it("不可达时手里那趟在途已经作废,不上屏", () => {
     const title = iconTitle("on-unreachable", null, true);
     expect(title).not.toContain("工具调用在途");
     expect(title).toContain("启动命令");
@@ -238,19 +238,19 @@ describe("iconTitle · 调用在途进悬停", () => {
   });
 });
 
-describe("iconTitle · 上次故障回看", () => {
-  const history = "上次故障 14:49:36（2 分钟前）· 周期探活 · 超时（5000ms 没回），30 秒后恢复";
+describe("iconTitle / 上次故障回看", () => {
+  const history = "上次故障 14:49:36(2 分钟前)/ 周期探活 / 超时(5000ms 没回),30 秒后恢复";
 
-  it("红过又自己绿了，悬停还答得出为什么红、几点红的、多久绿的", () => {
+  it("红过又自己绿了,悬停还答得出为什么红,几点红的,多久绿的", () => {
     const title = iconTitle("on-reachable", null, false, history);
     expect(title).toContain("上次故障 14:49:36");
     expect(title).toContain("周期探活");
-    expect(title).toContain("超时（5000ms 没回）");
+    expect(title).toContain("超时(5000ms 没回)");
     expect(title).toContain("30 秒后恢复");
-    expect(title).toContain("中继可达"); // 绿着呢，这句还得在
+    expect(title).toContain("中继可达"); // 绿着呢,这句还得在
   });
 
-  it("调用在途与历史同框，且在途在前", () => {
+  it("调用在途与历史同框,且在途在前", () => {
     const title = iconTitle("on-reachable", null, true, history);
     expect(title).toContain("工具调用在途");
     expect(title).toContain(history);
@@ -262,7 +262,7 @@ describe("iconTitle · 上次故障回看", () => {
     expect(iconTitle("on-reachable")).toBe(iconTitle("on-reachable"));
   });
 
-  it("当前正红着时不摆历史——第一句就是原因，重复一遍只是噪音", () => {
+  it("当前正红着时不摆历史--第一句就是原因,重复一遍只是噪音", () => {
     const title = iconTitle("on-unreachable", failureNotice("relay-unreachable"), false, history);
     expect(title).not.toContain("上次故障");
     expect(title).toContain("本机中继 dsb 没有响应");
@@ -273,52 +273,52 @@ describe("iconTitle · 上次故障回看", () => {
   });
 });
 
-describe("角标转速（#28）", () => {
+describe("角标转速(#28)", () => {
   it("帧按 | / - \\ 循环", () => {
     expect(SPIN_FRAMES).toEqual(["|", "/", "-", "\\"]);
     expect([0, 1, 2, 3, 4, 5].map(spinFrame)).toEqual(["|", "/", "-", "\\", "|", "/"]);
   });
 
-  it("硬状态与「人」压过转速帧", () => {
+  it('硬状态与"人"压过转速帧', () => {
     expect(badgeText("off", true, false, 2)).toBe("关");
     expect(badgeText("on-unreachable", true, false, 2)).toBe("!");
     expect(badgeText("on-reachable", true, true, 2)).toBe("人");
   });
 
-  it("不在途：不转、清空（哪怕手里还留着帧号）", () => {
+  it("不在途:不转,清空(哪怕手里还留着帧号)", () => {
     expect(badgeText("on-reachable", false, false, 2)).toBe("");
   });
 });
 
-describe("账号处境（#2）", () => {
-  it("禁言带解封时刻；没写时刻也说清是禁言", () => {
+describe("账号处境(#2)", () => {
+  it("禁言带解封时刻;没写时刻也说清是禁言", () => {
     expect(describeAccount({ kind: "muted", until: "2026 年 10 月 10 日 20:21" })).toBe(
-      "账号禁言至 2026 年 10 月 10 日 20:21，写动作停。",
+      "账号禁言至 2026 年 10 月 10 日 20:21,写动作停.",
     );
     expect(describeAccount({ kind: "muted", until: null })).toBe(
-      "账号被禁言（页面上没写解封时刻），写动作停。",
+      "账号被禁言(页面上没写解封时刻),写动作停.",
     );
   });
 
-  it("未登录指回登录口；ready 与 unknown 不说（不猜）", () => {
-    expect(describeAccount({ kind: "signed-out" })).toBe("账号未登录，登录后再用。");
+  it("未登录指回登录口;ready 与 unknown 不说(不猜)", () => {
+    expect(describeAccount({ kind: "signed-out" })).toBe("账号未登录,登录后再用.");
     expect(describeAccount({ kind: "ready" })).toBe("");
     expect(describeAccount({ kind: "unknown" })).toBe("");
   });
 
-  it("悬停：开着且可达时，禁言与未登录都进悬停", () => {
+  it("悬停:开着且可达时,禁言与未登录都进悬停", () => {
     expect(
       iconTitle("on-reachable", null, false, null, null, {
         kind: "muted",
         until: "2026 年 10 月 10 日 20:21",
       }),
-    ).toContain("账号禁言至 2026 年 10 月 10 日 20:21，写动作停。");
+    ).toContain("账号禁言至 2026 年 10 月 10 日 20:21,写动作停.");
     expect(iconTitle("on-reachable", null, false, null, null, { kind: "signed-out" })).toContain(
-      "账号未登录，登录后再用。",
+      "账号未登录,登录后再用.",
     );
   });
 
-  it("悬停：关、不可达、ready 都不带账号处境", () => {
+  it("悬停:关,不可达,ready 都不带账号处境", () => {
     const muted: AccountState = { kind: "muted", until: "x" };
     expect(iconTitle("off", null, false, null, null, muted)).not.toContain("禁言");
     expect(iconTitle("on-unreachable", null, false, null, null, muted)).not.toContain("禁言");

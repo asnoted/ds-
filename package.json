@@ -23,7 +23,8 @@
     "relay:dev": "uv run dsb",
     "relay:test": "uv run pytest",
     "relay:lint": "uv run ruff check . && uv run ruff format --check .",
-    "quality": "pnpm check && pnpm relay:lint && pnpm relay:test"
+    "quality": "pnpm check && pnpm relay:lint && pnpm relay:test && pnpm punct",
+    "punct": "uv run scripts/ascii-punct.py --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,4 +1,4 @@
-"""MCP 服务面：协议分发（POST /mcp）与 HTTP 接缝（唯一端点、一条 CORS 头都没有）。"""
+"""MCP 服务面:协议分发(POST /mcp)与 HTTP 接缝(唯一端点,一条 CORS 头都没有)."""
 
 from __future__ import annotations
 
@@ -30,11 +30,11 @@ def _echo(arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
 
 
 def _fail(arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
-    return {"text": f"tool-not-running（工具 {arguments.get('name')}）"}, True
+    return {"text": f"tool-not-running(工具 {arguments.get('name')})"}, True
 
 
 def _boom(_arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
-    raise RuntimeError("处理器炸了：正文不该进日志")
+    raise RuntimeError("处理器炸了:正文不该进日志")
 
 
 TOOLS = [
@@ -50,7 +50,7 @@ def service() -> McpService:
 
 
 def call(service: McpService, request_id: Any, method: str, params: Any = None) -> Any:
-    """发一条 JSON-RPC → result 或 error（缺哪个抛哪条，别让用例自己剥壳）。"""
+    """发一条 JSON-RPC → result 或 error(缺哪个抛哪条,别让用例自己剥壳)."""
     message: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
     if params is not None:
         message["params"] = params
@@ -91,7 +91,7 @@ def test_ping_answers_empty(service: McpService) -> None:
 
 
 def test_ping_leaves_a_trace(service: McpService, caplog: pytest.LogCaptureFixture) -> None:
-    """探活留一行——env-up 的「扩展最后探活」判据就读它。"""
+    """探活留一行--env-up 的'扩展最后探活'判据就读它."""
     assert result_of(call(service, "p", "ping")) == {}
     assert [record.message for record in caplog.records if record.message == "ping"] == ["ping"]
 
@@ -200,7 +200,7 @@ def test_wrong_method_on_mcp_is_405(service: McpService) -> None:
 
 
 def test_no_cors_header_ever_leaves(service: McpService) -> None:
-    """一条 CORS 头都不下发：网页预检撞死，扩展与本机进程不受预检约束。"""
+    """一条 CORS 头都不下发:网页预检撞死,扩展与本机进程不受预检约束."""
     with make_server(service, port=0) as server:
         import threading
         import urllib.error
@@ -231,7 +231,7 @@ def test_no_cors_header_ever_leaves(service: McpService) -> None:
 
 
 def test_post_over_the_wire_round_trips(service: McpService) -> None:
-    """整链一条：HTTP POST 进来、JSON-RPC 答出去（字节级走一遭）。"""
+    """整链一条:HTTP POST 进来,JSON-RPC 答出去(字节级走一遭)."""
     import threading
     import urllib.request
 
@@ -257,11 +257,11 @@ def test_post_over_the_wire_round_trips(service: McpService) -> None:
             thread.join(timeout=5)
 
 
-# ---- 工作工具（ADR-0012） ----
+# ---- 工作工具(ADR-0012) ----
 
 
 def test_build_tools_lists_the_work_tools_and_said_tools(tmp_path: Path) -> None:
-    """``build_tools`` 把五件工作工具挂上，``said_*`` 仍在最后（撞名时自家说了算）。"""
+    """``build_tools`` 把五件工作工具挂上,``said_*`` 仍在最后(撞名时自家说了算)."""
     service = McpService(build_tools(Gateway({}), SaidLog(), tmp_path))
     names = service.tool_names
     for name in ("ls", "read", "grep", "write", "edit"):

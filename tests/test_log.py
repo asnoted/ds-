@@ -1,4 +1,4 @@
-"""业务日志：失败留得下、留得干净——正文进不来是**签名**保证的，不是自觉。"""
+"""业务日志:失败留得下,留得干净--正文进不来是**签名**保证的,不是自觉."""
 
 from __future__ import annotations
 
@@ -23,16 +23,16 @@ def _echo(arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
 
 
 def _fail(_arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
-    return {"text": "tool-not-running（工具 x）"}, True
+    return {"text": "tool-not-running(工具 x)"}, True
 
 
 def _slow(_arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
     time.sleep((SLOW_MS + 50) / 1000)
-    return {"text": "慢，但成了"}, False
+    return {"text": "慢,但成了"}, False
 
 
 def _boom(_arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
-    raise RuntimeError("处理器炸了：正文不该进日志")
+    raise RuntimeError("处理器炸了:正文不该进日志")
 
 
 TOOLS = [
@@ -44,7 +44,7 @@ TOOLS = [
 
 
 class RaisingService:
-    """post 当场炸的替身：模拟 route 漏接的真故障（既回响应又留名）。"""
+    """post 当场炸的替身:模拟 route 漏接的真故障(既回响应又留名)."""
 
     def post(self, _body: bytes) -> Any:
         raise RuntimeError("服务层炸了")
@@ -52,7 +52,7 @@ class RaisingService:
 
 @pytest.fixture()
 def serve() -> Iterator[Any]:
-    """随机端口起网关的 HTTP 面；收摊时一起关。"""
+    """随机端口起网关的 HTTP 面;收摊时一起关."""
     running: list[tuple[Any, threading.Thread]] = []
 
     def factory(service: Any) -> str:
@@ -72,7 +72,7 @@ def serve() -> Iterator[Any]:
 
 @pytest.fixture(autouse=True)
 def events(caplog: pytest.LogCaptureFixture) -> Iterator[pytest.LogCaptureFixture]:
-    """每个用例都从干净的捕获开始，免得上一条的尾巴被当成本条的证据。"""
+    """每个用例都从干净的捕获开始,免得上一条的尾巴被当成本条的证据."""
     caplog.set_level(logging.INFO, logger="dsb")
     caplog.clear()
     yield caplog
@@ -95,7 +95,7 @@ def call_tool(base: str, name: str, arguments: dict[str, Any] | None = None) -> 
 
 
 def test_body_text_cannot_be_logged_because_it_is_not_in_the_signature() -> None:
-    """结构性保证：调用点想记正文都写不出参数来。"""
+    """结构性保证:调用点想记正文都写不出参数来."""
     with pytest.raises(TypeError):
         log_event("tool-fail", question="问题正文")  # pyright: ignore[reportCallIssue]
     with pytest.raises(TypeError):
@@ -110,7 +110,7 @@ def test_event_line_names_the_event_and_its_fields(events: pytest.LogCaptureFixt
 
 
 def test_an_exception_keeps_only_its_type_name(events: pytest.LogCaptureFixture) -> None:
-    """异常消息里可能嵌着用户的东西，只留类型名。"""
+    """异常消息里可能嵌着用户的东西,只留类型名."""
     log_event("mcp-broke", path=MCP_PATH, exc=RuntimeError("正文在异常消息里"))
     assert f"mcp-broke path={MCP_PATH}" in events.text
     assert "RuntimeError" in events.text
@@ -127,11 +127,11 @@ def test_a_failed_tool_call_leaves_its_code_and_duration(
     assert payload["result"]["isError"] is True
     assert "tool-fail tool=fail" in events.text
     assert "took_ms=" in events.text
-    assert "tool-not-running（工具 x）" not in events.text
+    assert "tool-not-running(工具 x)" not in events.text
 
 
 def test_a_fast_successful_call_is_not_logged(serve: Any, events: pytest.LogCaptureFixture) -> None:
-    """成功且快的调用刷屏只会把真事淹掉——只有失败与慢留痕。"""
+    """成功且快的调用刷屏只会把真事淹掉--只有失败与慢留痕."""
     base = serve(McpService(TOOLS))
     assert call_tool(base, "echo", {"text": "正文在这"})[0] == 200
     assert "tool-fail" not in events.text
@@ -160,7 +160,7 @@ def test_a_handler_that_blows_up_answers_json_and_keeps_its_name(
 def test_a_service_that_breaks_the_wire_answers_json_and_keeps_the_path(
     serve: Any, events: pytest.LogCaptureFixture
 ) -> None:
-    """服务层漏接的异常以前是裸断连（扩展眼里长得像「网关死了」），现在既回响应又留名。"""
+    """服务层漏接的异常以前是裸断连(扩展眼里长得像'网关死了'),现在既回响应又留名."""
     base = serve(RaisingService())
     status, payload = call_tool(base, "echo")
 

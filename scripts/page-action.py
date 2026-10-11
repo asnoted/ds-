@@ -3,28 +3,28 @@
 # requires-python = ">=3.11"
 # dependencies = ["websockets"]
 # ///
-"""页面动作真机探针（开发用）：经 CDP 把一件页面动作发给 DeepSeek 标签页的内容脚本名册。
+"""页面动作真机探针(开发用):经 CDP 把一件页面动作发给 DeepSeek 标签页的内容脚本名册.
 
-外部动作口随 ADR-0011 废掉后，没有外露探针面；这个脚本补上开发期的那只手：
-动作走扩展自己的名册（内容脚本 `ACTION_ROSTER`），绕开 `runAction` 的三道闸（总开关 /
-替人开口 / 退避）——那是给产品路径用的，探针要能直接验执行器。只读页面 DOM 与驱动扩展
-自身，不 hook 站点、不碰令牌（issue #31 的硬边界）。
+外部动作口随 ADR-0011 废掉后,没有外露探针面;这个脚本补上开发期的那只手:
+动作走扩展自己的名册(内容脚本 `ACTION_ROSTER`),绕开 `runAction` 的三道闸(总开关 /
+替人开口 / 退避)--那是给产品路径用的,探针要能直接验执行器.只读页面 DOM 与驱动扩展
+自身,不 hook 站点,不碰令牌(issue #31 的硬边界).
 
-前置：ds-browser 带调试口起（`--remote-debugging-port=9222`）。缺了它会打印怎么起。
+前置:ds-browser 带调试口起(`--remote-debugging-port=9222`).缺了它会打印怎么起.
 
-用法：
+用法:
   uv run scripts/page-action.py list
   uv run scripts/page-action.py read
   uv run scripts/page-action.py send button.get
   uv run scripts/page-action.py send composer.type --params '{"text": "你好"}'
   uv run scripts/page-action.py storage get --keys '["backoffUntil","toggle","speak"]'
-  uv run scripts/page-action.py toggles-off   # 测试环境：把深度思考、智能搜索都关掉
-  uv run scripts/page-action.py evidence      # 存证对账：留档原件 vs 站点当前那一颗（ADR-0018）
+  uv run scripts/page-action.py toggles-off   # 测试环境:把深度思考,智能搜索都关掉
+  uv run scripts/page-action.py evidence      # 存证对账:留档原件 vs 站点当前那一颗(ADR-0018)
 
-环境：
-  DSB_CDP_PORT   调试口端口，默认 9222
-  DSB_EXT_DIR    扩展构建目录，默认 <repo>/.output/chrome-mv3（扩展 id 由它推出）
-  DSB_SITE_MATCH 目标标签页 url 前缀，默认 https://chat.deepseek.com/
+环境:
+  DSB_CDP_PORT   调试口端口,默认 9222
+  DSB_EXT_DIR    扩展构建目录,默认 <repo>/.output/chrome-mv3(扩展 id 由它推出)
+  DSB_SITE_MATCH 目标标签页 url 前缀,默认 https://chat.deepseek.com/
 """
 
 from __future__ import annotations
@@ -49,22 +49,22 @@ REPO = Path(__file__).resolve().parent.parent
 EXT_DIR = Path(os.environ.get("DSB_EXT_DIR", str(REPO / ".output" / "chrome-mv3")))
 SITE_MATCH = os.environ.get("DSB_SITE_MATCH", "https://chat.deepseek.com/")
 
-#: 站点上的动作信封（与 `src/lib/channel.ts` 的 `ACTION_MESSAGE_TYPE` 同一份）。
+#: 站点上的动作信封(与 `src/lib/channel.ts` 的 `ACTION_MESSAGE_TYPE` 同一份).
 ACTION_MESSAGE_TYPE = "ds-/action"
 
-#: 默认动手前的随机等待区间（秒）。用户 2026-10-04 拍板：「注意速率」——别把站点当
-#: 自己家机器连打，隔开一段、每次长度还不一样。
+#: 默认动手前的随机等待区间(秒).用户 2026-10-04 拍板:"注意速率"--别把站点当
+#: 自己家机器连打,隔开一段,每次长度还不一样.
 PACE_DEFAULT = (8.0, 20.0)
 
-#: 页面控件存证（ADR-0018）：真机按钮原件。CI 对拍管「存证 ↔ 回归用例」，这里管「站点 ↔ 存证」。
+#: 页面控件存证(ADR-0018):真机按钮原件.CI 对拍管"存证 ↔ 回归用例",这里管"站点 ↔ 存证".
 EVIDENCE_FILE = REPO / "protocol" / "evidence" / "controls.json"
 
 
 def pace(spec: str | None, *, no_pace: bool = False) -> None:
-    """动手前随机等一下（默认开，`--no-pace` 关，`--pace MIN,MAX` 自定义）。
+    """动手前随机等一下(默认开,`--no-pace` 关,`--pace MIN,MAX` 自定义).
 
-    为什么固化进工具而不是每次手敲：这条纪律靠记性一定会漏，而漏了就是连打站点。
-    随机而非固定时长，免得打出机器人的节奏。打印等待时长，方便复盘时对齐时间线。
+    为什么固化进工具而不是每次手敲:这条纪律靠记性一定会漏,而漏了就是连打站点.
+    随机而非固定时长,免得打出机器人的节奏.打印等待时长,方便复盘时对齐时间线.
     """
     if no_pace:
         return
@@ -75,13 +75,13 @@ def pace(spec: str | None, *, no_pace: bool = False) -> None:
             low = float(parts[0])
             high = float(parts[1]) if len(parts) > 1 else low
         except (ValueError, IndexError):
-            print(f"[page-action] --pace 要「MIN,MAX」两个数：{spec}", file=sys.stderr)
+            print(f'[page-action] --pace 要"MIN,MAX"两个数:{spec}', file=sys.stderr)
             raise SystemExit(2) from None
     low, high = min(low, high), max(low, high)
     if high <= 0:
         return
     delay = random.uniform(low, high)
-    print(f"[page-action] 等 {delay:.1f}s 再动手（限速）", file=sys.stderr)
+    print(f"[page-action] 等 {delay:.1f}s 再动手(限速)", file=sys.stderr)
     time.sleep(delay)
 
 
@@ -111,7 +111,7 @@ READ_EXPR = """(() => {
 
 
 def extension_id() -> str:
-    """未打包扩展的 id：取扩展目录绝对路径 SHA-256 前 16 字节，每半字节映到 a~p。"""
+    """未打包扩展的 id:取扩展目录绝对路径 SHA-256 前 16 字节,每半字节映到 a~p."""
     digest = hashlib.sha256(str(EXT_DIR).encode()).hexdigest()[:32]
     return "".join(chr(ord("a") + int(ch, 16)) for ch in digest)
 
@@ -122,11 +122,11 @@ def http_json(path: str) -> object:
 
 
 def open_tab(url: str, *, background: bool = False) -> dict:
-    """开一个标签页。`background=True` 走 CDP `Target.createTarget` 且不抢前台。
+    """开一个标签页.`background=True` 走 CDP `Target.createTarget` 且不抢前台.
 
-    为什么需要后台开：探针开的扩展入口页（options）若抢了前台，DeepSeek 标签页就退到后台，
-    浏览器会节流后台页——虚拟列表不挂行、历史不加载，`messages.*` 与按位置点控件全读成空。
-    那是探针造成的假象，不是站点或动作的问题。
+    为什么需要后台开:探针开的扩展入口页(options)若抢了前台,DeepSeek 标签页就退到后台,
+    浏览器会节流后台页--虚拟列表不挂行,历史不加载,`messages.*` 与按位置点控件全读成空.
+    那是探针造成的假象,不是站点或动作的问题.
     """
     if background:
         version = http_json("/json/version")
@@ -162,11 +162,11 @@ def find_target(kind: str, needle: str, timeout: float = 0.0) -> dict | None:
 
 
 async def evaluate(ws_url: str, expression: str, timeout: float = 60.0) -> object:
-    """在目标上下文里跑表达式取回值。
+    """在目标上下文里跑表达式取回值.
 
-    **必须有超时**：对端（扩展页 / 页面 SW）不答时 `recv()` 会永远挂着，
-    探针就变成一个没输出的死进程——排查时看不出是「慢」还是「卡」。
-    超时抛 `TimeoutError`，由 `run()` 折成一句人话。
+    **必须有超时**:对端(扩展页 / 页面 SW)不答时 `recv()` 会永远挂着,
+    探针就变成一个没输出的死进程--排查时看不出是'慢'还是'卡'.
+    超时抛 `TimeoutError`,由 `run()` 折成一句人话.
     """
     async with websockets.connect(ws_url, max_size=None) as ws:
         await ws.send(
@@ -188,7 +188,7 @@ async def evaluate(ws_url: str, expression: str, timeout: float = 60.0) -> objec
             except TimeoutError as error:
                 raise TimeoutError(
                     f"CDP Runtime.evaluate 等回包超过 {timeout:.0f}s"
-                    "（对端没答：扩展没醒 / 页面正忙 / 动作在途）"
+                    "(对端没答:扩展没醒 / 页面正忙 / 动作在途)"
                 ) from error
             message = json.loads(raw)
             if message.get("id") == 1:
@@ -204,7 +204,7 @@ def run(ws_url: str, expression: str, timeout: float = 60.0) -> object:
 
 
 async def call_cdp(ws_url: str, method: str, params: dict | None = None) -> object:
-    """发一条 CDP 命令，取它的回包（不带 id 的事件直接跳过）。"""
+    """发一条 CDP 命令,取它的回包(不带 id 的事件直接跳过)."""
     async with websockets.connect(ws_url, max_size=None) as ws:
         await ws.send(json.dumps({"id": 1, "method": method, "params": params or {}}))
         while True:
@@ -214,7 +214,7 @@ async def call_cdp(ws_url: str, method: str, params: dict | None = None) -> obje
 
 
 def ax_nodes(tab: dict) -> list[dict]:
-    """取整棵**无障碍树**（role + 可访问名，浏览器算出来的）。先 enable 再要全量。"""
+    """取整棵**无障碍树**(role + 可访问名,浏览器算出来的).先 enable 再要全量."""
     ws_url = tab["webSocketDebuggerUrl"]
     asyncio.run(call_cdp(ws_url, "Accessibility.enable"))
     reply = asyncio.run(call_cdp(ws_url, "Accessibility.getFullAXTree"))
@@ -224,7 +224,7 @@ def ax_nodes(tab: dict) -> list[dict]:
 
 
 def ax_line(node: dict) -> str:
-    """一行的紧凑视图：role + 可访问名（+ value / 几个关键属性）。"""
+    """一行的紧凑视图:role + 可访问名(+ value / 几个关键属性)."""
     role = (node.get("role") or {}).get("value", "?")
     name = (node.get("name") or {}).get("value", "")
     extras: list[str] = []
@@ -240,7 +240,7 @@ def ax_line(node: dict) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# 全量捕获（capture）：站点一换版，先抓「完整的它」再下判断——别再靠零散探针
+# 全量捕获(capture):站点一换版,先抓"完整的它"再下判断--别再靠零散探针
 # --------------------------------------------------------------------------- #
 
 CAPTURE_HTML_JS = "document.documentElement.outerHTML"
@@ -252,7 +252,7 @@ CAPTURE_CSS_JS = r"""
     try {
       for (const rule of Array.from(sheet.cssRules)) out.push(rule.cssText);
     } catch (e) {
-      out.push("/* 读不到（跨源？）：" + (sheet.href || "inline") + " */");
+      out.push("/* 读不到(跨源?):" + (sheet.href || "inline") + " */");
     }
   }
   return out.join("\n");
@@ -350,11 +350,11 @@ CAPTURE_DIGEST_JS = r"""
 
 
 async def script_sources(ws_url: str, match: str) -> list[tuple[str, str]]:
-    """收集已加载脚本的正文。
+    """收集已加载脚本的正文.
 
-    站点 JS 在跨源 CDN（`fe-static.deepseek.com`）上——页面里 `fetch` 会被 CORS 挡，
-    所以走 CDP：`Debugger.enable` 之后浏览器会把**已加载**的脚本成批 `scriptParsed` 补发，
-    再对命中 `match` 的取 `Debugger.getScriptSource`。
+    站点 JS 在跨源 CDN(`fe-static.deepseek.com`)上--页面里 `fetch` 会被 CORS 挡,
+    所以走 CDP:`Debugger.enable` 之后浏览器会把**已加载**的脚本成批 `scriptParsed` 补发,
+    再对命中 `match` 的取 `Debugger.getScriptSource`.
     """
     found: dict[str, str] = {}
     async with websockets.connect(ws_url, max_size=None) as ws:
@@ -396,7 +396,7 @@ async def script_sources(ws_url: str, match: str) -> list[tuple[str, str]]:
 
 
 def capture(out_dir: str, want_codes: bool) -> None:
-    """抓全量证据到 out_dir：page.html / styles.css / assets.json / digest.json / ax.json。"""
+    """抓全量证据到 out_dir:page.html / styles.css / assets.json / digest.json / ax.json."""
     tab = ensure_site_tab()
     ws = tab["webSocketDebuggerUrl"]
     out = Path(out_dir) if out_dir else Path("captures") / time.strftime("%Y%m%d-%H%M%S")
@@ -450,10 +450,10 @@ def poll_state(predicate, timeout: float, interval: float = 0.25) -> dict:
 def require_cdp() -> None:
     try:
         http_json("/json/version")
-    except Exception:  # noqa: BLE001 - 连不上就是没带调试口，给出人话
+    except Exception:  # noqa: BLE001 - 连不上就是没带调试口,给出人话
         print(
-            f"[page-action] CDP 连不上（{CDP}）。ds-browser 要带调试口起：\n"
-            f"  scripts/env-up.sh --debug   # 或手动：\n"
+            f"[page-action] CDP 连不上({CDP}).ds-browser 要带调试口起:\n"
+            f"  scripts/env-up.sh --debug   # 或手动:\n"
             f'  "$CHROME" --user-data-dir="$HOME/Library/Application Support/ds-browser" \\\n'
             f'    --load-extension="{EXT_DIR}" --remote-debugging-port={PORT} \\\n'
             f"    --no-first-run --no-default-browser-check",
@@ -465,7 +465,7 @@ def require_cdp() -> None:
 def ensure_site_tab() -> dict:
     tab = find_target("page", SITE_MATCH)
     if tab is None:
-        print(f"[page-action] 没有 {SITE_MATCH} 标签页，开一个")
+        print(f"[page-action] 没有 {SITE_MATCH} 标签页,开一个")
         tab = open_tab(SITE_MATCH)
         opened = find_target("page", SITE_MATCH, timeout=10)
         tab = opened or tab
@@ -473,11 +473,11 @@ def ensure_site_tab() -> dict:
 
 
 def ensure_extension_page() -> dict:
-    """扩展页上下文（options）：拿得到 `chrome.tabs.sendMessage`，且不像 SW 那样会睡。"""
+    """扩展页上下文(options):拿得到 `chrome.tabs.sendMessage`,且不像 SW 那样会睡."""
     tab = find_target("page", "chrome-extension://")
     if tab is not None:
         return tab
-    print("[page-action] 没有扩展页，开 options.html 当消息入口")
+    print("[page-action] 没有扩展页,开 options.html 当消息入口")
     open_tab(f"chrome-extension://{extension_id()}/options.html", background=True)
     tab = find_target("page", "chrome-extension://", timeout=10)
     if tab is None:
@@ -507,19 +507,19 @@ def send_action(action: str, params: dict) -> object:
         "  return JSON.stringify(r);"
         "})()"
     )
-    # 动作本身有 30s 的中继锁，超时给得比默认宽一点；再宽就是真卡住了，该报错而不是挂着。
+    # 动作本身有 30s 的中继锁,超时给得比默认宽一点;再宽就是真卡住了,该报错而不是挂着.
     result = run(ext["webSocketDebuggerUrl"], script, timeout=75.0)
     return unwrap(result)
 
 
 def storage_op(op: str, keys_json: str, data_json: str) -> object:
-    """读写扩展 storage.local：开发探针要看 / 清退避这类持久态，从扩展页上下文发。"""
+    """读写扩展 storage.local:开发探针要看 / 清退避这类持久态,从扩展页上下文发."""
     ext = ensure_extension_page()
     try:
         keys = json.loads(keys_json)
         data = json.loads(data_json)
     except json.JSONDecodeError as error:
-        print(f"[page-action] --keys/--data 不是合法 JSON：{error}", file=sys.stderr)
+        print(f"[page-action] --keys/--data 不是合法 JSON:{error}", file=sys.stderr)
         raise SystemExit(2) from error
     if op == "get":
         script = f"chrome.storage.local.get({json.dumps(keys)}).then((v) => JSON.stringify(v))"
@@ -537,7 +537,7 @@ def storage_op(op: str, keys_json: str, data_json: str) -> object:
 
 
 def unwrap(message: object) -> object:
-    """从 CDP Runtime.evaluate 的回包取 value，顺带把异常说清楚。"""
+    """从 CDP Runtime.evaluate 的回包取 value,顺带把异常说清楚."""
     if not isinstance(message, dict):
         return message
     result = message.get("result", {})
@@ -547,7 +547,7 @@ def unwrap(message: object) -> object:
 
 
 def parse_outcome(raw: object) -> dict:
-    """动作回包是一段 JSON 字符串（`{"ok":…,"result"|"error":…}`）；解不开就原样放进 `raw`。"""
+    """动作回包是一段 JSON 字符串(`{"ok":...,"result"|"error":...}`);解不开就原样放进 `raw`."""
     if isinstance(raw, str):
         try:
             value = json.loads(raw)
@@ -557,93 +557,91 @@ def parse_outcome(raw: object) -> dict:
     return raw if isinstance(raw, dict) else {"raw": raw}
 
 
-#: 测试环境要关着的两个写作框开关：动作前缀 → 页面上的名字。
+#: 测试环境要关着的两个写作框开关:动作前缀 → 页面上的名字.
 TEST_TOGGLES = (("think", "深度思考"), ("search", "智能搜索"))
 
 
 def toggles_off(args: argparse.Namespace) -> int:
-    """把深度思考与智能搜索都拨到关（测试环境的已知起点）。
+    """把深度思考与智能搜索都拨到关(测试环境的已知起点).
 
-    幂等：先读，已关的不动；开着的才点，**点之前照常限速**；
-    `.set` 自己等站点稳定再回达成态（#81），据此核实。
-    写作框不在（没登录 / 被禁言 / 页面没加载完）时报明原因并返回 1，不硬点。
+    幂等:先读,已关的不动;开着的才点,**点之前照常限速**;
+    `.set` 自己等站点稳定再回达成态(#81),据此核实.
+    写作框不在(没登录 / 被禁言 / 页面没加载完)时报明原因并返回 1,不硬点.
     """
     state = poll_state(lambda one: bool(one.get("composer")), timeout=args.wait)
     if not state.get("composer"):
-        print(
-            f"[toggles-off] 写作框不在（url={state.get('url')}，alert={state.get('alert')}）：没动"
-        )
+        print(f"[toggles-off] 写作框不在(url={state.get('url')},alert={state.get('alert')}):没动")
         return 1
     code = 0
     for action, label in TEST_TOGGLES:
         got = parse_outcome(send_action(f"{action}.get", {}))
         if not got.get("ok"):
-            print(f"[toggles-off] {label}：读不到 {json.dumps(got, ensure_ascii=False)}")
+            print(f"[toggles-off] {label}:读不到 {json.dumps(got, ensure_ascii=False)}")
             code = 1
             continue
         if got["result"].get("enabled") is False:
-            print(f"[toggles-off] {label}：已是关")
+            print(f"[toggles-off] {label}:已是关")
             continue
         pace(args.pace, no_pace=args.no_pace)
-        # `.set` 点完会等站点稳定再回达成态（#81），所以直接信它的返回；不再自己轮询 `.get`——
-        # 那样执行器哪天又坏了，这里照样绿，把回归藏起来。
+        # `.set` 点完会等站点稳定再回达成态(#81),所以直接信它的返回;不再自己轮询 `.get`--
+        # 那样执行器哪天又坏了,这里照样绿,把回归藏起来.
         done = parse_outcome(send_action(f"{action}.set", {"enabled": False}))
         achieved = done.get("result", {}).get("enabled") if done.get("ok") else None
         if achieved is False:
-            print(f"[toggles-off] {label}：开→关")
+            print(f"[toggles-off] {label}:开→关")
         else:
-            print(f"[toggles-off] {label}：没关上 {json.dumps(done, ensure_ascii=False)}")
+            print(f"[toggles-off] {label}:没关上 {json.dumps(done, ensure_ascii=False)}")
             code = 1
     return code
 
 
 def first_difference(saved: str, live: str, context: int = 60) -> str:
-    """两段 HTML 第一处不同的位置与前后片段（够人眼定位，不倾倒整段）。"""
+    """两段 HTML 第一处不同的位置与前后片段(够人眼定位,不倾倒整段)."""
     at = next((i for i, (a, b) in enumerate(zip(saved, live, strict=False)) if a != b), None)
     if at is None:
         at = min(len(saved), len(live))
     low = max(0, at - context)
     return (
-        f"第 {at} 个字符起不同（存证长 {len(saved)}、站点长 {len(live)}）\n"
-        f"      存证：…{saved[low : at + context]}…\n"
-        f"      站点：…{live[low : at + context]}…"
+        f"第 {at} 个字符起不同(存证长 {len(saved)},站点长 {len(live)})\n"
+        f"      存证:...{saved[low : at + context]}...\n"
+        f"      站点:...{live[low : at + context]}..."
     )
 
 
 def reconcile_entry(entry: dict, live: object) -> tuple[str, str]:
-    """一条存证对一次站点读数的结论：(状态, 说明)。状态：一致 / 过时 / 未比。
+    """一条存证对一次站点读数的结论:(状态, 说明).状态:一致 / 过时 / 未比.
 
-    `live` 条目**读到了那一颗**而不逐字相等，才是「站点改版，存证过时」。
-    `state-bound` 条目只在某个态出现，不等只能说「当前态不符、未比」——不算过时。
-    **读不到那一颗（probe 返回 null）一律「未比」**：页面可能根本不在对应的地方（首页没有消息行、
-    没有代码块），把它报成「过时」会让每次换页都满屏误报；站点真把控件删了，也会表现为
-    换到有该控件的页面后仍读不到，由人看「未比」数是否异常。
+    `live` 条目**读到了那一颗**而不逐字相等,才是'站点改版,存证过时'.
+    `state-bound` 条目只在某个态出现,不等只能说'当前态不符,未比'--不算过时.
+    **读不到那一颗(probe 返回 null)一律'未比'**:页面可能根本不在对应的地方(首页没有消息行,
+    没有代码块),把它报成'过时'会让每次换页都满屏误报;站点真把控件删了,也会表现为
+    换到有该控件的页面后仍读不到,由人看'未比'数是否异常.
     """
     saved = entry["outerHTML"]
     if live == saved:
         return "一致", ""
     if not isinstance(live, str):
-        return "未比", "当前页面找不到这一颗（probe 返回 null）：换到有这个控件的页面再比"
+        return "未比", "当前页面找不到这一颗(probe 返回 null):换到有这个控件的页面再比"
     detail = first_difference(saved, live)
     if entry.get("reconcile") == "state-bound":
-        return "未比", f"当前态不符、未比：{detail}"
-    return "过时", f"站点改版，存证过时：{detail}"
+        return "未比", f"当前态不符,未比:{detail}"
+    return "过时", f"站点改版,存证过时:{detail}"
 
 
 def evidence(args: argparse.Namespace) -> int:
-    """真机对账：存证里每条的 probe 在页面上读一遍，与留档 `outerHTML` 逐字比。
+    """真机对账:存证里每条的 probe 在页面上读一遍,与留档 `outerHTML` 逐字比.
 
-    只读渲染 DOM（`js` 同款），不 dispatch 事件、不点任何按钮。有「过时」退出码 1。
+    只读渲染 DOM(`js` 同款),不 dispatch 事件,不点任何按钮.有'过时'退出码 1.
     """
     if not EVIDENCE_FILE.is_file():
-        print(f"[evidence] 存证文件缺失：{EVIDENCE_FILE.relative_to(REPO)}", file=sys.stderr)
+        print(f"[evidence] 存证文件缺失:{EVIDENCE_FILE.relative_to(REPO)}", file=sys.stderr)
         return 2
     entries = json.loads(EVIDENCE_FILE.read_text(encoding="utf-8"))["entries"]
     if args.id:
         entries = [entry for entry in entries if entry["id"] in args.id]
         missing = set(args.id) - {entry["id"] for entry in entries}
         if missing:
-            print(f"[evidence] 存证里没有：{', '.join(sorted(missing))}", file=sys.stderr)
+            print(f"[evidence] 存证里没有:{', '.join(sorted(missing))}", file=sys.stderr)
             return 2
     tab = ensure_site_tab()
     tally = {"一致": 0, "过时": 0, "未比": 0}
@@ -651,7 +649,7 @@ def evidence(args: argparse.Namespace) -> int:
         live = unwrap(run(tab["webSocketDebuggerUrl"], entry["probe"]))
         verdict, detail = reconcile_entry(entry, live)
         tally[verdict] += 1
-        print(f"[evidence] {entry['id']:<18} {verdict}（{entry['capturedOn']} 留档）")
+        print(f"[evidence] {entry['id']:<18} {verdict}({entry['capturedOn']} 留档)")
         if detail:
             print(f"    {detail}")
     print(f"[evidence] 一致 {tally['一致']} / 未比 {tally['未比']} / 过时 {tally['过时']}")
@@ -659,50 +657,50 @@ def evidence(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="页面动作真机探针（开发用）")
-    # 全局：动手前先随机等一下（默认开）。理由见 pace()。
+    parser = argparse.ArgumentParser(description="页面动作真机探针(开发用)")
+    # 全局:动手前先随机等一下(默认开).理由见 pace().
     parser.add_argument(
         "--pace",
         default=None,
         metavar="MIN,MAX",
-        help="动手前随机等 MIN..MAX 秒（默认 8..20；给 0 关闭；例：--pace 3,6）",
+        help="动手前随机等 MIN..MAX 秒(默认 8..20;给 0 关闭;例:--pace 3,6)",
     )
-    parser.add_argument("--no-pace", action="store_true", help="别等，立刻动手（默认是等的）")
+    parser.add_argument("--no-pace", action="store_true", help="别等,立刻动手(默认是等的)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="列 CDP 目标")
     sub.add_parser("read", help="读 DeepSeek 页面状态")
-    js = sub.add_parser("js", help="在 DeepSeek 页面上下文里跑一段只读 JS，打印结果")
-    js.add_argument("expression", help="要 evaluate 的 JS 表达式（建议用 IIFE 返回字符串）")
-    stop_test = sub.add_parser("stop-test", help="端到端验 button.click：起生成→等停止键→点→等复位")
+    js = sub.add_parser("js", help="在 DeepSeek 页面上下文里跑一段只读 JS,打印结果")
+    js.add_argument("expression", help="要 evaluate 的 JS 表达式(建议用 IIFE 返回字符串)")
+    stop_test = sub.add_parser("stop-test", help="端到端验 button.click:起生成→等停止键→点→等复位")
     stop_test.add_argument(
         "--text",
-        default="请写一篇 3000 字的散文，主题是海边的灯塔，分段，慢慢写，一定要写满。",
+        default="请写一篇 3000 字的散文,主题是海边的灯塔,分段,慢慢写,一定要写满.",
         help="用来起生成的长消息",
     )
     stop_test.add_argument("--timeout", type=float, default=40.0, help="等某一相的秒数上限")
     send = sub.add_parser("send", help="给 DeepSeek 标签页发一件页面动作")
-    send.add_argument("action", help="动作名，如 button.get")
-    send.add_argument("--params", default="{}", help="动作参数 JSON，默认 {}")
-    storage = sub.add_parser("storage", help="读写扩展 storage.local（开发探针）")
+    send.add_argument("action", help="动作名,如 button.get")
+    send.add_argument("--params", default="{}", help="动作参数 JSON,默认 {}")
+    storage = sub.add_parser("storage", help="读写扩展 storage.local(开发探针)")
     storage.add_argument("op", choices=["get", "set", "remove"], help="get 读 / set 写 / remove 删")
-    storage.add_argument("--keys", default="[]", help="get / remove 的键数组（JSON）")
-    storage.add_argument("--data", default="{}", help="set 的对象（JSON）")
+    storage.add_argument("--keys", default="[]", help="get / remove 的键数组(JSON)")
+    storage.add_argument("--data", default="{}", help="set 的对象(JSON)")
     off = sub.add_parser(
-        "toggles-off", help="测试环境：把「深度思考」「智能搜索」都关掉（幂等，开着的才点）"
+        "toggles-off", help='测试环境:把"深度思考""智能搜索"都关掉(幂等,开着的才点)'
     )
-    off.add_argument("--wait", type=float, default=15.0, help="等写作框出现的秒数上限，默认 15")
+    off.add_argument("--wait", type=float, default=15.0, help="等写作框出现的秒数上限,默认 15")
     ev = sub.add_parser(
-        "evidence", help="存证对账：留档按钮原件 vs 站点当前那一颗逐字比（只读，ADR-0018）"
+        "evidence", help="存证对账:留档按钮原件 vs 站点当前那一颗逐字比(只读,ADR-0018)"
     )
-    ev.add_argument("--id", action="append", help="只比这一条（可重复）；默认全比")
-    ax = sub.add_parser("ax", help="dump 无障碍树（role + 可访问名；只读，开发探针）")
+    ev.add_argument("--id", action="append", help="只比这一条(可重复);默认全比")
+    ax = sub.add_parser("ax", help="dump 无障碍树(role + 可访问名;只读,开发探针)")
     ax.add_argument("--grep", default="", help="只打印 role/name/value 命中该串的节点")
-    ax.add_argument("--max", type=int, default=80, help="最多打印多少行，默认 80")
+    ax.add_argument("--max", type=int, default=80, help="最多打印多少行,默认 80")
     ax.add_argument("--all", action="store_true", help="连 ignored 的节点也打印")
     capture_parser = sub.add_parser(
-        "capture", help="抓全量证据：完整 HTML / 同源 CSS / 资源清单 / 行快照 / 无障碍树"
+        "capture", help="抓全量证据:完整 HTML / 同源 CSS / 资源清单 / 行快照 / 无障碍树"
     )
-    capture_parser.add_argument("--out", default="", help="输出目录（默认 captures/<时间戳>/）")
+    capture_parser.add_argument("--out", default="", help="输出目录(默认 captures/<时间戳>/)")
     capture_parser.add_argument(
         "--codes", action="store_true", help="另把同源 <script src> 正文下载到 codes/"
     )
@@ -710,7 +708,7 @@ def main() -> None:
 
     require_cdp()
 
-    # 只读本地目标清单（list）不用碰站点，不必等。
+    # 只读本地目标清单(list)不用碰站点,不必等.
     if args.command != "list":
         pace(args.pace, no_pace=args.no_pace)
 
@@ -745,13 +743,13 @@ def main() -> None:
         def is_send(state: dict) -> bool:
             return bool(state.get("stopDetect", {}).get("isSend"))
 
-        print(f"[stop-test] 起生成：{args.text[:40]}…")
+        print(f"[stop-test] 起生成:{args.text[:40]}...")
         report["type"] = send_action("composer.type", {"text": args.text})
         report["enter"] = send_action("send.enter", {})
         state = poll_state(is_stop, args.timeout)
         report["started"] = is_stop(state)
         report["atStop"] = state.get("stopDetect")
-        print(f"[stop-test] 进入停止相：{report['started']}  icon={state.get('circleIcon')}")
+        print(f"[stop-test] 进入停止相:{report['started']}  icon={state.get('circleIcon')}")
         if report["started"]:
             report["stop"] = send_action("button.click", {})
             print(f"[stop-test] button.click -> {json.dumps(report['stop'], ensure_ascii=False)}")
@@ -759,7 +757,7 @@ def main() -> None:
             report["stopped"] = is_send(state2)
             report["afterStop"] = state2.get("stopDetect")
             print(
-                f"[stop-test] 停后回到发送相：{report['stopped']}  icon={state2.get('circleIcon')}"
+                f"[stop-test] 停后回到发送相:{report['stopped']}  icon={state2.get('circleIcon')}"
             )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return
@@ -768,7 +766,7 @@ def main() -> None:
         try:
             params = json.loads(args.params)
         except json.JSONDecodeError as error:
-            print(f"[page-action] --params 不是合法 JSON：{error}", file=sys.stderr)
+            print(f"[page-action] --params 不是合法 JSON:{error}", file=sys.stderr)
             raise SystemExit(2) from error
         if not isinstance(params, dict):
             print("[page-action] --params 必须是对象", file=sys.stderr)
@@ -805,9 +803,9 @@ def main() -> None:
             if shown >= args.max:
                 break
         if shown == 0:
-            print(f"（没有命中；共 {len(nodes)} 个节点）")
+            print(f"(没有命中;共 {len(nodes)} 个节点)")
         else:
-            print(f"—— 打住：{shown} 行 / 共 {len(nodes)} 个节点（--max 调大 / --grep 收窄）")
+            print(f"-- 打住:{shown} 行 / 共 {len(nodes)} 个节点(--max 调大 / --grep 收窄)")
         return
 
     if args.command == "capture":
