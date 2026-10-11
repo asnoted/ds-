@@ -85,7 +85,7 @@
   由 **background** 派发(`src/lib/action.ts`), 而探针绕开 background 直接投内容
   脚本, 内容脚本的 `ACTION_ROSTER`(`entrypoints/content.ts`)里没有这两个. 照着
   约定去 `send toggle.set` 只会回 `unknown-action`--**那是探针够不着, 不是链子坏了**.
-  要读总开关用 `storage get --keys '["toggle"]'`.
+  要读写总开关走 `storage set`, 见下面那条.
 - **本地工具(`send.page` 等)不在名册里**,只能注入 chain 信封触发,写法见
   `scripts/page-action.py` 的文件头.
 - **DeepSeek 标签页必须留在前台**:后台标签页被浏览器节流,虚拟列表不挂行,历史不加载,
@@ -98,11 +98,14 @@
 - **`--no-pace` / `--pace` 抓瞬态时用**(生成中,思考期那种几秒的窗口),必须连读,
   否则限速下根本抓不到.放错位置时 argparse 会拒绝,报错自己会说该放哪.`list`
   只读本地目标清单,不等.
-- **人做的有三件**(2026-10-11 实测补的第三件):登录 DeepSeek,勾"替人开口",
-  以及**打开扩展总开关**--它在 `storage.local` 的 `toggle` 键, 缺省 `false`,
-  探针改不了(见上面那条), 只能在工具栏图标或选项页上点. **任何要真机验发送路径的
-  活, 第一步先读它**: `storage get --keys '["toggle"]'`; 回 `false` 就先让用户点开,
-  否则整条链是断的, 后面全是空跑. 没勾闸则写动作回 `disabled`, 属预期不是故障.
+- **人做的有两件**:登录 DeepSeek 与勾"替人开口",脚本只打印不代劳;没勾闸则写
+  动作回 `disabled`,属预期,不是故障. **扩展总开关(`storage.local` 的 `toggle` 键,
+  缺省 `false`)探针自己就能开**:`storage set --data '{"toggle":true}'` -- 真源就是
+  `storage.local`,写入触发 background 的 `storage.onChanged → syncFromStorage`,
+  与 `toggle.set` 走同一条路(内容脚本随即 `apply(true)` 装上 fetch/XHR 钩子).
+  判据别读 storage(那只是真源), 读**钩子装没装**: `js` 看 `String(window.fetch)`
+  里有没有 `native code` -- 没有就是链子活着. 任何要真机验发送路径的活先做这一步,
+  否则后面全是空跑.
 - **真机结果只有一半可信时,别硬下结论**:能用探针交叉验证(`messages.list` 读角色+正文)
   就验,拿不到就在票里写明"间接证据"与"未验证项".
 - **判据要抗自污染**(2026-10-09 栽过两次,两次形态不同):
