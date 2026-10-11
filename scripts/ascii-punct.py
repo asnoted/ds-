@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""把中文标点换成半角 -- 只管自家代码与文档, 不碰 vendored 与数据文件.
+"""把中文标点换成半角 -- 管全部 `.md` 与 `scripts/` 下的 `.py`.
 
 **为什么要有这个工具**: 本仓不用中文标点(见 `CODING_STANDARDS.md` 第 3 节).
 规矩光写在文档里会漂, 所以它既能改也能查(`--check`), 后者接进 `pnpm quality`,
 让违反规矩的提交在 CI 里就红, 而不是等 review 时被人眼抓到.
 
-**范围**: 只改 `.md` `.ts` `.tsx` `.js` `.mjs` `.py` 里本仓自己写的那些.
-以下一律不碰, 且各有理由:
+**范围**(2026-10-11 用户收窄过):
+
+- **全部 `.md`** -- 仓库的散文主体, 规则的主要对象.
+- **`scripts/` 下的 `.py`** -- 注释与用户可见提示语最常被读, 值得一并管.
+- **其余代码不管**: `src/` `entrypoints/` `dsb/` `tests/`. 早先扫过一遍,
+  存量保持已扫(见下), 但**不再强制** -- 范围小的东西才守得住, 守卫一旦
+  覆盖面太大就没人愿意维护它, 那才是真失效.
+
+一律不碰的, 且各有理由:
 
 - `.agents/` `vendor/` -- 别人家的代码, 手改会被升级冲掉(AGENTS.md 记着).
 - `protocol/evidence/` -- 真机抓下来的**原件**. 改它等于把"录到的现实"
@@ -15,9 +22,9 @@
   契约样例与配置, 改字面等于改字节, 会连带改测试断言, 而它们不是文档与代码.
 
 **为什么必须认字符串字面量**: `error("发送「继续」")` 直接换掉引号会变成
-`error("发送"继续"")` -- 代码当场断掉. 所以在代码文件里, 引号该换成什么由
+`error("发送"继续"")` -- 代码当场断掉. 所以在 `.py` 里, 引号该换成什么由
 **它所在的词法状态**决定: 双引号字符串内换 `\"` (源码合法), 单引号字符串内
-换成 `"`, 注释与模板串里换直引号. 裸代码(标识符/关键字)一个字符都不碰.
+换成 `"`, 注释与三引号串里换直引号. 裸代码(标识符/关键字)一个字符都不碰.
 
 **按索引走而不是重建源码**: 早先那版按 token 重新拼接, 结果把 token 之间的
 空格吞了(`X = 1` 变成 `X=1`). 现在只改"要换的那些字符", 其余字节原样保留.
@@ -113,8 +120,10 @@ PLAIN = 2
 
 ALL_CHARS = set(PAIRS) | set(SELF_PAIRS) | set(FULLWIDTH) | set(QUOTE_PAIRS)
 
-SCOPE_SUFFIX = {".md", ".ts", ".tsx", ".js", ".mjs", ".py"}
-NEEDS_LEX = {".ts", ".tsx", ".js", ".mjs", ".py"}
+SCOPE_SUFFIX = {".md"}
+CODE_PREFIX = "scripts/"  # scripts/ 下的 .py 也管: 它们的注释与用户可见提示语最常被读
+CODE_SUFFIX = {".py"}
+NEEDS_LEX = {".py"}
 EXCLUDE_PREFIX = (".agents/", "vendor/", "node_modules/", ".output/", ".wxt/", "dist/")
 
 # 本文件豁免自己: 它的映射表**必须**含中文标点的字面字符(键就是 `"。": "."`).
@@ -179,91 +188,10 @@ def py_regions(text: str) -> list[tuple[int, int, str, str]]:
     return regions
 
 
-def _regex_end(text: str, i: int) -> int:
-    """`i` 处的 `/` 若是正则起始, 返回它(含 flags)之后的下标; 否则 -1.
-
-    **必须处理正则**: 正则里可以出现引号(`/".length"/` 这种), 扫描器若把它
-    当字符串起始, 就会一路吞到下一个引号 -- 实测 `src/lib/answer.ts` 里的
-    `/".length, -"/` 吞掉了 1641 个字符, 后面真正的注释全被误判成字符串.
-    判据用老办法: 前一个有效字符若是运算符/左括号, `/` 就是正则的开头.
-    """
-    prev = ""
-    for k in range(i - 1, -1, -1):
-        if not text[k].isspace():
-            prev = text[k]
-            break
-    if prev and (prev.isalnum() or prev in ")]_."):
-        return -1  # 除号, 不是正则
-    j, in_class = i + 1, False
-    while j < len(text):
-        c = text[j]
-        if c == "\\":
-            j += 2
-            continue
-        if c == "\n":
-            return -1
-        if c == "[":
-            in_class = True
-        elif c == "]":
-            in_class = False
-        elif c == "/" and not in_class:
-            j += 1
-            while j < len(text) and text[j].isalpha():
-                j += 1
-            return j
-        j += 1
-    return -1
-
-
-def ts_regions(text: str) -> list[tuple[int, int, str, str]]:
-    """给 .ts/.js 标出字符串与注释的区间 (start, end, kind, delim)."""
-    regions: list[tuple[int, int, str, str]] = []
-    i, n, start, delim = 0, len(text), 0, ""
-    while i < n:
-        c = text[i]
-        if delim:
-            if c == "\\":
-                i += 2
-                continue
-            if c == delim:
-                regions.append((start, i + 1, "string", delim))
-                delim = ""
-            i += 1
-            continue
-        if c == "/" and i + 1 < n and text[i + 1] == "/":
-            j = text.find("\n", i)
-            j = n if j == -1 else j
-            regions.append((i, j, "comment", ""))
-            i = j
-            continue
-        if c == "/" and i + 1 < n and text[i + 1] == "*":
-            j = text.find("*/", i + 2)
-            j = n if j == -1 else j + 2
-            regions.append((i, j, "comment", ""))
-            i = j
-            continue
-        if c == "/":
-            j = _regex_end(text, i)
-            if j > 0:
-                i = j  # 正则整体跳过, 别让里面的引号改写状态
-                continue
-        if c in "'\"`":
-            delim, start = c, i
-        i += 1
-    if delim:  # 没闭合的字符串, 也要覆盖到, 别漏改
-        regions.append((start, n, "string", delim))
-    return regions
-
-
 def convert(text: str, suffix: str) -> str:
-    if suffix == ".py":
-        regions = py_regions(text)
-    elif suffix in NEEDS_LEX:
-        regions = ts_regions(text)
-    else:
-        regions = []
-    # 没有 region 就整段裸文本(.md); 源码坏了 py_regions 返回空, 那种情况按裸文本
-    # 处理仍比留着中文标点好, 且不碰定界符.
+    regions = py_regions(text) if suffix in NEEDS_LEX else []
+    # .md 整段按裸文本处理; 源码坏了 py_regions 返回空, 那种情况也按裸文本处理 --
+    # 留着中文标点总比留下一个不能修的文件好, 且不碰定界符.
     out: list[str] = []
     i, n = 0, len(text)
     while i < n:
@@ -302,25 +230,50 @@ def in_scope(path: Path, root: Path) -> bool:
     rel = path.relative_to(root).as_posix()
     if rel == SELF or rel.startswith(EXCLUDE_PREFIX):
         return False
-    return path.suffix in SCOPE_SUFFIX
+    if path.suffix in SCOPE_SUFFIX:
+        return True
+    return rel.startswith(CODE_PREFIX) and path.suffix in CODE_SUFFIX
 
 
 def tracked_files(root: Path) -> list[Path]:
-    """只取 git 跟踪的文件.
+    """取 git 认得的文件: 已跟踪的 + 未跟踪但没被 ignore 的.
 
-    别用 `rglob("*")`: 它会把 `node_modules` / `.venv` / `.git` 全走一遍(慢到超时),
-    而且会碰到未跟踪的文件——那不是"本仓自己写的代码",改了也没法进版本库.
+    两个坑都在这里踩过:
+
+    - 别用 `rglob("*"): 它会把 `node_modules` / `.venv` / `.git` 全走一遍
+      (慢到超时), 还会碰到未跟踪但属于本机的东西.
+    - 但**光用 `git ls-files` 也错**: 它只列已跟踪的, 而本文件最该处理的
+      恰恰是**刚写出来的**新文件. CODING_STANDARDS.md 就是这么漏过去的 --
+      建分支时它是未跟踪的, 转换器跳过它, 提交时带着中文标点进了 main,
+      而转换器自己当时报的是"干净". 加 `--others --exclude-standard`
+      补上未跟踪的, 同时仍被 .gitignore 挡住的(node_modules / .venv /
+    dsweb/bundle)不会进来.
     """
     try:
         names = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "-z"],
+            [
+                "git",
+                "-C",
+                str(root),
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
             capture_output=True,
             check=True,
             text=False,
         ).stdout.decode("utf-8")
     except (OSError, subprocess.CalledProcessError):
         return []
-    return [root / n for n in names.split("\0") if n]
+    seen: set[str] = set()
+    out: list[Path] = []
+    for name in names.split("\0"):
+        if name and name not in seen:
+            seen.add(name)
+            out.append(root / name)
+    return out
 
 
 def main() -> None:
