@@ -60,6 +60,9 @@ root 内(`DSB_WORK_ROOT` 配置,缺省本仓根),不给任何命令执行;见 `d
 ├── docs/adr/           # 架构决策记录(README.md 是生成的索引)
 ├── docs/agents/        # issue 追踪 / 分诊标签 / 领域文档的规则(Matt 的技能读)
 ├── docs/CODING_STANDARDS.md  # 判断题:裁定放纯模块,修订型 ADR 的写法
+├── docs/setup.md       # 环境准备的判据与代价(换中继/换浏览器各丢什么)
+├── docs/probe.md       # 真机探针手册:子命令表 + 判据纪律
+├── docs/page-actions.md # 页面动作的设计判据:失败码分档,名册按控件划分
 ├── GLOSSARY.md         # 领域词条(必须在根目录,技能按它判断上下文)
 ├── .agents/skills/     # Matt 的技能(skills-lock.json 记版本)
 ├── tests/              # Python 测试(pytest)
@@ -77,6 +80,8 @@ scripts/env-up.sh --debug  # 让 ds-browser 带 --remote-debugging-port(开发�
 pnpm quality               # TS 与 Python 两半一起过
 ```
 
+末尾要看到的判据,以及换中继/换浏览器各丢什么,见 [`docs/setup.md`](docs/setup.md).
+
 ## 真机探针(开发用)
 
 外部动作口随 ADR-0011 废掉后,页面动作没有外露探针面.要真机验一件动作:
@@ -90,6 +95,9 @@ uv run scripts/page-action.py stop-test       # 端到端:起生成→等停止�
 
 动作走扩展自己的名册(`ACTION_ROSTER`),绕开 `runAction` 的三道闸;只读页面 DOM 与驱动扩展
 自身,不 hook 站点,不碰令牌(issue #31 的硬边界).
+
+子命令全表,开真机前的总开关判据,前台与"观测点"纪律,见
+[`docs/probe.md`](docs/probe.md);改名册本身看 [`docs/page-actions.md`](docs/page-actions.md).
 
 ## 参考
 
