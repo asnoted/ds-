@@ -144,7 +144,7 @@ export type PacedRun<T> = {
  * 两个世界共用这一份(隔离世界的名册接线与页面世界的续聊发送),此前两边各写一遍
  * --同一条规则两份实现,迟早漂.抽出来还有个好处:clock / random / sleep 全注入,
  * 于是"连续两次发送实际相隔 ≥3 秒"这种**时序**判据能被单测钉住(接线层闭包里的
- * 时候钉不住,`CODING_STANDARDS.md` 第 1 条).
+ * 时候钉不住,`docs/CODING_STANDARDS.md` 第 1 条).
  *
  * @param readIntent 动手前读一次意图(圆键那一下可能不是发送).
  * @param shouldRecord 发完之后判要不要记一笔:隔离世界**重读**意图(等的时候圆键

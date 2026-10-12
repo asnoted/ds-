@@ -57,9 +57,10 @@ root 内(`DSB_WORK_ROOT` 配置,缺省本仓根),不给任何命令执行;见 `d
 ├── src/                # 扩展的纯逻辑层(TS,可单测)
 ├── dsb/                # 本机中继:MCP 网关(Python)
 ├── protocol/fixtures/  # TS 与 pytest 共读的线协议对拍
-├── docs/adr/           # 架构决策记录
+├── docs/adr/           # 架构决策记录(README.md 是生成的索引)
 ├── docs/agents/        # issue 追踪 / 分诊标签 / 领域文档的规则(Matt 的技能读)
-├── GLOSSARY.md         # 领域词条
+├── docs/CODING_STANDARDS.md  # 判断题:裁定放纯模块,修订型 ADR 的写法
+├── GLOSSARY.md         # 领域词条(必须在根目录,技能按它判断上下文)
 ├── .agents/skills/     # Matt 的技能(skills-lock.json 记版本)
 ├── tests/              # Python 测试(pytest)
 ├── wxt.config.ts       # 扩展构建配置

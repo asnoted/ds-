@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """把中文标点换成半角 -- 管全部 `.md` 与 `scripts/` 下的 `.py`.
 
-**为什么要有这个工具**: 本仓不用中文标点(见 `CODING_STANDARDS.md` 第 3 节).
+**为什么要有这个工具**: 本仓不用中文标点(见 `docs/CODING_STANDARDS.md` 第 3 节).
 规矩光写在文档里会漂, 所以它既能改也能查(`--check`), 后者接进 `pnpm quality`,
 让违反规矩的提交在 CI 里就红, 而不是等 review 时被人眼抓到.
 
@@ -100,7 +100,7 @@ FULLWIDTH: dict[str, str] = {
 
 # **有意不换**的(它们不是标点): 箭头 `→ ← ↔`, 框线 `─ │ ├ └`, 数学
 # `≠ ≥ ≈ ∈ −`, `✓ ★`. 框线是 ASCII 流程图的骨架, 换成 ASCII 框线会把图画烂;
-# 箭头与数学符号换成 `->` `!=` 会污染散文. CODING_STANDARDS.md 第 3 节写了这条.
+# 箭头与数学符号换成 `->` `!=` 会污染散文. docs/CODING_STANDARDS.md 第 3 节写了这条.
 
 # 成对引号. 三列分别对应: 双引号字符串内 / 单引号字符串内 / 注释与模板串内.
 # 「」用直双引号, 『』用直单引号 -- 这样嵌套还能读出层次.
@@ -243,7 +243,7 @@ def tracked_files(root: Path) -> list[Path]:
     - 别用 `rglob("*"): 它会把 `node_modules` / `.venv` / `.git` 全走一遍
       (慢到超时), 还会碰到未跟踪但属于本机的东西.
     - 但**光用 `git ls-files` 也错**: 它只列已跟踪的, 而本文件最该处理的
-      恰恰是**刚写出来的**新文件. CODING_STANDARDS.md 就是这么漏过去的 --
+      恰恰是**刚写出来的**新文件. docs/CODING_STANDARDS.md 就是这么漏过去的 --
       建分支时它是未跟踪的, 转换器跳过它, 提交时带着中文标点进了 main,
       而转换器自己当时报的是"干净". 加 `--others --exclude-standard`
       补上未跟踪的, 同时仍被 .gitignore 挡住的(node_modules / .venv /
@@ -311,7 +311,10 @@ def main() -> None:
             print(f"{TAG} 发现 {len(offenders)} 个文件还有中文标点:")
             for name in offenders:
                 print(f"  {name}")
-            print(f"{TAG} 跑 `uv run scripts/ascii-punct.py` 修, 或看 CODING_STANDARDS.md 第 3 节.")
+            print(
+                f"{TAG} 跑 `uv run scripts/ascii-punct.py` 修, "
+                "或看 `docs/CODING_STANDARDS.md` 第 3 节."
+            )
             raise SystemExit(1)
         print(f"{TAG} 干净: 范围内没有中文标点.")
         return

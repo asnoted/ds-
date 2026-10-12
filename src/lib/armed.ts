@@ -145,7 +145,7 @@ export function disarm(state: ArmedState): ArmedState {
  *   消息,正文会被工具结果顶掉(把人说的话吃了,比少一轮严重得多).
  *
  * 抽出来是因为这原本藏在 `flush()` 的 `.then` / `.catch` 闭包里--闭包里的判定单测
- * 钉不住(`CODING_STANDARDS.md` 第 1 条).
+ * 钉不住(`docs/CODING_STANDARDS.md` 第 1 条).
  */
 export function settleArmedAfterSend(state: ArmedState, sent: boolean): ArmedState {
   return sent ? state : disarm(state);
