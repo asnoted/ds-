@@ -169,7 +169,9 @@ Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
 别一篇篇 `ls` 然后读文件名. 它是**生成的**: 新写一篇 ADR 就跑
 `uv run scripts/adrs-index.py`,漏了会被 `pnpm quality` 的 `adrs` 守卫判红.
 
-其他工具的入口**不许复制这里的内容** -- `CLAUDE.md` 只有一行 `@AGENTS.md`,
-照 Firefox 的做法(它根目录 `CLAUDE.md` 同样只有一行),要改就改这一份.
+**根目录的 agent 入口只有 `AGENTS.md` 这一份**(用户 2026-10-12 定):别再建
+`CLAUDE.md` 之类的别名文件,也不要把内容抄到别处 -- 照 Firefox 的做法本来是
+`CLAUDE.md` 写一行 `@AGENTS.md`,但本仓不要第二份,所以换 harness 时**指过去**,
+不在仓库里落文件. 要改就改 `AGENTS.md` 这一份.
 接受过的 ADR 不改,要推翻就写新 ADR 并在 `Supersedes:` 点名旧篇.输出提到领域概念时用 `GLOSSARY.md` 里的词;
 与 ADR 冲突要挑明,别默默盖过.
