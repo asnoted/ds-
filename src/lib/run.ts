@@ -16,9 +16,21 @@
  * (ADR-0014/0015);失败留痕不进正文(ADR-0004).
  */
 
-import { arm, disarm, idleArmed, pend, planContinuation, type ArmedState } from "./armed";
+import {
+  arm,
+  disarm,
+  idleArmed,
+  pend,
+  planContinuation,
+  settleArmedAfterSend,
+  type ArmedState,
+} from "./armed";
 import { CONTINUATION_MARKER, STOP_CONTINUATION_LIMIT, buildContinuation } from "./continuation";
-import { describeContinuationFailure, type ContinuationFailure } from "./continuationfail";
+import {
+  describeContinuationFailure,
+  describeThrownFailure,
+  type ContinuationFailure,
+} from "./continuationfail";
 import { beginRound, INITIAL_ROUNDS, resetRounds, type RoundState } from "./rounds";
 import { isInjectableReply, type ReplyPayload } from "./reply";
 
@@ -164,9 +176,18 @@ function onReleased(state: RunState, message: string, now: number): RunDecision 
 
 /** 发送 / 落草稿落定:没发出去立刻撤武装(留着它,下一个出站会顶掉用户的话). */
 function onSettled(state: RunState, continuation: boolean, outcome: SettleOutcome): RunDecision {
-  void continuation;
-  void outcome;
-  return step(state, []);
+  if (!continuation) return step(state, []);
+  if ("thrown" in outcome) {
+    return step({ ...state, armed: disarm(state.armed) }, [
+      { kind: "trace", cause: describeThrownFailure(outcome.thrown) },
+    ]);
+  }
+  if (outcome.sent) return step(state, []);
+  const effects: RunEffect[] =
+    outcome.failure === null
+      ? []
+      : [{ kind: "trace", cause: describeContinuationFailure(outcome.failure) }];
+  return step({ ...state, armed: settleArmedAfterSend(state.armed, false) }, effects);
 }
 
 /** 换会话 = 换了条任务:轮数归零,写给上一条会话的待发那条作废. */
