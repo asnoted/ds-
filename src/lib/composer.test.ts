@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { CONTINUATION_MARKER } from "./continuation";
 import {
   awaitCleared,
   BUTTON_SELECTOR,
@@ -11,6 +12,9 @@ import {
   pressEnter,
   read,
   readIntent,
+  send,
+  stage,
+  triggerSend,
   write,
   type Clock,
 } from "./composer";
@@ -274,5 +278,155 @@ describe("圆键:此刻是什么意图", () => {
 
     document.body.innerHTML = "<div>什么都没有</div>";
     expect(circleIntent()).toBe("unknown");
+  });
+});
+
+describe("落草稿(stage):草稿保护,框里有别人的字就不覆盖", () => {
+  const textarea = (): HTMLTextAreaElement =>
+    document.querySelector("textarea") as HTMLTextAreaElement;
+
+  it("空框 → 短标记落进去,回 written;这里只有写入,一次键都不按", () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    let keys = 0;
+    textarea().addEventListener("keydown", () => (keys += 1));
+
+    expect(stage(textarea(), CONTINUATION_MARKER)).toBe("written");
+    expect(textarea().value).toBe(CONTINUATION_MARKER);
+    expect(keys).toBe(0);
+  });
+
+  it("框里有用户正在打的字 → 不覆盖,回 draft(半自动待发续聊的字不被吃)", () => {
+    document.body.innerHTML = "<textarea>我正在打的话</textarea>";
+
+    expect(stage(textarea(), CONTINUATION_MARKER)).toBe("draft");
+    expect(textarea().value).toBe("我正在打的话"); // 一个字都没动
+  });
+
+  it("框里是上一轮落的那份短标记 → 覆盖成新的(换行 / 首尾空白不算别人的字)", () => {
+    document.body.innerHTML = `<textarea>${CONTINUATION_MARKER}\r\n </textarea>`;
+
+    expect(stage(textarea(), CONTINUATION_MARKER)).toBe("written");
+    expect(textarea().value).toBe(CONTINUATION_MARKER);
+  });
+
+  it("框里只剩空白 → 落进去(空白不算别人的草稿)", () => {
+    document.body.innerHTML = "<textarea>  \n </textarea>";
+
+    expect(stage(textarea(), CONTINUATION_MARKER)).toBe("written");
+    expect(textarea().value).toBe(CONTINUATION_MARKER);
+  });
+
+  it("手递一个写不进的元素 → 回 unwritable,不假装落成", () => {
+    document.body.innerHTML = '<div id="plain"></div>';
+    const el = document.getElementById("plain") as HTMLElement;
+
+    expect(stage(el, CONTINUATION_MARKER)).toBe("unwritable");
+    expect(el.textContent).toBe(""); // 一个字都没落进去
+  });
+});
+
+describe("把这条发出去:生成期绝不点圆键", () => {
+  // 真机存证(ADR-0018):两态 class 一个不换,只有图标不同;真机抓的是空输入框态
+  // (带 ds-button--disabled),去掉禁用 class 即"输入框里有内容"的空闲态.
+  const SEND_READY_HTML = evidenceHtml("circle.send").replace("ds-button--disabled ", "");
+  const STOP_HTML = evidenceHtml("circle.stop");
+  const SPINNER_HTML = evidenceHtml("circle.spinner");
+
+  const stubBox = (el: Element): void => {
+    (el as HTMLElement).getClientRects = () =>
+      [{ width: 36, height: 36 }] as unknown as DOMRectList;
+  };
+  const circle = (): HTMLElement => document.querySelector(BUTTON_SELECTOR) as HTMLElement;
+  const textarea = (): HTMLTextAreaElement =>
+    document.querySelector("textarea") as HTMLTextAreaElement;
+
+  /** 圆键被点的次数;站点"发出去了"由每个用例自己模拟. */
+  function mountCircle(html: string, onSend?: () => void): () => number {
+    document.body.insertAdjacentHTML("beforeend", html);
+    stubBox(circle());
+    let clicks = 0;
+    circle().addEventListener("click", () => {
+      clicks += 1;
+      onSend?.();
+    });
+    return () => clicks;
+  }
+
+  it("按回车就发出去(站点 keydown 里清空框):圆键一下都不点", async () => {
+    document.body.innerHTML = "<textarea>要发的话</textarea>";
+    const clicks = mountCircle(STOP_HTML); // 圆键此刻是停止,更不该点
+    const { clock } = fakeClock();
+    let keys = 0;
+    textarea().addEventListener("keydown", () => {
+      keys += 1;
+      textarea().value = "";
+    });
+
+    expect(await triggerSend(textarea(), clock)).toBe(true);
+    expect(keys).toBe(1);
+    expect(clicks()).toBe(0);
+  });
+
+  it("回车没发出去,圆键此刻是停止(生成中)→ 不点,回 false,框里的字不动", async () => {
+    document.body.innerHTML = "<textarea>要发的话</textarea>";
+    const clicks = mountCircle(STOP_HTML);
+    const { clock } = fakeClock();
+
+    expect(await triggerSend(textarea(), clock)).toBe(false);
+    expect(clicks()).toBe(0);
+    expect(textarea().value).toBe("要发的话");
+  });
+
+  it("回车没发出去,圆键是思考期环形(认不出)→ 也不点:宁可作废,不赌那一下是发送", async () => {
+    document.body.innerHTML = "<textarea>要发的话</textarea>";
+    const clicks = mountCircle(SPINNER_HTML);
+    const { clock } = fakeClock();
+
+    expect(await triggerSend(textarea(), clock)).toBe(false);
+    expect(clicks()).toBe(0);
+  });
+
+  it("回车没发出去,圆键此刻是发送 → 点它兜底,站点清空后回 true", async () => {
+    document.body.innerHTML = "<textarea>要发的话</textarea>";
+    const clicks = mountCircle(SEND_READY_HTML, () => (textarea().value = ""));
+    const { clock } = fakeClock();
+
+    expect(await triggerSend(textarea(), clock)).toBe(true);
+    expect(clicks()).toBe(1);
+  });
+
+  it("没圆键(或不可用)→ 回 false,不抛", async () => {
+    document.body.innerHTML = "<textarea>要发的话</textarea>";
+    const { clock } = fakeClock();
+
+    expect(await triggerSend(textarea(), clock)).toBe(false);
+  });
+
+  it("send:发出去了回 sent(框被站点清空)", async () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    mountCircle(STOP_HTML);
+    const { clock } = fakeClock();
+    textarea().addEventListener("keydown", () => (textarea().value = ""));
+
+    expect(await send(textarea(), "要发的话", clock)).toBe("sent");
+    expect(textarea().value).toBe("");
+  });
+
+  it("send:发不出去就把原来的字还原(页面里不留半截东西)", async () => {
+    document.body.innerHTML = "<textarea>半截草稿</textarea>";
+    mountCircle(STOP_HTML);
+    const { clock } = fakeClock();
+
+    expect(await send(textarea(), "要发的话", clock)).toBe("failed");
+    expect(textarea().value).toBe("半截草稿");
+  });
+
+  it("send:写不进 → unwritable,框里的字没动", async () => {
+    document.body.innerHTML = '<div id="plain">字</div>';
+    const { clock } = fakeClock();
+    const el = document.getElementById("plain") as HTMLElement;
+
+    expect(await send(el, "要发的话", clock)).toBe("unwritable");
+    expect(el.textContent).toBe("字");
   });
 });

@@ -199,3 +199,75 @@ export function circleIntent(): Intent {
   const el = findButton();
   return el === null ? "unknown" : readIntent(el);
 }
+
+/** 落草稿的结果:写成了 / 框里有别人的字(没覆盖)/ 写不进. */
+export type StageOutcome = "written" | "draft" | "unwritable";
+
+/**
+ * 同一份字的判定:只放宽换行与首尾空白,其余严格相等.
+ *
+ * 口径与 `armed.ts` 那把钥匙一致(ADR-0020:站点与 React 受控输入在换行与末尾空白
+ * 上与我们写进去的不完全一致),两处都由用例钉着:这里钉"上一轮落的短标记再落一次
+ * 不算别人的字",`armed.test.ts` 钉"用户手打的话永远不等于标记".
+ */
+function sameText(left: string, right: string): boolean {
+  const normalize = (value: string): string => value.replace(/\r\n/g, "\n").trim();
+  return normalize(left) === normalize(right);
+}
+
+/**
+ * 落一份待发草稿(**不按发送**),带草稿保护:框里有别人正在打的字就不覆盖--宁可少
+ * 一轮,也不吃人正在打的东西(#52 的半自动待发续聊靠这条).框里那份是**这一份**
+ * (上一轮落的短标记,换行 / 首尾空白不算数)就覆盖:落草稿是幂等的.
+ *
+ * 只有写入,没有发送步;"代你发言"闸关不关、要不要人按发送都不在这里管(ADR-0023:
+ * 写草稿放行,发送才归闸).
+ */
+export function stage(element: HTMLElement, text: string): StageOutcome {
+  const draft = read(element);
+  if (draft.trim() !== "" && !sameText(draft, text)) return "draft";
+  return write(element, text) ? "written" : "unwritable";
+}
+
+/** 按完回车等站点清空的上限(毫秒). */
+export const ENTER_WAIT_MS = 600;
+/** 点完圆键再等的上限(毫秒):兜底那一下之后站点要更久才清空. */
+export const CIRCLE_WAIT_MS = 1200;
+
+/**
+ * 把框里**已经写好**的那条字发出去:先按 Enter(站点自己的发送键),等框被清空;
+ * 没清空才去点圆键兜底,而**只在圆键此刻的意图是"发送"时点**.
+ *
+ * 生成期那个圆键是停止(真机 2026-10-05:class 一个不换,只有图标在箭头与方块之间
+ * 换),点下去就是替用户中断一次生成--比这条发不出去坏得多.认不出(思考期环形
+ * spinner)同样不点:宁可作废,也不赌那一下是发送.
+ */
+export async function triggerSend(element: HTMLElement, clock: Clock): Promise<boolean> {
+  pressEnter(element);
+  if (await awaitCleared(() => read(element), { timeoutMs: ENTER_WAIT_MS, clock })) return true;
+
+  const button = findButton();
+  if (button === null || readIntent(button) !== "send") return false;
+  button.click();
+  return awaitCleared(() => read(element), { timeoutMs: CIRCLE_WAIT_MS, clock });
+}
+
+/** 一次发送的结果:发出去了 / 写不进 / 没发出去(断在哪一步由调用方去留痕). */
+export type SendStatus = "unwritable" | "sent" | "failed";
+
+/**
+ * 把 `message` 写进框里并把这条发出去;**发不出去就把原来的字还原**,页面里不留
+ * 半截东西(草稿保护的另一面:写得进不等于发得出去,别把人打到一半的稿换成
+ * 一条发不掉的消息).
+ */
+export async function send(
+  element: HTMLElement,
+  message: string,
+  clock: Clock,
+): Promise<SendStatus> {
+  const before = read(element);
+  if (!write(element, message)) return "unwritable";
+  if (await triggerSend(element, clock)) return "sent";
+  if (read(element).includes(message)) write(element, before);
+  return "failed";
+}
