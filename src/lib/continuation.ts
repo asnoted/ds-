@@ -9,7 +9,7 @@
  * 于是对话里只多一个短气泡,工具结果不进可见流.
  *
  * 这里只管"短标记长什么样"与"给模型的正文长什么样":替换请求体在
- * `inject.ts`(`rewriteContinuationBody`),轮数刹车在 `rounds.ts`.
+ * `inject.ts`(`recognizeOutgoingShape` 的 `replacePending`),轮数刹车在 `rounds.ts`.
  * 载荷形状与 TOON 编码仍归 `reply.ts`--正文还是那一段,只是换了条路走.
  */
 

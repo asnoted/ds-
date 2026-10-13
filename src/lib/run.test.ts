@@ -244,6 +244,43 @@ describe("出站请求认领:钥匙、过期与处置", () => {
     expect(claimed.state.armed).toEqual({ phase: "idle" });
   });
 
+  it("消息形状里最后一条 user 不是标记:钥匙不符(哪怕历史里有一条恰好是标记)", () => {
+    const body = JSON.stringify({
+      messages: [
+        { role: "user", content: CONTINUATION_MARKER },
+        { role: "assistant", content: "第一答" },
+        { role: "user", content: "我改主意了,问别的" },
+      ],
+    });
+    const claimed = decide(armedRun(true), {
+      type: "claimed",
+      shape: recognizeOutgoingShape(body),
+      now: 1_500,
+    });
+    expect(claimed.claim).toEqual({ kind: "protocol" });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("key-mismatch") },
+    ]);
+  });
+
+  it("首尾空白与 CRLF 不影响钥匙:站点与受控输入框的换行写法差异(ADR-0020 归一化)", () => {
+    for (const variant of [
+      `  ${CONTINUATION_MARKER}\n`,
+      CONTINUATION_MARKER.replace(/\n/g, "\r\n"),
+    ]) {
+      const claimed = decide(armedRun(true), {
+        type: "claimed",
+        shape: recognizeOutgoingShape(JSON.stringify({ prompt: variant })),
+        now: 1_500,
+      });
+      expect(claimed.claim).toEqual({
+        kind: "substituted",
+        body: JSON.stringify({ prompt: CONT }),
+      });
+    }
+  });
+
   it("没有武装等着:处置是协议说明那一支,状态与痕迹都不动", () => {
     const idle = decide(turnOn(true), {
       type: "claimed",
