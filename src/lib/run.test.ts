@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CONTINUATION_MARKER, buildContinuation } from "./continuation";
 import { describeContinuationFailure, describeThrownFailure } from "./continuationfail";
 import { okPayload } from "./reply";
+import { INITIAL_ROUNDS } from "./rounds";
 import { decide, newRun, type RunState } from "./run";
 
 const BODY = "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
@@ -119,5 +120,49 @@ describe("发送失败立刻撤武装(AC③)", () => {
     });
     expect(settled.state.armed.phase).toBe("armed");
     expect(settled.effects).toEqual([]);
+  });
+});
+
+describe("换会话:轮数归零且待发作废(AC④)", () => {
+  it("换了会话 id:轮数归零,挂着的 pending 作废并留痕", () => {
+    let run = decide(turnOn(false), { type: "session", key: "s1" }).state;
+    // 两轮结果 + 两次放行(闸关:只落草稿)把轮数与 pending 攒起来.
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 2 }).state;
+    expect(run.rounds.rounds).toBe(2);
+    expect(run.armed.phase).toBe("pending");
+
+    const changed = decide(run, { type: "session", key: "s2" });
+    expect(changed.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(changed.state.armed).toEqual({ phase: "idle" });
+    expect(changed.state.session).toBe("s2");
+    expect(changed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("session-changed") },
+    ]);
+  });
+
+  it("同一个会话 id 再来一次:轮数与待发都不动", () => {
+    let run = decide(turnOn(false), { type: "session", key: "s1" }).state;
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+
+    const same = decide(run, { type: "session", key: "s1" });
+    expect(same.state.rounds.rounds).toBe(1);
+    expect(same.state.armed.phase).toBe("pending");
+    expect(same.effects).toEqual([]);
+  });
+
+  it("换会话时是 armed(不是 pending):轮数归零,武装留着(出站窗口那一趟还没落定)", () => {
+    let run = decide(turnOn(true), { type: "session", key: "s1" }).state;
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    expect(run.armed.phase).toBe("armed");
+
+    const changed = decide(run, { type: "session", key: "s2" });
+    expect(changed.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(changed.state.armed.phase).toBe("armed");
+    expect(changed.effects).toEqual([]);
   });
 });

@@ -192,8 +192,15 @@ function onSettled(state: RunState, continuation: boolean, outcome: SettleOutcom
 
 /** 换会话 = 换了条任务:轮数归零,写给上一条会话的待发那条作废. */
 function onSession(state: RunState, key: string | null): RunDecision {
-  void key;
-  return step(state, []);
+  if (key === state.session) return step(state, []);
+  const effects: RunEffect[] = [];
+  let armed = state.armed;
+  // 待发的那条(#52 的 pending 态)写进的是**这条**会话的输入框,到了新会话已经不对话了.
+  if (armed.phase === "pending") {
+    armed = idleArmed();
+    effects.push({ kind: "trace", cause: describeContinuationFailure("session-changed") });
+  }
+  return step({ ...state, session: key, rounds: resetRounds(), armed }, effects);
 }
 
 /** 闸与总开关:闸关时挂着的作废;总开关关时整条链(队列 / 武装 / 轮数 / 会话)作废. */
