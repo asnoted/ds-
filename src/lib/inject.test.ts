@@ -15,6 +15,11 @@ import { buildReply, okPayload, REPLY_ANCHOR } from "./reply";
 /** 工具目录:null = 还没取到(本文件里的对拍都按这份喂). */
 const TOOLS: readonly ToolInfo[] | null = null;
 
+/** 接线侧就是这么用的:认一次形状,把结果交给拼说明(与认领裁决共用同一次识别). */
+function rewrite(body: string, tools: readonly ToolInfo[] | null = TOOLS): string | null {
+  return rewriteOutgoingBody(recognizeOutgoingShape(body), tools);
+}
+
 describe("isOutgoingChatRequest", () => {
   it("认得站点原生的发消息出口", () => {
     expect(isOutgoingChatRequest("POST", "https://chat.deepseek.com/api/v0/chat/completion")).toBe(
@@ -54,7 +59,7 @@ describe("isOutgoingChatRequest", () => {
 describe("rewriteOutgoingBody", () => {
   it("把协议说明拼在 prompt 开头,原文一个字不丢", () => {
     const prompt = "帮我看看这个报错";
-    const rewritten = rewriteOutgoingBody(JSON.stringify({ prompt, chat_session_id: "s1" }), TOOLS);
+    const rewritten = rewrite(JSON.stringify({ prompt, chat_session_id: "s1" }), TOOLS);
 
     expect(rewritten).not.toBeNull();
     const payload = JSON.parse(rewritten ?? "") as Record<string, unknown>;
@@ -65,7 +70,7 @@ describe("rewriteOutgoingBody", () => {
 
   it("多行消息整段原样跟在协议说明后面", () => {
     const prompt = "第一行\n第二行\n\n第四行(空行后面)";
-    const rewritten = rewriteOutgoingBody(JSON.stringify({ prompt }), TOOLS);
+    const rewritten = rewrite(JSON.stringify({ prompt }), TOOLS);
     const payload = JSON.parse(rewritten ?? "") as Record<string, unknown>;
 
     expect(payload.prompt).toBe(`${protocolInstructions(TOOLS)}\n\n${prompt}`);
@@ -73,16 +78,16 @@ describe("rewriteOutgoingBody", () => {
   });
 
   it("空消息没东西可发,原样放行", () => {
-    expect(rewriteOutgoingBody(JSON.stringify({ prompt: "" }), TOOLS)).toBeNull();
-    expect(rewriteOutgoingBody(JSON.stringify({ prompt: "   \n  " }), TOOLS)).toBeNull();
-    expect(rewriteOutgoingBody("", TOOLS)).toBeNull();
+    expect(rewrite(JSON.stringify({ prompt: "" }), TOOLS)).toBeNull();
+    expect(rewrite(JSON.stringify({ prompt: "   \n  " }), TOOLS)).toBeNull();
+    expect(rewrite("", TOOLS)).toBeNull();
   });
 
   it("拼过一遍的不再拼第二遍", () => {
-    const once = rewriteOutgoingBody(JSON.stringify({ prompt: "原文" }), TOOLS);
+    const once = rewrite(JSON.stringify({ prompt: "原文" }), TOOLS);
 
     expect(once).not.toBeNull();
-    expect(rewriteOutgoingBody(once ?? "", TOOLS)).toBeNull();
+    expect(rewrite(once ?? "", TOOLS)).toBeNull();
   });
 
   it("messages 形状:只动 role: user,历史里的角色照旧", () => {
@@ -95,7 +100,7 @@ describe("rewriteOutgoingBody", () => {
       ],
     });
 
-    const rewritten = rewriteOutgoingBody(body, TOOLS);
+    const rewritten = rewrite(body, TOOLS);
     expect(rewritten).not.toBeNull();
 
     const payload = JSON.parse(rewritten ?? "") as {
@@ -108,26 +113,23 @@ describe("rewriteOutgoingBody", () => {
   });
 
   it("整段历史再发一遍时,拼过的用户消息不会被拼第二次", () => {
-    const first = rewriteOutgoingBody(
-      JSON.stringify({ messages: [{ role: "user", content: "原文" }] }),
-      TOOLS,
-    );
-    const second = rewriteOutgoingBody(first ?? "", TOOLS);
+    const first = rewrite(JSON.stringify({ messages: [{ role: "user", content: "原文" }] }), TOOLS);
+    const second = rewrite(first ?? "", TOOLS);
 
     expect(second).toBeNull();
   });
 
   it("认不出的载荷原样放行", () => {
-    expect(rewriteOutgoingBody("不是 JSON", TOOLS)).toBeNull();
-    expect(rewriteOutgoingBody("[1,2,3]", TOOLS)).toBeNull();
-    expect(rewriteOutgoingBody('"prompt"', TOOLS)).toBeNull();
-    expect(rewriteOutgoingBody(JSON.stringify({ messages: "不是数组" }), TOOLS)).toBeNull();
-    expect(rewriteOutgoingBody(JSON.stringify({ text: "别的字段" }), TOOLS)).toBeNull();
+    expect(rewrite("不是 JSON", TOOLS)).toBeNull();
+    expect(rewrite("[1,2,3]", TOOLS)).toBeNull();
+    expect(rewrite('"prompt"', TOOLS)).toBeNull();
+    expect(rewrite(JSON.stringify({ messages: "不是数组" }), TOOLS)).toBeNull();
+    expect(rewrite(JSON.stringify({ text: "别的字段" }), TOOLS)).toBeNull();
     expect(
-      rewriteOutgoingBody(JSON.stringify({ messages: [{ role: "tool", content: "回执" }] }), TOOLS),
+      rewrite(JSON.stringify({ messages: [{ role: "tool", content: "回执" }] }), TOOLS),
     ).toBeNull();
     expect(
-      rewriteOutgoingBody(JSON.stringify({ messages: [{ role: "user", content: 42 }] }), TOOLS),
+      rewrite(JSON.stringify({ messages: [{ role: "user", content: 42 }] }), TOOLS),
     ).toBeNull();
   });
 
@@ -135,14 +137,14 @@ describe("rewriteOutgoingBody", () => {
     const reply = buildReply(okPayload("答复正文"));
 
     expect(reply.split("\n")[0]).toBe(REPLY_ANCHOR);
-    expect(rewriteOutgoingBody(JSON.stringify({ prompt: reply }), TOOLS)).toBeNull();
+    expect(rewrite(JSON.stringify({ prompt: reply }), TOOLS)).toBeNull();
     expect(
-      rewriteOutgoingBody(JSON.stringify({ messages: [{ role: "user", content: reply }] }), TOOLS),
+      rewrite(JSON.stringify({ messages: [{ role: "user", content: reply }] }), TOOLS),
     ).toBeNull();
   });
 
   it("只是以 agent 开头的普通消息照样拼说明", () => {
-    const rewritten = rewriteOutgoingBody(JSON.stringify({ prompt: "agent 你好,帮我看看" }), TOOLS);
+    const rewritten = rewrite(JSON.stringify({ prompt: "agent 你好,帮我看看" }), TOOLS);
     expect(rewritten).not.toBeNull();
     expect(JSON.parse(rewritten ?? "")["prompt"]).toBe(
       prependInstructions("agent 你好,帮我看看", TOOLS),
@@ -153,14 +155,14 @@ describe("rewriteOutgoingBody", () => {
     const catalog: readonly ToolInfo[] = [
       { name: "fs_read_file", description: "[fs] 读文件内容", params: ["path", "encoding?"] },
     ];
-    const rewritten = rewriteOutgoingBody(JSON.stringify({ prompt: "原文" }), catalog);
+    const rewritten = rewrite(JSON.stringify({ prompt: "原文" }), catalog);
     const prompt = String(JSON.parse(rewritten ?? "")["prompt"]);
     expect(prompt).toContain("- fs_read_file(path, encoding?) -- [fs] 读文件内容");
     expect(prompt.endsWith("\n\n原文")).toBe(true);
   });
 
   it('目录还没取到时,说明里写"先别排围栏"', () => {
-    const rewritten = rewriteOutgoingBody(JSON.stringify({ prompt: "原文" }), null);
+    const rewritten = rewrite(JSON.stringify({ prompt: "原文" }), null);
     expect(String(JSON.parse(rewritten ?? "")["prompt"])).toContain("工具表暂未取到");
   });
 });

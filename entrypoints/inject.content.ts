@@ -218,7 +218,7 @@ export default defineContentScript({
           console.log("[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)");
           return decision.claim.body;
         default: {
-          const next = rewriteOutgoingBody(body, catalog);
+          const next = rewriteOutgoingBody(shape, catalog);
           if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
           return next;
         }

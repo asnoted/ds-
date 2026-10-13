@@ -168,14 +168,6 @@ export function recognizeOutgoingShape(bodyText: string): OutgoingShape {
 }
 
 /**
- * 改写一段即将发送的请求体.认得出的载荷有两条形状:
- * `prompt`(站点原生的发消息接口只带这一条新消息)与 `messages`(整段历史一起带的形状).
- * 两条形状里 `role: "user"` 的内容都会带上协议说明,其余角色不动.
- *
- * 工具目录(隔离世界广播下来的 `tools/list`)喂进协议说明;
- * null = 还没取到,说明里会写"先别排围栏".
- */
-/**
  * 续聊那一趟的改写:把这条出站请求的正文**换成**工具结果
  * (组装见 `continuation.ts` 的 `buildContinuation`).
  *
@@ -213,9 +205,20 @@ export function outgoingUserTextOf(bodyText: string): string | null {
   return recognizeOutgoingShape(bodyText).pendingText;
 }
 
+/**
+ * 拼一次协议说明:对**已经认过的**出站形状,把说明拼在每条用户消息开头
+ * (`mapAllUserTexts` 那一用);`prompt` 与 `messages` 两条形状里 `role: "user"`
+ * 的内容都会带上,其余角色不动.
+ *
+ * 工具目录(隔离世界广播下来的 `tools/list`)喂进协议说明;
+ * null = 还没取到,说明里会写"先别排围栏".
+ *
+ * 形状只认一次:接线侧把 `recognizeOutgoingShape` 的结果同时交给认领裁决与这里,
+ * 同一条请求不再解析第二遍(#103).
+ */
 export function rewriteOutgoingBody(
-  bodyText: string,
+  shape: OutgoingShape,
   tools: readonly ToolInfo[] | null,
 ): string | null {
-  return recognizeOutgoingShape(bodyText).mapAllUserTexts((text) => prependOnce(text, tools));
+  return shape.mapAllUserTexts((text) => prependOnce(text, tools));
 }
