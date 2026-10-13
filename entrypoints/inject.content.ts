@@ -15,7 +15,6 @@ import {
 } from "../src/lib/channel";
 import { CONTINUATION_MARKER } from "../src/lib/continuation";
 import { type ContinuationFailure } from "../src/lib/continuationfail";
-import { matchesMarker } from "../src/lib/armed";
 import { enqueue, newGate, nextOpenAt, release, type Gate } from "../src/lib/gate";
 import {
   mergeSendPace,
@@ -25,7 +24,7 @@ import {
   type SendPace,
 } from "../src/lib/sendpace";
 import { isOutgoingChatRequest, rewriteOutgoingBody } from "../src/lib/inject";
-import { findButton, readIntent } from "../src/lib/composer";
+import { pick, realClock, send, stage } from "../src/lib/composer";
 import { nextMessageId } from "../src/lib/id";
 import { hasReplyAnchor } from "../src/lib/reply";
 import type { ToolInfo } from "../src/lib/relay";
@@ -232,25 +231,23 @@ export default defineContentScript({
      * 半自动那一跳(#52):"代你发言"闸关着时,把短标记**写进输入框**,**不按发送**,
      * 等用户自己按.
      *
-     * 三个结果分得清清楚楚(失败留痕由 `run.ts` 的 settled 裁决发):
-     * 找不到输入框 `composer-absent`;**输入框里有你的草稿** → **不覆盖**
-     * `draft-in-composer`(宁可少一轮,也不吃人正在打的东西);写不进去
-     * `composer-unwritable`.
+     * 三个结果分得清清楚楚(失败留痕由 `run.ts` 的 settled 裁决发):判据在
+     * `composer.ts` 的 `stage` 里——找不到输入框 `composer-absent`;**输入框里有你的
+     * 草稿** → **不覆盖** `draft-in-composer`(宁可少一轮,也不吃人正在打的东西);
+     * 写不进去 `composer-unwritable`.
      *
      * `sent: true` 表示标记已经落在输入框里(pending 态可以挂着等用户按)——
      * 这里只有写入,**没有发送步**.
      */
     function stagePendingMarker(): SendOutcome {
-      const composer = pickComposer();
+      const composer = pick();
       if (composer === null) return { sent: false, failure: "composer-absent" };
-      const draft = readComposer(composer);
-      if (draft.trim() !== "" && !matchesMarker(draft)) {
+      const outcome = stage(composer, CONTINUATION_MARKER);
+      if (outcome === "draft") {
         console.log("[ds-] 输入框里还有你正在打的字,这一轮不覆盖");
         return { sent: false, failure: "draft-in-composer" };
       }
-      if (!writeComposer(composer, CONTINUATION_MARKER)) {
-        return { sent: false, failure: "composer-unwritable" };
-      }
+      if (outcome === "unwritable") return { sent: false, failure: "composer-unwritable" };
       console.log('[ds-] "代你发言"闸关着:短标记已写进输入框,等你按发送');
       return { sent: true, failure: null };
     }
@@ -459,8 +456,6 @@ export default defineContentScript({
 /* 回灌发送点:把消息交给站点自己那条发消息的路径                                */
 /* -------------------------------------------------------------------------- */
 
-const COMPOSER_SELECTORS = ["textarea", '[contenteditable="true"]'];
-
 /** 一次发送的结果:发没发出去,**以及没发出去时断在哪一步**(#51 要这个来留痕). */
 export type SendOutcome = {
   readonly sent: boolean;
@@ -472,115 +467,21 @@ export type SendOutcome = {
  * 回灌作为一条真实用户消息发进当前会话:把消息填进站点自己的输入框,触发它原生的发送,
  * 于是这条消息走的与 #12 注入同一条路(同一个 `CHAT_SEND_PATH` 闸门内的那次发送).
  * 返回有没有真的发出去,失败时带上原因码;发不出去就把输入框还原,页面里不留半截东西.
+ *
+ * 挑框、写入、按键、判发出、圆键兜底的判据全在 `composer.ts`(#102:与动作路同一份,
+ * 两条路不再各判各的框);这里只把结果折成续聊的失败码.
  */
 async function sendToPage(message: string): Promise<SendOutcome> {
-  const composer = pickComposer();
+  const composer = pick();
   if (composer === null) {
     console.log("[ds-] 没找到站点的输入框,这轮回灌作废");
     return { sent: false, failure: "composer-absent" };
   }
-
-  const before = readComposer(composer);
-  if (!writeComposer(composer, message)) {
+  const status = await send(composer, message, realClock);
+  if (status === "unwritable") {
     console.log("[ds-] 输入框写不进去,这轮回灌作废");
     return { sent: false, failure: "composer-unwritable" };
   }
-
-  if (await triggerSend(composer)) return { sent: true, failure: null };
-
-  if (readComposer(composer).includes(message)) writeComposer(composer, before);
-  return { sent: false, failure: "send-failed" };
-}
-
-/** 挑站点的输入框:看得见,能写的优先 textarea,其次可编辑区;同级里挑面积最大的. */
-function pickComposer(): HTMLElement | null {
-  for (const selector of COMPOSER_SELECTORS) {
-    let best: HTMLElement | null = null;
-    let bestArea = -1;
-    for (const candidate of document.querySelectorAll<HTMLElement>(selector)) {
-      if (!isWritable(candidate)) continue;
-      const rect = candidate.getBoundingClientRect();
-      const area = rect.width * rect.height;
-      if (area > bestArea) {
-        best = candidate;
-        bestArea = area;
-      }
-    }
-    if (best !== null) return best;
-  }
-  return null;
-}
-
-function isWritable(element: HTMLElement): boolean {
-  if (!element.isConnected || element.getClientRects().length === 0) return false;
-  if (element instanceof HTMLTextAreaElement) return !element.disabled && !element.readOnly;
-  return element.isContentEditable;
-}
-
-function readComposer(element: HTMLElement): string {
-  if (element instanceof HTMLTextAreaElement) return element.value;
-  return element.textContent ?? "";
-}
-
-/** 写值走原生 setter:站点的受控组件才认得这次改动(只 dispatch 事件不算改过). */
-function writeComposer(element: HTMLElement, text: string): boolean {
-  if (element instanceof HTMLTextAreaElement) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-    if (setter === undefined) return false;
-    setter.call(element, text);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    return true;
-  }
-  if (element.isContentEditable) {
-    element.textContent = text;
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    return true;
-  }
-  return false;
-}
-
-async function triggerSend(composer: HTMLElement): Promise<boolean> {
-  dispatchEnter(composer);
-  if (await waitForSend(composer, 600)) return true;
-
-  // 兜底才去点圆键,而**只在它此刻真是"发送"时点**(`button.get` 那套读面).
-  // 生成期那个圆键是停止(真机 2026-10-05:class 一个不换,只有图标在箭头与方块之间换),
-  // 点下去就是替用户中断一次生成--比这条回灌发不出去坏得多.认不出(思考期环形
-  // spinner,报 unknown)同样不点:宁可作废,也不赌那一下是发送.
-  const button = findButton();
-  if (button === null || readIntent(button) !== "send") return false;
-  button.click();
-  return waitForSend(composer, 1200);
-}
-
-/** Enter 是站点的发送键;keyCode / which 自己补上,页面里的老判断也认. */
-function dispatchEnter(composer: HTMLElement): void {
-  const event = new KeyboardEvent("keydown", {
-    key: "Enter",
-    code: "Enter",
-    bubbles: true,
-    cancelable: true,
-  });
-  Object.defineProperty(event, "keyCode", { value: 13 });
-  Object.defineProperty(event, "which", { value: 13 });
-  composer.dispatchEvent(event);
-}
-
-/** 发出去的标志:输入框被站点清空. */
-function waitForSend(composer: HTMLElement, timeoutMs: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const startedAt = Date.now();
-    const tick = (): void => {
-      if (readComposer(composer).trim() === "") {
-        resolve(true);
-        return;
-      }
-      if (Date.now() - startedAt >= timeoutMs) {
-        resolve(false);
-        return;
-      }
-      window.setTimeout(tick, 100);
-    };
-    tick();
-  });
+  if (status === "failed") return { sent: false, failure: "send-failed" };
+  return { sent: true, failure: null };
 }
