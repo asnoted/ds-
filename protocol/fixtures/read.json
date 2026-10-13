@@ -1,0 +1,19 @@
+{
+  "description": "read 页的限额与脚注三态:dsb 产出那半(dsb/work.py)与扩展教模型认那半(src/lib/instructions.ts)各自对着这份断言(ADR-0026/0027).网关 64K 与扩展 16K 是两道各管一段的闸,不进这份(ADR-0016).",
+  "readPageLines": 200,
+  "readPageBudget": 16000,
+  "cases": [
+    {
+      "name": "文件读完",
+      "template": "(文件读完:共 {total} 行)"
+    },
+    {
+      "name": "还有下一页",
+      "template": "(第 {start}-{end} 行 / 共 {total} 行,接着读:offset={end + 1})"
+    },
+    {
+      "name": "字节预算截断",
+      "template": "(字节预算截断,第 {start}-{end} 行 / 共 {total} 行,接着读:offset={end + 1})"
+    }
+  ]
+}
