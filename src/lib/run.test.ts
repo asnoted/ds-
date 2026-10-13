@@ -1,0 +1,331 @@
+import { describe, expect, it } from "vitest";
+
+import { ARMED_TTL_MS } from "./armed";
+import { CONTINUATION_MARKER, STOP_CONTINUATION_LIMIT, buildContinuation } from "./continuation";
+import { describeContinuationFailure, describeThrownFailure } from "./continuationfail";
+import { errorPayload, okPayload } from "./reply";
+import { INITIAL_ROUNDS, MAX_CONTINUATION_ROUNDS } from "./rounds";
+import { decide, endTask, newRun, type RunState } from "./run";
+
+const BODY = "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
+const PAYLOAD = okPayload(BODY);
+const CONT = buildContinuation(PAYLOAD);
+
+function turnOn(speak: boolean): RunState {
+  return decide(newRun(), { type: "toggle", speak, enabled: true }).state;
+}
+
+describe("放行那一刻才武装(AC①:入队不武装)", () => {
+  it("结果到达只入队,武装仍是 idle;窗口放行那一刻才武装", () => {
+    const queued = decide(turnOn(true), { type: "result", payload: PAYLOAD });
+    expect(queued.state.armed).toEqual({ phase: "idle" });
+    expect(queued.state.queued).toBe(buildContinuation(PAYLOAD));
+    expect(queued.effects).toEqual([{ kind: "enqueue" }]);
+
+    const released = decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+    });
+    expect(released.state.armed).toEqual({
+      phase: "armed",
+      continuation: buildContinuation(PAYLOAD),
+      armedAt: 1_000,
+    });
+    expect(released.state.queued).toBeNull();
+    expect(released.effects).toEqual([
+      { kind: "send", message: CONTINUATION_MARKER, continuation: true },
+    ]);
+  });
+
+  it("总开关关着时结果到达不入队也不武装", () => {
+    const got = decide(newRun(), { type: "result", payload: PAYLOAD });
+    expect(got.state.armed).toEqual({ phase: "idle" });
+    expect(got.state.queued).toBeNull();
+    expect(got.effects).toEqual([]);
+  });
+});
+
+describe("闸关时只落草稿(AC②:stage-only 结构里没有发送步)", () => {
+  it("放行那一刻闸关着:挂 pending,裁决清单里整张都没有发送步(#52)", () => {
+    const queued = decide(turnOn(false), { type: "result", payload: PAYLOAD });
+    const released = decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+    });
+    expect(released.state.armed).toEqual({
+      phase: "pending",
+      continuation: buildContinuation(PAYLOAD),
+    });
+    // 整张效果清单深度相等:只有"落草稿"一步,没有 send(接线层因此碰不到 Enter).
+    expect(released.effects).toEqual([{ kind: "stage" }]);
+    expect(released.effects.some((effect) => effect.kind === "send")).toBe(false);
+  });
+});
+
+describe("发送失败立刻撤武装(AC③)", () => {
+  function releasedRun(): ReturnType<typeof decide> {
+    const queued = decide(turnOn(true), { type: "result", payload: PAYLOAD });
+    return decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+    });
+  }
+
+  it("发送没发出去(sent false):武装立刻撤,失败留痕", () => {
+    const released = releasedRun();
+    expect(released.state.armed.phase).toBe("armed");
+
+    const settled = decide(released.state, {
+      type: "settled",
+      continuation: true,
+      outcome: { sent: false, failure: "send-failed" },
+    });
+    expect(settled.state.armed).toEqual({ phase: "idle" });
+    expect(settled.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("send-failed") },
+    ]);
+  });
+
+  it("发送抛错:同样立刻撤武装,短句只带错误类型名(ADR-0004)", () => {
+    const released = releasedRun();
+    const settled = decide(released.state, {
+      type: "settled",
+      continuation: true,
+      outcome: { thrown: new TypeError("boom") },
+    });
+    expect(settled.state.armed).toEqual({ phase: "idle" });
+    expect(settled.effects).toEqual([
+      { kind: "trace", cause: describeThrownFailure(new TypeError("boom")) },
+    ]);
+  });
+
+  it("发出去了:武装留着等出站请求拿钥匙认领,不留痕", () => {
+    const released = releasedRun();
+    const settled = decide(released.state, {
+      type: "settled",
+      continuation: true,
+      outcome: { sent: true, failure: null },
+    });
+    expect(settled.state.armed.phase).toBe("armed");
+    expect(settled.effects).toEqual([]);
+  });
+
+  it("不是本趟续聊的发送落定:裁决原样(另两条发送路不归这里管,ADR-0002)", () => {
+    const released = releasedRun();
+    const settled = decide(released.state, {
+      type: "settled",
+      continuation: false,
+      outcome: { sent: false, failure: "send-failed" },
+    });
+    expect(settled.state.armed.phase).toBe("armed");
+    expect(settled.effects).toEqual([]);
+  });
+});
+
+describe("换会话:轮数归零且待发作废(AC④)", () => {
+  it("换了会话 id:轮数归零,挂着的 pending 作废并留痕", () => {
+    let run = decide(turnOn(false), { type: "session", key: "s1" }).state;
+    // 两轮结果 + 两次放行(闸关:只落草稿)把轮数与 pending 攒起来.
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 2 }).state;
+    expect(run.rounds.rounds).toBe(2);
+    expect(run.armed.phase).toBe("pending");
+
+    const changed = decide(run, { type: "session", key: "s2" });
+    expect(changed.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(changed.state.armed).toEqual({ phase: "idle" });
+    expect(changed.state.session).toBe("s2");
+    expect(changed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("session-changed") },
+    ]);
+  });
+
+  it("同一个会话 id 再来一次:轮数与待发都不动", () => {
+    let run = decide(turnOn(false), { type: "session", key: "s1" }).state;
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+
+    const same = decide(run, { type: "session", key: "s1" });
+    expect(same.state.rounds.rounds).toBe(1);
+    expect(same.state.armed.phase).toBe("pending");
+    expect(same.effects).toEqual([]);
+  });
+
+  it("换会话时是 armed(不是 pending):轮数归零,武装留着(出站窗口那一趟还没落定)", () => {
+    let run = decide(turnOn(true), { type: "session", key: "s1" }).state;
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    expect(run.armed.phase).toBe("armed");
+
+    const changed = decide(run, { type: "session", key: "s2" });
+    expect(changed.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(changed.state.armed.phase).toBe("armed");
+    expect(changed.effects).toEqual([]);
+  });
+});
+
+describe("出站请求认领:钥匙、过期与处置", () => {
+  function armedRun(speak: boolean): RunState {
+    const queued = decide(turnOn(speak), { type: "result", payload: PAYLOAD });
+    return decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+    }).state;
+  }
+
+  const MARKER_BODY = JSON.stringify({ prompt: CONTINUATION_MARKER });
+  const USER_BODY = JSON.stringify({ prompt: "帮我看看 README" });
+
+  it("正文逐字等于短标记:换成工具结果,武装清空(钥匙认领走了)", () => {
+    const claimed = decide(armedRun(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    expect(claimed.claim).toEqual({ kind: "substituted", body: JSON.stringify({ prompt: CONT }) });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([]);
+  });
+
+  it("用户自己发的话:原样放行走协议说明那一支,武装撤销,key-mismatch 留痕(#49)", () => {
+    const claimed = decide(armedRun(true), { type: "claimed", body: USER_BODY, now: 1_500 });
+    expect(claimed.claim).toEqual({ kind: "protocol" });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("key-mismatch") },
+    ]);
+  });
+
+  it("armed 挂过 TTL 才撞上请求:先作废留痕,再按没有武装处理", () => {
+    const claimed = decide(armedRun(true), {
+      type: "claimed",
+      body: MARKER_BODY,
+      now: 1_000 + ARMED_TTL_MS + 1,
+    });
+    expect(claimed.claim).toEqual({ kind: "protocol" });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("armed-expired") },
+    ]);
+  });
+
+  it("pending 不看时间:等用户按发送那条隔多久仍按钥匙认领", () => {
+    const claimed = decide(armedRun(false), {
+      type: "claimed",
+      body: MARKER_BODY,
+      now: 1_000 + ARMED_TTL_MS * 100,
+    });
+    expect(claimed.claim).toEqual({ kind: "substituted", body: JSON.stringify({ prompt: CONT }) });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+  });
+
+  it("没有武装等着:处置是协议说明那一支,状态与痕迹都不动", () => {
+    const idle = decide(turnOn(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    expect(idle.claim).toEqual({ kind: "protocol" });
+    expect(idle.state.armed).toEqual({ phase: "idle" });
+    expect(idle.effects).toEqual([]);
+  });
+
+  it("一次即作废:认领走之后再撞同样等于标记的请求,不再替换", () => {
+    const once = decide(armedRun(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    const twice = decide(once.state, { type: "claimed", body: MARKER_BODY, now: 1_600 });
+    // 一次即作废:武装已被消费,第二次没有正文等着认,也不再留新痕.
+    expect(twice.claim).toEqual({ kind: "protocol" });
+    expect(twice.effects).toEqual([]);
+  });
+});
+
+describe("轮数刹车与结果到达", () => {
+  it("连到上限那一轮:不入队,报停手,轮数归零(下一次任务重新有满额)", () => {
+    let run = turnOn(true);
+    for (let round = 0; round < MAX_CONTINUATION_ROUNDS; round += 1) {
+      run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    }
+    expect(run.rounds.rounds).toBe(MAX_CONTINUATION_ROUNDS);
+
+    const capped = decide(run, { type: "result", payload: PAYLOAD });
+    expect(capped.state.rounds).toEqual(INITIAL_ROUNDS);
+    // 已经入队那条原样留着(刹车只管这一轮不发新的,不动已排的).
+    expect(capped.state.queued).toBe(run.queued);
+    expect(capped.effects).toEqual([
+      {
+        kind: "stop",
+        cause: STOP_CONTINUATION_LIMIT,
+        note: `自动续聊已连到 ${MAX_CONTINUATION_ROUNDS} 轮上限,停手等用户开口`,
+      },
+    ]);
+  });
+
+  it("载荷不是 status ok:不入队也不刹车,只吭一声(失败不进对话流)", () => {
+    const got = decide(turnOn(true), { type: "result", payload: errorPayload("timeout") });
+    expect(got.state.queued).toBeNull();
+    expect(got.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(got.effects).toEqual([{ kind: "log", note: expect.stringContaining("中继没问成") }]);
+  });
+
+  it("一轮答复没有围栏 = 任务收尾:endTask 只归零轮数,别的不动", () => {
+    let run = turnOn(true);
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    const done = endTask(run);
+    expect(done.rounds).toEqual(INITIAL_ROUNDS);
+    expect(done.armed).toEqual(run.armed);
+    expect(done.queued).toBeNull();
+  });
+});
+
+describe("闸与总开关", () => {
+  it("总开关从开到关:整条链作废——队列清、武装留痕后撤、轮数归零、会话忘掉", () => {
+    let run = turnOn(true);
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    run = decide(run, { type: "session", key: "s1" }).state;
+
+    const off = decide(run, { type: "toggle", speak: true, enabled: false });
+    expect(off.effects).toEqual([
+      { kind: "apply", enabled: false },
+      { kind: "trace", cause: describeContinuationFailure("toggle-off") },
+    ]);
+    expect(off.state.armed).toEqual({ phase: "idle" });
+    expect(off.state.queued).toBeNull();
+    expect(off.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(off.state.session).toBeNull();
+    expect(off.state.enabled).toBe(false);
+    expect(off.state.speak).toBe(true);
+  });
+
+  it("闸从开到关:挂着的那条静默作废,不留痕也不动总开关", () => {
+    let run = turnOn(true);
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    expect(run.armed.phase).toBe("armed");
+
+    const closed = decide(run, { type: "toggle", speak: false, enabled: true });
+    expect(closed.state.armed).toEqual({ phase: "idle" });
+    expect(closed.state.speak).toBe(false);
+    expect(closed.state.enabled).toBe(true);
+    expect(closed.effects).toEqual([]);
+  });
+
+  it("重复的同值开关:裁决原样,不重复装卸也不重复留痕", () => {
+    const on = turnOn(true);
+    const again = decide(on, { type: "toggle", speak: true, enabled: true });
+    expect(again.state).toBe(on);
+    expect(again.effects).toEqual([]);
+  });
+
+  it("总开关关着时的关:武装已撤,不再补第二条痕", () => {
+    const off = decide(newRun(), { type: "toggle", speak: false, enabled: false });
+    expect(off.state).toEqual({ ...newRun(), enabled: false });
+    expect(off.effects).toEqual([]);
+  });
+
+  it("队列里不是本趟续聊的那条:照发,但不进本趟的落定账", () => {
+    const released = decide(turnOn(true), { type: "released", message: "你好", now: 1 });
+    expect(released.effects).toEqual([{ kind: "send", message: "你好", continuation: false }]);
+    expect(released.state.armed).toEqual({ phase: "idle" });
+    expect(released.state.queued).toBeNull();
+  });
+});
