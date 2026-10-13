@@ -192,33 +192,11 @@ export function recognizeOutgoingShape(bodyText: string): OutgoingShape {
  * 安全判据,武装 TTL 得以从 30s 收紧到 10s.
  */
 export function rewriteContinuationBody(bodyText: string, continuation: string): string | null {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(bodyText);
-  } catch {
-    return null;
-  }
-  if (!isPlainObject(payload)) return null;
-
-  if (typeof payload["prompt"] === "string" && payload["prompt"].trim() !== "") {
-    if (!matchesMarker(payload["prompt"])) return null;
-    payload["prompt"] = continuation;
-    return JSON.stringify(payload);
-  }
-
-  const { messages } = payload;
-  if (Array.isArray(messages)) {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const entry = messages[index];
-      if (!isPlainObject(entry)) continue;
-      if (entry["role"] !== "user" || typeof entry["content"] !== "string") continue;
-      if (!matchesMarker(entry["content"])) return null;
-      entry["content"] = continuation;
-      return JSON.stringify(payload);
-    }
-  }
-
-  return null;
+  const shape = recognizeOutgoingShape(bodyText);
+  // 形状认不出或待发那条取不出,都当不换:宁可少一轮,也别把用户下一条消息吃了.
+  if (shape.pendingText === null) return null;
+  if (!matchesMarker(shape.pendingText)) return null;
+  return shape.replacePending(continuation);
 }
 
 /**
@@ -232,64 +210,12 @@ export function rewriteContinuationBody(bodyText: string, continuation: string):
  * 等于标记也不算数:站点重放历史不代表用户此刻要发那条.
  */
 export function outgoingUserTextOf(bodyText: string): string | null {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(bodyText);
-  } catch {
-    return null;
-  }
-  if (!isPlainObject(payload)) return null;
-
-  if (typeof payload["prompt"] === "string" && payload["prompt"].trim() !== "") {
-    return payload["prompt"];
-  }
-
-  const { messages } = payload;
-  if (Array.isArray(messages)) {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const entry = messages[index];
-      if (!isPlainObject(entry)) continue;
-      if (entry["role"] !== "user" || typeof entry["content"] !== "string") continue;
-      return entry["content"];
-    }
-  }
-
-  return null;
+  return recognizeOutgoingShape(bodyText).pendingText;
 }
 
 export function rewriteOutgoingBody(
   bodyText: string,
   tools: readonly ToolInfo[] | null,
 ): string | null {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(bodyText);
-  } catch {
-    return null;
-  }
-  if (!isPlainObject(payload)) return null;
-
-  let changed = false;
-
-  if (typeof payload.prompt === "string") {
-    const next = prependOnce(payload.prompt, tools);
-    if (next !== null) {
-      payload.prompt = next;
-      changed = true;
-    }
-  }
-
-  if (Array.isArray(payload.messages)) {
-    for (const entry of payload.messages) {
-      if (!isPlainObject(entry)) continue;
-      if (entry.role !== "user" || typeof entry.content !== "string") continue;
-      const next = prependOnce(entry.content, tools);
-      if (next !== null) {
-        entry.content = next;
-        changed = true;
-      }
-    }
-  }
-
-  return changed ? JSON.stringify(payload) : null;
+  return recognizeOutgoingShape(bodyText).mapAllUserTexts((text) => prependOnce(text, tools));
 }
