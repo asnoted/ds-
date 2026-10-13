@@ -1,9 +1,8 @@
 # AGENTS.md
 
-根目录 agent 唯一入口.**不落 `CLAUDE.md` 之类别名文件**,换 harness 时指过来.
+唯一入口.只允许人类更改.
 
-**本文件只写规则与指针,不写实现细节**:代码里的标识符,storage key,失败码,模块清单,
-调用关系一律去看代码或 `docs/` 里的手册 -- 抄进本文件的细节只会跟着代码漂.
+**本文件不写实现细节**
 
 ## 命令
 
@@ -12,7 +11,8 @@ scripts/env-up.sh                 # 幂等:起缺的,旧代码自动换,末尾�
 scripts/env-up.sh --status        # 只读汇总,不动手
 scripts/env-up.sh --debug         # 带调试口,真机探针要这个
 
-pnpm quality                      # 唯一质量门:TS + Python + 三道守卫
+pnpm quality                      # 本地质量门:TS + Python
+pnpm quality:ci                   # CI 全量:上面加三道守卫(守卫只在 CI 跑)
 pnpm test                         # vitest
 uv run pytest                     # Python
 
@@ -97,9 +97,10 @@ DeepSeek 网页版的**浏览器扩展 + 本机 MCP 中继**(`dsb/`).扩展替�
 
 ## 测试要求
 
-- **`pnpm quality` 是唯一门**,TS 与 Python 两半一起过.
+- **`pnpm quality` 是本地的门**,TS 与 Python 两半一起过.CI 跑 `pnpm quality:ci`,
+  多三道守卫(`punct` / `glyphs` / `adrs`).
 - `src/lib/` 一模块一 `.test.ts`;新写模块先补测试.
-- 守卫报红(`punct` / `glyphs` / `adrs`)当场修,别绕过,也别去改守卫.
+- 守卫报红就当场修,别绕过,也别去改守卫.
 
 ### IMPORTANT
 
