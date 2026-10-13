@@ -12,30 +12,10 @@ import {
   saidMessage,
   sendNoteMessage,
   stopMessage,
-  type ResultMessage,
 } from "../src/lib/channel";
-import {
-  buildContinuation,
-  CONTINUATION_MARKER,
-  STOP_CONTINUATION_LIMIT,
-} from "../src/lib/continuation";
-import {
-  describeContinuationFailure,
-  describeThrownFailure,
-  type ContinuationFailure,
-} from "../src/lib/continuationfail";
-import {
-  arm as armState,
-  armedBody,
-  claimArmed,
-  expireIfStale,
-  idleArmed,
-  matchesMarker,
-  pend as pendState,
-  planContinuation,
-  settleArmedAfterSend,
-  type ArmedState,
-} from "../src/lib/armed";
+import { CONTINUATION_MARKER } from "../src/lib/continuation";
+import { type ContinuationFailure } from "../src/lib/continuationfail";
+import { matchesMarker } from "../src/lib/armed";
 import { enqueue, newGate, nextOpenAt, release, type Gate } from "../src/lib/gate";
 import {
   mergeSendPace,
@@ -44,23 +24,20 @@ import {
   runPaced,
   type SendPace,
 } from "../src/lib/sendpace";
-import {
-  isOutgoingChatRequest,
-  outgoingUserTextOf,
-  rewriteContinuationBody,
-  rewriteOutgoingBody,
-} from "../src/lib/inject";
+import { isOutgoingChatRequest, rewriteOutgoingBody } from "../src/lib/inject";
 import { findButton, readPressed } from "../src/lib/page";
 import { nextMessageId } from "../src/lib/id";
-import { hasReplyAnchor, isInjectableReply } from "../src/lib/reply";
+import { hasReplyAnchor } from "../src/lib/reply";
 import type { ToolInfo } from "../src/lib/relay";
 import {
-  beginRound,
-  INITIAL_ROUNDS,
-  MAX_CONTINUATION_ROUNDS,
-  resetRounds,
-  type RoundState,
-} from "../src/lib/rounds";
+  decide,
+  endTask,
+  newRun,
+  type RunDecision,
+  type RunEffect,
+  type RunEvent,
+  type RunState,
+} from "../src/lib/run";
 import { outsideFences } from "../src/lib/said";
 import { parseToggleMessage, wantStateMessage } from "../src/lib/toggle";
 
@@ -89,7 +66,13 @@ export default defineContentScript({
     let originalOpen!: typeof XMLHttpRequest.prototype.open;
     let originalSend!: typeof XMLHttpRequest.prototype.send;
     let installed = false;
-    let enabled = false;
+
+    /**
+     * 一趟续聊的全部状态与次序:次序的裁决在 `run.ts`(事件进、裁决出的纯函数),
+     * 这里只剩取事件 → 调裁决 → 执行效果,不持有任何"什么时候武装 / 只落草稿 /
+     * 发送 / 作废"的判断(CODING_STANDARDS 第 1 条).
+     */
+    let run: RunState = newRun();
 
     /** 唯一出站口:回灌内容在这里排队,出站窗口到点才放行. */
     let gate: Gate = newGate();
@@ -101,18 +84,6 @@ export default defineContentScript({
     /** 隔离世界广播下来的工具目录(`tools/list`);null = 还没取到,说明里会写明. */
     let catalog: readonly ToolInfo[] | null = null;
 
-    /** 自动续聊的轮数(`rounds.ts`):一条任务里最多自动续这么多轮. */
-    let rounds: RoundState = INITIAL_ROUNDS;
-
-    /** 排着队,还没到出站窗口的续聊正文;放行那一刻才武装(见 `flush`). */
-    let queuedContinuation: string | null = null;
-
-    /**
-     * 武装状态机(`armed.ts`):idle / armed(有 TTL)/ pending(#52 的"等你按发送").
-     * 显式的态而不是几个布尔量,#52 加态时不用重写判据.
-     */
-    let armed: ArmedState = idleArmed();
-
     /**
      * 发送限速(#61):自动续聊这一路的发送也归同一条 3~5 秒的线,与隔离世界那三条
      * (`send.enter` / 圆键 / `message.retry`)**合成一条**--靠 `send-note` 通报并时刻,
@@ -120,43 +91,82 @@ export default defineContentScript({
      */
     let sendPace: SendPace = newSendPace();
 
-    /**
-     * "代你发言"闸(#52):隔离世界广播过来的,默认关(关 = 续聊只落草稿,等用户按).
-     * 勾选即时生效--选项页改 `storage`,那边立刻再广播一次.
-     */
-    let speak = false;
-
-    /** 上一次见过的页面会话 id:换了会话 = 换了条任务,轮数归零. */
-    let sessionKey: string | null = null;
-
     const xhrTargets = new WeakMap<XMLHttpRequest, XhrTarget>();
     const watchingXhrs = new WeakSet<XMLHttpRequest>();
 
-    /**
-     * 续聊失败上报(#51):落一笔失败痕,悬停时回看得到"断在哪一步".
-     *
-     * 走 MAIN → 隔离 → background 那条既有通道(ask / stop 走的就是它)--MAIN 世界
-     * 写不了 `storage.local`.
-     *
-     * **一次失败只报一次**不另设去重表,靠调用点自身的结构:每个上报点都在"武装刚
-     * 离开某个态"或"这一次发送刚失败"的分支里,那个转移只发生一次;新一轮续聊挂上
-     * 武装(`armState` 盖掉 `pendState`)是**新**的一轮,那次该报.真正的重复风险在
-     * background 那侧--`rememberFailure` 的"同一次故障只记一笔"与 20 条配额照旧
-     * 照着续聊这条路生效(ADR-0004).
-     */
-    function reportContinuationFailure(failure: ContinuationFailure): void {
-      const id = nextMessageId("cont-fail");
-      const cause = describeContinuationFailure(failure);
-      window.postMessage(continuationFailMessage(id, cause), "*");
-      console.log(`[ds-] 续聊失败:${cause}(已留痕)`);
+    /** 取事件 → 调裁决(纯)→ 状态写回 → 照效果清单执行(副作用全在 perform 里). */
+    function dispatch(event: RunEvent): RunDecision {
+      const decision = decide(run, event);
+      run = decision.state;
+      for (const effect of decision.effects) perform(effect);
+      return decision;
     }
 
-    /** `sendToPage` 抛错那一条:短句只带错误类型名(ADR-0004,不带 message). */
-    function reportThrownFailure(error: unknown): void {
-      const id = nextMessageId("cont-fail");
-      const cause = describeThrownFailure(error);
-      window.postMessage(continuationFailMessage(id, cause), "*");
-      console.log(`[ds-] 续聊发送抛错:${cause}(已留痕)`);
+    /** 执行一条裁决效果:入队、发送、落草稿、留痕、停手、总开关生效——全是副作用. */
+    function perform(effect: RunEffect): void {
+      switch (effect.kind) {
+        case "enqueue":
+          gate = enqueue(gate, CONTINUATION_MARKER, Date.now(), Math.random);
+          scheduleFlush();
+          break;
+        case "send":
+          void paceSend(
+            () => sendToPage(effect.message),
+            (outcome) => outcome.sent,
+          )
+            .then((outcome) => {
+              dispatch({
+                type: "settled",
+                continuation: effect.continuation,
+                outcome: { sent: outcome.sent, failure: outcome.failure },
+              });
+              console.log(
+                outcome.sent
+                  ? "[ds-] 续聊已作为一条短标记发出"
+                  : "[ds-] 续聊没有发出去,页面里没有新消息",
+              );
+            })
+            .catch((error) => {
+              dispatch({
+                type: "settled",
+                continuation: effect.continuation,
+                outcome: { thrown: error },
+              });
+              console.log("[ds-] 续聊发送出岔,页面里没有新消息", error);
+            });
+          break;
+        case "stage":
+          dispatch({ type: "settled", continuation: true, outcome: stagePendingMarker() });
+          break;
+        case "trace": {
+          const id = nextMessageId("cont-fail");
+          window.postMessage(continuationFailMessage(id, effect.cause), "*");
+          console.log(`[ds-] 续聊失败:${effect.cause}(已留痕)`);
+          break;
+        }
+        case "stop":
+          window.postMessage(stopMessage(nextMessageId("rounds"), effect.cause), "*");
+          console.log(`[ds-] ${effect.note}`);
+          break;
+        case "apply":
+          if (effect.enabled) install();
+          else {
+            uninstall();
+            // 关掉时整条链一起作废:定时器撤掉,出站队列清空(检测随包装一起卸掉).
+            if (flushTimer !== null) {
+              window.clearTimeout(flushTimer);
+              flushTimer = null;
+            }
+            gate = newGate();
+          }
+          console.log(
+            `[ds-] 总开关${effect.enabled ? "打开" : "关闭"},协议说明${effect.enabled ? "开始注入" : "不再注入"},回灌链${effect.enabled ? "开始工作" : "整条不再工作"}`,
+          );
+          break;
+        case "log":
+          console.log(`[ds-] ${effect.note}`);
+          break;
+      }
     }
 
     /**
@@ -190,43 +200,26 @@ export default defineContentScript({
     /**
      * 出站改写:挂着的续聊优先(这一趟就是自动续聊那一趟),否则照旧拼协议说明.
      *
+     * 谁该被认领、正文换不换、留哪条痕全在 `run.ts` 的 `claimed` 裁决里;
+     * 这里只照 `ClaimOutcome` 返回:换成的正文 / 原样放行 / 接着拼协议说明.
      * 续聊**一次即作废**:替换没成也作废--留着它,下一条出站就是用户自己发的消息,
      * 会被当成续聊那趟,正文被工具结果顶掉(把人说的话吃了,比少一轮严重得多).
      */
     const rewriteOutgoing = (body: string): string | null => {
-      // armed 态挂太久(ARMED_TTL_MS)就作废--多半是那一趟没真发出去.
-      // pending 态不看时间:等用户自己按发送(#52).
-      const before = armed;
-      armed = expireIfStale(armed, Date.now());
-      if (before.phase === "armed" && armed.phase === "idle") {
-        console.log("[ds-] 挂着的续聊已过期,作废(不拿它顶用户的下一句话)");
-        reportContinuationFailure("armed-expired");
-      }
-
-      // 钥匙(#49):只有"这条出站请求的正文逐字等于短标记"才认领.claimArmed
-      // 顺手做状态迁移--认不走就把武装撤了(用户发的不是我们的标记).
-      const pending = armedBody(armed);
-      if (pending !== null) {
-        const outcome = claimArmed(armed, outgoingUserTextOf(body), true);
-        armed = outcome.state;
-        if (!outcome.claimed) {
-          console.log("[ds-] 这条出站不是我们那条短标记,原样放行(不拿工具结果顶用户的话)");
-          reportContinuationFailure("key-mismatch");
-        } else {
-          const next = rewriteContinuationBody(body, pending);
-          console.log(
-            next === null
-              ? "[ds-] 续聊正文没能替换进出站请求,这一轮作废(结果没送到模型手上)"
-              : "[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)",
-          );
-          if (next === null) reportContinuationFailure("shape-unknown");
+      const decision = dispatch({ type: "claimed", body, now: Date.now() });
+      switch (decision.claim?.kind) {
+        case "substituted":
+          console.log("[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)");
+          return decision.claim.body;
+        case "untouched":
+          console.log("[ds-] 续聊正文没能替换进出站请求,这一轮作废(结果没送到模型手上)");
+          return null;
+        default: {
+          const next = rewriteOutgoingBody(body, catalog);
+          if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
           return next;
         }
       }
-
-      const next = rewriteOutgoingBody(body, catalog);
-      if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
-      return next;
     };
 
     /** 判断逻辑在 src/lib/inject.ts,这里只认它那句"null 就原样放行". */
@@ -239,33 +232,27 @@ export default defineContentScript({
      * 半自动那一跳(#52):"代你发言"闸关着时,把短标记**写进输入框**,**不按发送**,
      * 等用户自己按.
      *
-     * 三个结果分得清清楚楚(每一件都留痕,见 `continuationfail.ts`):
+     * 三个结果分得清清楚楚(失败留痕由 `run.ts` 的 settled 裁决发):
+     * 找不到输入框 `composer-absent`;**输入框里有你的草稿** → **不覆盖**
+     * `draft-in-composer`(宁可少一轮,也不吃人正在打的东西);写不进去
+     * `composer-unwritable`.
      *
-     * - 找不到输入框 → `composer-absent`;
-     * - **输入框里有你的草稿** → **不覆盖**,`draft-in-composer`(宁可少一轮,也不吃人
-     *   正在打的东西--这与"宁可少一轮,也不能吃人说的话"是同一条原则);
-     * - 写不进去 → `composer-unwritable`.
-     *
-     * 返回 true 表示标记已经落在输入框里(pending 态可以挂着等用户按).
+     * `sent: true` 表示标记已经落在输入框里(pending 态可以挂着等用户按)——
+     * 这里只有写入,**没有发送步**.
      */
-    function stagePendingMarker(): boolean {
+    function stagePendingMarker(): SendOutcome {
       const composer = pickComposer();
-      if (composer === null) {
-        reportContinuationFailure("composer-absent");
-        return false;
-      }
+      if (composer === null) return { sent: false, failure: "composer-absent" };
       const draft = readComposer(composer);
       if (draft.trim() !== "" && !matchesMarker(draft)) {
         console.log("[ds-] 输入框里还有你正在打的字,这一轮不覆盖");
-        reportContinuationFailure("draft-in-composer");
-        return false;
+        return { sent: false, failure: "draft-in-composer" };
       }
       if (!writeComposer(composer, CONTINUATION_MARKER)) {
-        reportContinuationFailure("composer-unwritable");
-        return false;
+        return { sent: false, failure: "composer-unwritable" };
       }
       console.log('[ds-] "代你发言"闸关着:短标记已写进输入框,等你按发送');
-      return true;
+      return { sent: true, failure: null };
     }
 
     /** 排下一次开窗:队列空着就不排. */
@@ -276,80 +263,18 @@ export default defineContentScript({
       flushTimer = window.setTimeout(flush, Math.max(0, at - Date.now()));
     }
 
-    /** 出站窗口开一次,把队列一次性放行;每条都走同一条发送路径. */
+    /**
+     * 出站窗口开一次,把队列一次性放行;每条都走同一条发送路径.
+     * 放行那一刻才武装 / 只落草稿,由 `run.ts` 的 `released` 裁决定.
+     */
     function flush(): void {
       flushTimer = null;
       const step = release(gate, Date.now(), Math.random);
       gate = step.gate;
       for (const message of step.released) {
-        // 武装放在放行这一刻:从入队到开窗有几秒,期间用户可能自己在发消息--
-        // 早武装就会把他的真消息换成工具结果.
-        const isContinuation = queuedContinuation !== null && message === CONTINUATION_MARKER;
-        if (isContinuation && queuedContinuation !== null) {
-          const continuation = queuedContinuation;
-          queuedContinuation = null;
-          // 走向由纯函数判(armed.ts 的 planContinuation):闸关着时那一支**没有
-          // 发送步骤**,接线层照着做就碰不到 Enter.
-          if (planContinuation(speak).action === "arm-and-send") {
-            armed = armState(continuation, Date.now());
-          } else {
-            armed = pendState(continuation);
-            if (!stagePendingMarker()) armed = idleArmed();
-            // 这一趟的全部动作就是那一次写入,**到此为止**:再往下走 `sendToPage`
-            // 就会按 Enter / 点发送键--那等于闸关着照样自动发(#52 的 AC 首条).
-            continue;
-          }
-        }
-        void paceSend(
-          () => sendToPage(message),
-          (outcome) => outcome.sent,
-        )
-          .then((outcome) => {
-            // 武装怎么落由 armed.ts 的 settleArmedAfterSend 判(#49 的验收点):
-            // 发出去了留着等钥匙认领,没发出去立刻撤.
-            if (isContinuation) {
-              armed = settleArmedAfterSend(armed, outcome.sent);
-              if (!outcome.sent && outcome.failure !== null) {
-                reportContinuationFailure(outcome.failure);
-              }
-            }
-            console.log(
-              outcome.sent
-                ? "[ds-] 续聊已作为一条短标记发出"
-                : "[ds-] 续聊没有发出去,页面里没有新消息",
-            );
-          })
-          .catch((error) => {
-            if (isContinuation) {
-              armed = settleArmedAfterSend(armed, false);
-              reportThrownFailure(error);
-            }
-            console.log("[ds-] 续聊发送出岔,页面里没有新消息", error);
-          });
+        dispatch({ type: "released", message, now: Date.now() });
       }
       if (gate.queue.length > 0) scheduleFlush();
-    }
-
-    /** 中继给了 status: ok 的载荷才排进队列;单来回,不重试,无兜底. */
-    function handleResult(result: ResultMessage): void {
-      if (!enabled) return;
-      if (!isInjectableReply(result.payload)) {
-        const error = result.payload.status === "error" ? result.payload.error : "unknown";
-        console.log(`[ds-] 中继没问成(${error}),失败不进对话流`);
-        return;
-      }
-      // 刹车(`rounds.ts`):到顶就不发这一轮,只在扩展侧留一笔,等用户开口.
-      const verdict = beginRound(rounds);
-      rounds = verdict.next;
-      if (!verdict.proceed) {
-        const id = nextMessageId("rounds");
-        console.log(`[ds-] 自动续聊已连到 ${MAX_CONTINUATION_ROUNDS} 轮上限,停手等用户开口`);
-        window.postMessage(stopMessage(id, STOP_CONTINUATION_LIMIT), "*");
-        return;
-      }
-      queuedContinuation = buildContinuation(result.payload);
-      gate = enqueue(gate, CONTINUATION_MARKER, Date.now(), Math.random);
-      scheduleFlush();
     }
 
     /**
@@ -362,19 +287,10 @@ export default defineContentScript({
      * "等人回"自己清掉.
      */
     function detect(raw: string): void {
-      if (!enabled) return;
-      // 换了页面会话 = 换了条任务:轮数归零,别把上一条的刹车额度带过来.
-      // 待发的那条(#52 的 pending 态)同样作废:它写进的是**这条**会话的输入框,
-      // 到了新会话,那条待发的工具结果已经不对话了.
-      const key = pageSessionIdOf(location.href);
-      if (key !== sessionKey) {
-        sessionKey = key;
-        rounds = resetRounds();
-        if (armed.phase === "pending") {
-          armed = idleArmed();
-          reportContinuationFailure("session-changed");
-        }
-      }
+      if (!run.enabled) return;
+      // 换了页面会话 = 换了条任务:轮数归零、待发的那条作废,判据在 `run.ts` 的
+      // `session` 裁决里(同 key 它自己不动).
+      dispatch({ type: "session", key: pageSessionIdOf(location.href) });
       const calls = detectToolCalls(raw);
       // **围栏之外的话**一律报给协调者:有围栏时围栏转网关,围栏以外那些别的话不能被吞掉.
       // 回灌自己(首行是 `agent:`)不算:那是桥送回去的,再报就成了回声.
@@ -390,7 +306,7 @@ export default defineContentScript({
         return;
       }
       // 这一轮答复里没有围栏 = 任务收尾:轮数归零,下一次任务重新有满额.
-      rounds = resetRounds();
+      run = endTask(run);
       const ask = detectAskQuestion(raw);
       if (ask !== null) {
         pendingAsk = true;
@@ -505,36 +421,13 @@ export default defineContentScript({
       XMLHttpRequest.prototype.send = originalSend;
     }
 
-    function apply(next: boolean): void {
-      if (next === enabled) return;
-      enabled = next;
-      if (next) install();
-      else uninstall();
-      if (!next) {
-        // 关掉时整条链一起作废:队列清空,定时器撤掉;检测随包装一起卸掉.
-        if (flushTimer !== null) {
-          window.clearTimeout(flushTimer);
-          flushTimer = null;
-        }
-        gate = newGate();
-        // 续聊这两笔与轮数也一样作废:关着时挂着的正文不该在下一次开闸时冒出来.
-        queuedContinuation = null;
-        if (armed.phase !== "idle") reportContinuationFailure("toggle-off");
-        armed = idleArmed();
-        rounds = resetRounds();
-        sessionKey = null;
-      }
-      console.log(
-        `[ds-] 总开关${next ? "打开" : "关闭"},协议说明${next ? "开始注入" : "不再注入"},回灌链${next ? "开始工作" : "整条不再工作"}`,
-      );
-    }
-
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
 
       const chain = parseChainMessage(event.data);
       if (chain?.kind === "result") {
-        handleResult(chain);
+        // 中继给了 status: ok 的载荷才排进队列;单来回,不重试,无兜底.
+        dispatch({ type: "result", payload: chain.payload });
         return;
       }
       if (chain?.kind === "tools") {
@@ -545,13 +438,8 @@ export default defineContentScript({
 
       const toggle = parseToggleMessage(event.data);
       if (toggle?.kind === "state") {
-        if (toggle.speak !== speak) {
-          speak = toggle.speak;
-          // 闸从开变关:挂着等用户按的那条(pending 态)不该还在--那时它是按"闸开"
-          // 的假设挂上去的,而它的写入前提(输入框空着)多半已经不成立了.
-          if (!speak) armed = idleArmed();
-        }
-        apply(toggle.enabled);
+        // 闸与总开关的次序(闸关时挂着的作废、关时整条链作废)在 `run.ts` 的 `toggle` 裁决里.
+        dispatch({ type: "toggle", speak: toggle.speak, enabled: toggle.enabled });
       }
 
       // 隔离世界那边(催办 / send.page / message.retry)也发过消息:并进它的时刻,
