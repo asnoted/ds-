@@ -300,7 +300,6 @@ export default defineContentScript({
 
     // background 打过来的动作帧(走 `tabs.sendMessage`):当场交回一个 ActionOutcome;
     // 认不出的信封一声不吭,不抢 send 那条路的消息.
-    // 本地名册从注册表派生(#99):动作名 → 执行器,加一件动作只在 `registry.ts` 加一行.
     // 认不出的动作由收信那层当场回 `unknown-action`(不白等中继的 30s).
     browser.runtime.onMessage.addListener(actionListener(paceRoster(ACTION_ROSTER)));
 

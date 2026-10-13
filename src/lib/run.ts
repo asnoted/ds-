@@ -138,7 +138,7 @@ function step(
   return { state, effects, claim };
 }
 
-/** 结果到达:先问轮数刹车,刹得住才入队(入队不武装,放行才武装). */
+/** 结果到达:入队不武装--放行那一刻才武装(早武装会把用户自己在发的消息顶掉). */
 function onResult(state: RunState, payload: ReplyPayload): RunDecision {
   if (!state.enabled) return step(state, []);
   if (!isInjectableReply(payload)) {
@@ -172,8 +172,6 @@ function onReleased(state: RunState, message: string, now: number): RunDecision 
   }
   const continuation = state.queued;
   const base = { ...state, queued: null };
-  // 走向由纯函数判(armed.ts 的 planContinuation):闸关着那一支的裁决里没有发送步,
-  // 接线层照着做就碰不到 Enter(#52 的 AC 首条).
   if (planContinuation(state.speak).action === "arm-and-send") {
     return step({ ...base, armed: arm(continuation, now) }, [
       { kind: "send", message: CONTINUATION_MARKER, continuation: true },
