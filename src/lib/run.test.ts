@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ARMED_TTL_MS } from "./armed";
 import { CONTINUATION_MARKER, buildContinuation } from "./continuation";
 import { describeContinuationFailure, describeThrownFailure } from "./continuationfail";
 import { okPayload } from "./reply";
@@ -8,6 +9,7 @@ import { decide, newRun, type RunState } from "./run";
 
 const BODY = "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
 const PAYLOAD = okPayload(BODY);
+const CONT = buildContinuation(PAYLOAD);
 
 function turnOn(speak: boolean): RunState {
   return decide(newRun(), { type: "toggle", speak, enabled: true }).state;
@@ -164,5 +166,73 @@ describe("换会话:轮数归零且待发作废(AC④)", () => {
     expect(changed.state.rounds).toEqual(INITIAL_ROUNDS);
     expect(changed.state.armed.phase).toBe("armed");
     expect(changed.effects).toEqual([]);
+  });
+});
+
+describe("出站请求认领:钥匙、过期与处置", () => {
+  function armedRun(speak: boolean): RunState {
+    const queued = decide(turnOn(speak), { type: "result", payload: PAYLOAD });
+    return decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+    }).state;
+  }
+
+  const MARKER_BODY = JSON.stringify({ prompt: CONTINUATION_MARKER });
+  const USER_BODY = JSON.stringify({ prompt: "帮我看看 README" });
+
+  it("正文逐字等于短标记:换成工具结果,武装清空(钥匙认领走了)", () => {
+    const claimed = decide(armedRun(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    expect(claimed.claim).toEqual({ kind: "substituted", body: JSON.stringify({ prompt: CONT }) });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([]);
+  });
+
+  it("用户自己发的话:原样放行走协议说明那一支,武装撤销,key-mismatch 留痕(#49)", () => {
+    const claimed = decide(armedRun(true), { type: "claimed", body: USER_BODY, now: 1_500 });
+    expect(claimed.claim).toEqual({ kind: "protocol" });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("key-mismatch") },
+    ]);
+  });
+
+  it("armed 挂过 TTL 才撞上请求:先作废留痕,再按没有武装处理", () => {
+    const claimed = decide(armedRun(true), {
+      type: "claimed",
+      body: MARKER_BODY,
+      now: 1_000 + ARMED_TTL_MS + 1,
+    });
+    expect(claimed.claim).toEqual({ kind: "protocol" });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("armed-expired") },
+    ]);
+  });
+
+  it("pending 不看时间:等用户按发送那条隔多久仍按钥匙认领", () => {
+    const claimed = decide(armedRun(false), {
+      type: "claimed",
+      body: MARKER_BODY,
+      now: 1_000 + ARMED_TTL_MS * 100,
+    });
+    expect(claimed.claim).toEqual({ kind: "substituted", body: JSON.stringify({ prompt: CONT }) });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+  });
+
+  it("没有武装等着:处置是协议说明那一支,状态与痕迹都不动", () => {
+    const idle = decide(turnOn(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    expect(idle.claim).toEqual({ kind: "protocol" });
+    expect(idle.state.armed).toEqual({ phase: "idle" });
+    expect(idle.effects).toEqual([]);
+  });
+
+  it("一次即作废:认领走之后再撞同样等于标记的请求,不再替换", () => {
+    const once = decide(armedRun(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    const twice = decide(once.state, { type: "claimed", body: MARKER_BODY, now: 1_600 });
+    // 一次即作废:武装已被消费,第二次没有正文等着认,也不再留新痕.
+    expect(twice.claim).toEqual({ kind: "protocol" });
+    expect(twice.effects).toEqual([]);
   });
 });

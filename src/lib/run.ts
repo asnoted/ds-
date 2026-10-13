@@ -18,7 +18,10 @@
 
 import {
   arm,
+  armedBody,
+  claimArmed,
   disarm,
+  expireIfStale,
   idleArmed,
   pend,
   planContinuation,
@@ -31,6 +34,7 @@ import {
   describeThrownFailure,
   type ContinuationFailure,
 } from "./continuationfail";
+import { outgoingUserTextOf, rewriteContinuationBody } from "./inject";
 import { beginRound, INITIAL_ROUNDS, resetRounds, type RoundState } from "./rounds";
 import { isInjectableReply, type ReplyPayload } from "./reply";
 
@@ -203,6 +207,39 @@ function onSession(state: RunState, key: string | null): RunDecision {
   return step({ ...state, session: key, rounds: resetRounds(), armed }, effects);
 }
 
+/**
+ * 一条出站请求走到改写点:先看挂着的过没过期,再拿钥匙(`matchesMarker`)认领.
+ *
+ * 认不走(正文不是短标记)就原样放行并撤销武装,交给协议说明那一支——用户发的
+ * 是他自己的话,不能被工具结果顶掉(#49).认领走了但形状认不出:原样放行,
+ * 连协议说明也不拼(这一趟只作废,不动别人).
+ */
+function onClaimed(state: RunState, body: string, now: number): RunDecision {
+  const before = state.armed;
+  const armed = expireIfStale(before, now);
+  const effects: RunEffect[] = [];
+  if (before.phase === "armed" && armed.phase === "idle") {
+    effects.push({ kind: "trace", cause: describeContinuationFailure("armed-expired") });
+  }
+
+  const pending = armedBody(armed);
+  if (pending === null) {
+    return step({ ...state, armed }, effects, { kind: "protocol" });
+  }
+
+  const outcome = claimArmed(armed, outgoingUserTextOf(body), true);
+  if (!outcome.claimed) {
+    effects.push({ kind: "trace", cause: describeContinuationFailure("key-mismatch") });
+    return step({ ...state, armed: outcome.state }, effects, { kind: "protocol" });
+  }
+  const next = rewriteContinuationBody(body, pending);
+  if (next === null) {
+    effects.push({ kind: "trace", cause: describeContinuationFailure("shape-unknown") });
+    return step({ ...state, armed: outcome.state }, effects, { kind: "untouched" });
+  }
+  return step({ ...state, armed: outcome.state }, effects, { kind: "substituted", body: next });
+}
+
 /** 闸与总开关:闸关时挂着的作废;总开关关时整条链(队列 / 武装 / 轮数 / 会话)作废. */
 function onToggle(state: RunState, speak: boolean, enabled: boolean): RunDecision {
   let next = state;
@@ -243,6 +280,6 @@ export function decide(state: RunState, event: RunEvent): RunDecision {
     case "toggle":
       return onToggle(state, event.speak, event.enabled);
     case "claimed":
-      return step(state, [], { kind: "protocol" });
+      return onClaimed(state, event.body, event.now);
   }
 }
