@@ -99,8 +99,7 @@ export function matchesMarker(text: string): boolean {
  * 且武装一并撤销(`idle`)--留着它,下一条出站仍可能撞上,且那个时刻已经不代表
  * 任何意图了.
  *
- * `body` 认领成功时的替换结果:字符串是新的正文,null 表示这条请求的形状认不出
- * (调用方据此撤销武装并留痕,见 `inject.ts` 的 `rewriteContinuationBody`).
+ * `body` 认领成功时的替换结果:字符串是工具结果正文,null = 原样放行.
  */
 export type ArmOutcome = {
   readonly state: ArmedState;
@@ -113,10 +112,12 @@ export type ArmOutcome = {
 /**
  * 认领一条出站请求.
  *
- * @param body 这条请求里**待发那条用户消息**的正文(调用方负责从载荷里取出来).
- * @param shapeOk 调用方是否认得出这条请求的形状;认不出时即便正文等于标记也不替换.
+ * 形状判定不在这里:调用方拿的是 `inject.ts` `recognizeOutgoingShape` 认出的
+ * `pendingText`,形状认不出时它就是 null,与钥匙不符落同一条路径(#103).
+ *
+ * @param body 这条请求里**待发那条用户消息**的正文(调用方负责从认好的形状里取出来).
  */
-export function claimArmed(state: ArmedState, body: string | null, shapeOk: boolean): ArmOutcome {
+export function claimArmed(state: ArmedState, body: string | null): ArmOutcome {
   if (state.phase === "idle") {
     return { state, replacement: null, claimed: false };
   }
@@ -124,10 +125,7 @@ export function claimArmed(state: ArmedState, body: string | null, shapeOk: bool
   if (body === null || !matchesMarker(body)) {
     return { state: idleArmed(), replacement: null, claimed: false };
   }
-  const continuation = state.continuation;
-  // 认领走了(无论替换成不成功).形状认不出时 replacement 为 null,调用方撤销武装.
-  const replacement = shapeOk ? continuation : null;
-  return { state: idleArmed(), replacement, claimed: true };
+  return { state: idleArmed(), replacement: state.continuation, claimed: true };
 }
 
 /**

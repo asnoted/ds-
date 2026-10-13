@@ -232,7 +232,7 @@ function onClaimed(state: RunState, shape: OutgoingShape, now: number): RunDecis
     return step({ ...state, armed }, effects, { kind: "protocol" });
   }
 
-  const outcome = claimArmed(armed, shape.pendingText, shape.shapeOk);
+  const outcome = claimArmed(armed, shape.pendingText);
   const next = outcome.claimed ? shape.replacePending(pending) : null;
   if (next === null) {
     effects.push({
