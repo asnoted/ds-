@@ -30,8 +30,12 @@ issue #23 要的"组合功能:往页面发一个问题 → 等页面模型排围
   一段"本地工具"告诉模型可以排哪些名字.
 - 组合内部每一步都走 `runAction`,总开关 / 替人发言 / 退避三道闸照拦;失败码全取现成册子,
   不新增.失败以 `errorPayload` 返回,不进对话流(与 dsb 传输 / 闸失败同口径).
-- 本地工具名在 background 的 `sendCall` 里截获:命中就地跑,未命中照旧转发 dsb--普通
+- 本地工具名在 `sendCall` 里截获:命中就地跑,未命中照旧转发 dsb--普通
   工具路径一字不改.
+- **处置抽进 module(2026-10-13 补记,issue #101)**:截获点函数仍叫 `sendCall`,位置原样
+  (`parseToolCall` 之后,打网关之前),只是随"一轮围栏的处置"搬进了
+  `src/lib/fenceround.ts`(带注入口的 module,五条语义各有用例);background 只剩
+  storage / alarms / browser 接线.**本 ADR 的机制与论证原样保留**.
 - v1 只有 `send.page`;名册扩容(如把 #30 的控件补全做成组合)先走原语路线,不急着进来.
 - **`send.page` 从四步缩到两步**(2026-10-05 补记,issue #47):v1 那四步是 ADR-0014 之前画的--
   它等 `wait.fence`(页面模型排的围栏,由 `detect()` 走 `sendCalls` 处理,与本地工具这条路无关)
