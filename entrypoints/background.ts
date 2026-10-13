@@ -2,7 +2,6 @@ import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
 
 import {
-  ACTION_ERROR_TAB_GONE,
   isDeepSeekUrl,
   runAction,
   sendMessageSendToTab,
@@ -36,6 +35,7 @@ import {
   type FailureRecord,
   type FailureWhere,
 } from "../src/lib/failurelog";
+import { createFenceRound, type FenceRoundEffect, type RelayAnswer } from "../src/lib/fenceround";
 import {
   afterHealthProbe,
   badgeText,
@@ -46,35 +46,28 @@ import {
   type IconState,
 } from "../src/lib/icon";
 import { nextMessageId } from "../src/lib/id";
-import { findLocalTool, type LocalTool, type LocalToolEnv } from "../src/lib/localtools";
+import type { LocalTool, LocalToolEnv } from "../src/lib/localtools";
 import type { AccountState } from "../src/lib/page";
 import {
   FAILURE_RELAY_UNREACHABLE,
-  MALFORMED_CALL_HINT,
-  MAX_CALLS_PER_ROUND,
   MCP_CALL_TIMEOUT_MS,
   MCP_LIST_TIMEOUT_MS,
   MCP_PING_TIMEOUT_MS,
   callToolBody,
   describeBadResponse,
   describeFetchFailure,
-  joinCallAnswers,
   listToolsBody,
   parseMcpPing,
   parseMcpResponse,
-  parseToolCall,
   parseToolsList,
   pingBody,
   relayMcpUrl,
-  type ToolAnswer,
   type ToolCall,
   type ToolInfo,
 } from "../src/lib/relay";
 import {
   errorPayload,
   failureNotice,
-  isInjectableReply,
-  okPayload,
   type FailureNotice,
   type ReplyPayload,
 } from "../src/lib/reply";
@@ -113,6 +106,8 @@ import {
  *
  * 两条通知式的小路也在这一层:`said_add`(围栏之外的话报给协调者,报不上不碍事)与
  * `tools/list`(工具目录,协议说明照它拼,60s 由隔离世界来取一次).
+ * 一轮围栏的处置(截断 / 坏围栏提示 / 本地截获 / 整轮作废 / 重入护栏)抽在
+ * `src/lib/fenceround.ts`,这一层只把中继调用 / 本地工具 / 保活 / 时钟与效果出口注进去.
  * 不建面板;popup 只放总开关(#28),选项页管"代你发言"闸.
  */
 export default defineBackground(() => {
@@ -391,11 +386,11 @@ export default defineBackground(() => {
   /**
    * 围栏(页面模型排出 send 围栏,围栏正文送进隔离世界)或回灌
    * (答复送回内容脚本)落地:这是一条动静,刷新标签页的
-   * 动静时刻--连催计数与停手随之清零.
+   * 动静时刻--连催计数与停手随之清零.时刻由围栏处置 module 的时钟带进来.
    */
-  function watchdogSeen(tabId: number): void {
+  function watchdogSeen(tabId: number, now: number): void {
     const before = watches.get(tabId) ?? INITIAL_WATCHDOG_STATE;
-    watches.set(tabId, watchdogSeenActivity(before, Date.now()));
+    watches.set(tabId, watchdogSeenActivity(before, now));
   }
 
   /**
@@ -483,18 +478,15 @@ export default defineBackground(() => {
     }
   }
 
-  /** 正在跑本地工具的标签页(重入护栏:同一标签页一次只跑一个). */
-  const localBusy = new Set<number>();
-
   /**
-   * 本地工具:围栏里排的是扩展自己的工具名(`findLocalTool` 命中),**不转发 dsb**,
-   * 就地执行.组合内部的页面动作各走一遍 `runAction`,所以总开关 / 替人发言 / 退避
-   * 三道闸照拦;失败码是现成册子里的,不编新码.
+   * 本地工具就地跑的接线半边:组合内部的页面动作各走一遍 `runAction`,所以
+   * 总开关 / 替人发言 / 退避三道闸照拦;失败码是现成册子里的,不编新码.
    *
    * **不碰中继图标**:本地工具一次 fetch 都没打,它的成败证明不了中继健不健康--闸关着
    * 回 `disabled` 是你自己关的,不是中继坏了.与 `deliverNudge` 同一口径:失败只进控制台,
-   * 不翻红,不留失败痕.在途角标转,保活按住照旧.同一标签页已有本地工具在跑时,回一条
-   * 可见提示(让模型别重排),不并发.
+   * 不翻红,不留失败痕(效果由处置 module 声明:角标 / 保活照配对,图标结论一条不发).
+   * 重入护栏(同一标签页一次只跑一个)也在处置 module 的 `sendCall` 里
+   * --那是 spec 与 ADR-0013 点名的截获点,见它的注释.
    *
    * 组合不该抛(内部把失败都折成载荷);真抛了是 bug,交给内容脚本那层既有的兜底.
    */
@@ -503,95 +495,16 @@ export default defineBackground(() => {
     args: Record<string, unknown>,
     tabId: number | undefined,
   ): Promise<ReplyPayload> {
-    if (tabId === undefined) return errorPayload(ACTION_ERROR_TAB_GONE);
-    if (localBusy.has(tabId)) {
-      return okPayload(`本地工具 ${tool.name} 正在跑(同一标签页一次只跑一个),这条没有执行.`);
-    }
-    localBusy.add(tabId);
-    const releaseKeepAlive = keepAliveWhileSending();
-    setInFlight(true);
-    try {
-      const context = await actionContext();
-      const env: LocalToolEnv = {
-        tabId,
-        run: (action, params) =>
-          runAction(
-            { type: "action", id: nextMessageId("local"), action, params, target: String(tabId) },
-            context,
-          ),
-      };
-      const payload = await tool.run(args, env);
-      if (payload.status === "error") {
-        console.log(`[ds-] 本地工具 ${tool.name} 回 ${payload.error}`);
-      }
-      return payload;
-    } finally {
-      localBusy.delete(tabId);
-      setInFlight(false);
-      releaseKeepAlive();
-    }
-  }
-
-  /** 一块围栏的处置:一条答案(进这一轮的正文),或一个失败载荷(整轮作废,不进对话流). */
-  type CallOutcome =
-    | { readonly ok: true; readonly answer: ToolAnswer }
-    | { readonly ok: false; readonly payload: ReplyPayload };
-
-  /**
-   * **本地工具的截获点**--`local-tools` 的 requirement 与 ADR-0013 都按这个名字指着这里
-   * (#50:这段以前内联在 `sendCalls` 的循环体里,于是两份文档指的是一个不存在的函数:
-   * 遵守的人找不到地方,将来谁建个同名函数那条 requirement 就"满足"了而截获在别处).
-   *
-   * 位置照 spec 的话办:`parseToolCall` **之后**,`fetch` **之前**先查 `findLocalTool`,
-   * 命中就地跑(`runLocalTool`,一次 fetch 都不打),未命中交 `sendOneCall` 打网关.
-   * 普通工具路径一字不改.
-   */
-  async function sendCall(call: string, tabId: number | undefined): Promise<CallOutcome> {
-    const toolCall = parseToolCall(call);
-    if (toolCall === null) {
-      // 排坏了不出门:没问过网关,图标状态别动,把改法回灌给模型自己改.
-      return { ok: true, answer: { tool: "排坏的围栏", text: MALFORMED_CALL_HINT } };
-    }
-    const local = findLocalTool(toolCall.tool);
-    const payload =
-      local === null
-        ? await sendOneCall(toolCall)
-        : await runLocalTool(local, toolCall.arguments, tabId);
-    // 连不上 / 答不成样:整轮作废,照旧不进对话流(与单块时一个脾气).
-    if (!isInjectableReply(payload)) return { ok: false, payload };
-    return { ok: true, answer: { tool: toolCall.tool, text: payload.answer } };
-  }
-
-  /**
-   * 一轮的工具调用:**一块一趟**打网关(每趟自己一份超时预算,不共用),
-   * 打完拼成一段正文交回.
-   *
-   * 一趟一趟而不是一次请求带多块:中继那一侧一次 `tools/call` 就是一件工具,
-   * 而扩展对一条在途 fetch 的保活与超时是**按请求**算的(`MCP_CALL_TIMEOUT_MS`)
-   * --多块挤一趟,几件慢工具叠起来就会先撞扩展的超时,报出来的还是没信息量的
-   * "中继不可达".一趟一块,超时账各算各的.
-   *
-   * 本地工具(`findLocalTool` 命中)就地跑,同样占一轮里的一块--判定与分派都在
-   * `sendCall` 里(那是 spec 与 ADR-0013 点名的截获点,见它的注释).
-   */
-  async function sendCalls(
-    calls: readonly string[],
-    tabId: number | undefined,
-  ): Promise<ReplyPayload> {
-    const planned = calls.slice(0, MAX_CALLS_PER_ROUND);
-    const answers: ToolAnswer[] = [];
-    for (const call of planned) {
-      const outcome = await sendCall(call, tabId); // 一块的处置在它那里:本地截获 / 转网关
-      if (!outcome.ok) return outcome.payload; // 整轮作废,不进对话流
-      answers.push(outcome.answer);
-    }
-
-    const dropped = calls.length - planned.length;
-    const joined = joinCallAnswers(answers);
-    if (dropped <= 0) return okPayload(joined);
-    return okPayload(
-      `${joined}\n\n(这一轮最多执行 ${MAX_CALLS_PER_ROUND} 块围栏,还有 ${dropped} 块没执行--下一轮再排.)`,
-    );
+    const context = await actionContext();
+    const env: LocalToolEnv = {
+      tabId,
+      run: (action, params) =>
+        runAction(
+          { type: "action", id: nextMessageId("local"), action, params, target: String(tabId) },
+          context,
+        ),
+    };
+    return tool.run(args, env);
   }
 
   /**
@@ -601,15 +514,13 @@ export default defineBackground(() => {
    * 中间态不存在;正在跑的调用也不该再发第二个请求去问它(同一 id 只起一份活,
    * 但扩展先 abort 报出来的只会是没信息量的"中继不可达",还会白扔一次调用).
    *
-   * 在途期间另开保活(`keepAliveWhileSending`),收摊时无论成败都先下在途标记,
-   * 再由调用方上屏,免得答案都回来了角标还挂着转框.
+   * 在途角标与保活的按住 / 松手由处置 module 配对(`fenceround` 的效果清单),
+   * 这里只负责发请求与把回话折成载荷 + cause(图标结论的"为什么").
    *
    * 本地工具(`findLocalTool` 命中)不走这里:见 `runLocalTool`.
    */
-  async function sendOneCall(toolCall: ToolCall): Promise<ReplyPayload> {
-    const releaseKeepAlive = keepAliveWhileSending();
+  async function sendOneCall(toolCall: ToolCall): Promise<RelayAnswer> {
     const id = nextMessageId("call");
-    setInFlight(true);
     try {
       const response = await fetchWithTimeout(relayMcpUrl(), MCP_CALL_TIMEOUT_MS, {
         method: "POST",
@@ -618,22 +529,62 @@ export default defineBackground(() => {
       });
       const text = await response.text();
       const payload = parseMcpResponse(response.status, text, id);
-      applyOutcome(
+      return {
         payload,
-        payload.status === "error" ? describeBadResponse(response.status, text) : null,
-      );
-      return payload;
+        cause: payload.status === "error" ? describeBadResponse(response.status, text) : null,
+      };
     } catch (error) {
       const cause = describeFetchFailure(error, MCP_CALL_TIMEOUT_MS);
       console.log(`[ds-] 工具调用没连上(${cause})`);
-      const failure = errorPayload(FAILURE_RELAY_UNREACHABLE);
-      applyOutcome(failure, cause);
-      return failure;
-    } finally {
-      setInFlight(false);
-      releaseKeepAlive();
+      return { payload: errorPayload(FAILURE_RELAY_UNREACHABLE), cause };
     }
   }
+
+  /** 保活的按住计数:几块围栏并发在途,最后一个松手才真松(定时器只排一份). */
+  let keepAliveHolds = 0;
+  let releaseKeepAlive: (() => void) | undefined;
+
+  /** 处置 module 的效果出口:角标转速、保活、图标结论、看门狗记忆、控制台,全在这儿落地. */
+  function applyFenceEffect(effect: FenceRoundEffect): void {
+    switch (effect.kind) {
+      case "in-flight":
+        setInFlight(effect.on);
+        return;
+      case "keep-alive":
+        if (effect.on) {
+          if (keepAliveHolds === 0) releaseKeepAlive = keepAliveWhileSending();
+          keepAliveHolds += 1;
+        } else {
+          keepAliveHolds = Math.max(0, keepAliveHolds - 1);
+          if (keepAliveHolds === 0) {
+            releaseKeepAlive?.();
+            releaseKeepAlive = undefined;
+          }
+        }
+        return;
+      case "icon":
+        applyOutcome(effect.payload, effect.cause);
+        return;
+      case "watchdog":
+        if (effect.tabId !== undefined) watchdogSeen(effect.tabId, effect.now);
+        return;
+      case "log":
+        console.log(`[ds-] ${effect.note}`);
+        return;
+    }
+  }
+
+  /**
+   * 一轮围栏的处置:五条语义(超 8 块截断、坏围栏提示、本地工具就地跑不碰图标、
+   * 非 injectable 整轮作废、同标签页重入护栏)全在 `src/lib/fenceround.ts`,
+   * 这里只把中继调用、本地工具、保活、时钟与效果出口注进去(入口文件只剩接线).
+   */
+  const fenceRound = createFenceRound({
+    callRelay: sendOneCall,
+    runLocal: runLocalTool,
+    now: Date.now,
+    apply: applyFenceEffect,
+  });
 
   /**
    * 工具目录:先看保鲜期内的缓存,过期才打 `tools/list`.
@@ -770,14 +721,12 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message, sender) => {
     const request = parseSendRequest(message);
     if (request !== null) {
-      // 围栏进了中继 = 页面模型排出了围栏:这是一条动静.
+      // 围栏进来的动静、在途角标、图标结论、看门狗的落地动静全由处置 module 声明,
+      // 接线侧照效果清单做;答复(或整轮作废的失败载荷)原路交回.
       const tabId = sender.tab?.id;
-      if (tabId !== undefined) watchdogSeen(tabId);
-      return sendCalls(request.calls, tabId).then((payload) => {
-        // 答复送回内容脚本 = 回灌落地(送进作框由页面世界自己完成).
-        if (tabId !== undefined) watchdogSeen(tabId);
-        return sendResponseMessage(request.id, payload);
-      });
+      return fenceRound
+        .dispose(request.calls, tabId)
+        .then(({ payload }) => sendResponseMessage(request.id, payload));
     }
     // said 上报(通知式,不等回话):围栏之外的话记进协调者的记录本.
     const said = parseSaidReport(message);
