@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { pick, pressEnter, read, write } from "./composer";
+import { awaitCleared, pick, POLL_MS, pressEnter, read, write, type Clock } from "./composer";
+
+/** 假时钟:不真等,`sleep` 直接把虚拟时间推过去,顺便记下每一次等待. */
+function fakeClock(): { clock: Clock; slept: number[] } {
+  let at = 0;
+  const slept: number[] = [];
+  return {
+    clock: {
+      now: () => at,
+      sleep: async (ms: number) => {
+        slept.push(ms);
+        at += ms;
+      },
+    },
+    slept,
+  };
+}
 
 /** jsdom 不做布局:给元素钉上可见的盒子与尺寸(面积),否则一律当不可见. */
 function layout(el: HTMLElement, width: number, height: number): void {
@@ -124,5 +140,39 @@ describe("按键", () => {
     pressEnter(el);
 
     expect(seen).toEqual(["keydown:Enter:13:13:true", "keyup:Enter:13:13:true"]);
+  });
+});
+
+describe("等清空(发出去的标志)", () => {
+  it("站点当场把框清空 → 立刻回 true,一次都不等", async () => {
+    const { clock, slept } = fakeClock();
+
+    expect(await awaitCleared(() => "", { timeoutMs: 600, clock })).toBe(true);
+    expect(slept).toEqual([]);
+  });
+
+  it("第 3 次轮询才清空 → 回 true,每次等一个轮询间隔", async () => {
+    const { clock, slept } = fakeClock();
+    let polls = 0;
+    const readText = (): string => {
+      polls += 1;
+      return polls < 3 ? "agent:\n继续" : "";
+    };
+
+    expect(await awaitCleared(readText, { timeoutMs: 600, clock })).toBe(true);
+    expect(slept).toEqual([POLL_MS, POLL_MS]);
+  });
+
+  it("一直不清 → 到点回 false,不加时(等到上限就收)", async () => {
+    const { clock, slept } = fakeClock();
+
+    expect(await awaitCleared(() => "还在框里", { timeoutMs: 300, clock })).toBe(false);
+    expect(slept).toEqual([POLL_MS, POLL_MS, POLL_MS]);
+  });
+
+  it("框里只剩空白也算清空(站点清完会留个换行)", async () => {
+    const { clock } = fakeClock();
+
+    expect(await awaitCleared(() => "  \n ", { timeoutMs: 600, clock })).toBe(true);
   });
 });

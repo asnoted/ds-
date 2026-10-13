@@ -98,3 +98,36 @@ export function pressEnter(element: HTMLElement): void {
     element.dispatchEvent(event);
   }
 }
+
+/** 时钟:由调用方注入(CODING_STANDARDS 第 1 条)——这里不碰定时器,不碰 `Date`. */
+export type Clock = {
+  readonly now: () => number;
+  readonly sleep: (ms: number) => Promise<void>;
+};
+
+/** 接线侧的默认钟;测试一律注入假钟. */
+export const realClock: Clock = {
+  now: () => Date.now(),
+  sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/** 轮询间隔(毫秒):站点清空输入框是几百毫秒内的事,100ms 够密也够省. */
+export const POLL_MS = 100;
+
+/**
+ * 等框被清空(**发出去的标志**):每 `POLL_MS` 读一次,清空立刻回 `true`;到 `timeoutMs`
+ * 上限还没清就回 `false`——**不抛**,"站点没发出去"与"还没来得及清"对下一步是同一件事
+ * (调用方去点圆键兜底,或者留痕作废).
+ */
+export async function awaitCleared(
+  readText: () => string,
+  options: { readonly timeoutMs: number; readonly clock: Clock },
+): Promise<boolean> {
+  const { timeoutMs, clock } = options;
+  const startedAt = clock.now();
+  for (;;) {
+    if (readText().trim() === "") return true;
+    if (clock.now() - startedAt >= timeoutMs) return false;
+    await clock.sleep(POLL_MS);
+  }
+}
