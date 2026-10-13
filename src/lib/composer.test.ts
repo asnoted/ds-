@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pick } from "./composer";
+import { pick, pressEnter, read, write } from "./composer";
 
 /** jsdom 不做布局:给元素钉上可见的盒子与尺寸(面积),否则一律当不可见. */
 function layout(el: HTMLElement, width: number, height: number): void {
@@ -61,5 +61,68 @@ describe("pick:写作框是哪个", () => {
     layout(box("tie-second"), 300, 100);
 
     expect(pick()?.id).toBe("tie-first");
+  });
+});
+
+describe("读 / 写", () => {
+  it("写走原生 value setter + 冒泡 input(React 受控输入只认这一条),回 true", () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    const el = document.querySelector("textarea") as HTMLTextAreaElement;
+    const seen: string[] = [];
+    el.addEventListener("input", (event) => seen.push((event.target as HTMLTextAreaElement).value));
+
+    expect(write(el, "你好")).toBe(true);
+    expect(el.value).toBe("你好");
+    expect(seen).toEqual(["你好"]); // 那次 input 事件真派了,也冒泡到监听者
+  });
+
+  it("contenteditable 写 textContent + 冒泡 input,回 true", () => {
+    document.body.innerHTML = '<div contenteditable="true"></div>';
+    const el = document.querySelector("[contenteditable]") as HTMLElement;
+    let seenCount = 0;
+    el.addEventListener("input", () => (seenCount += 1));
+
+    expect(write(el, "agent:")).toBe(true);
+    expect(el.textContent).toBe("agent:");
+    expect(seenCount).toBe(1);
+  });
+
+  it("既不是 textarea 也不是可编辑区 → 写不进,回 false(不假装写过)", () => {
+    document.body.innerHTML = "<div id='plain'>字</div>";
+    const el = document.getElementById("plain") as HTMLElement;
+
+    expect(write(el, "改了")).toBe(false);
+    expect(el.textContent).toBe("字"); // 一个字都没动
+  });
+
+  it("读:textarea 读 value,contenteditable 读 textContent;空框回空串", () => {
+    document.body.innerHTML = "<textarea>写了一半</textarea>";
+    const ta = document.querySelector("textarea") as HTMLTextAreaElement;
+    expect(read(ta)).toBe("写了一半");
+
+    document.body.innerHTML = '<div contenteditable="true">草稿</div>';
+    const ce = document.querySelector("[contenteditable]") as HTMLElement;
+    expect(read(ce)).toBe("草稿");
+
+    document.body.innerHTML = "<textarea></textarea>";
+    expect(read(document.querySelector("textarea") as HTMLTextAreaElement)).toBe("");
+  });
+});
+
+describe("按键", () => {
+  it("pressEnter:keydown + keyup,keyCode / which 补成 13,都冒泡(页面里的老判断也认)", () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    const el = document.querySelector("textarea") as HTMLTextAreaElement;
+    const seen: string[] = [];
+    for (const type of ["keydown", "keyup"]) {
+      el.addEventListener(type, (event) => {
+        const key = event as KeyboardEvent;
+        seen.push(`${type}:${key.key}:${key.keyCode}:${key.which}:${key.bubbles}`);
+      });
+    }
+
+    pressEnter(el);
+
+    expect(seen).toEqual(["keydown:Enter:13:13:true", "keyup:Enter:13:13:true"]);
   });
 });

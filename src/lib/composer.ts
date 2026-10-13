@@ -50,3 +50,51 @@ export function pick(root: ParentNode = document): HTMLElement | null {
   }
   return best;
 }
+
+/** 读框里现有的字(不发送):textarea 读 `value`,contenteditable 读 `textContent`. */
+export function read(element: HTMLElement): string {
+  if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+    return element.value;
+  }
+  return element.textContent ?? "";
+}
+
+/**
+ * 写进受控输入,返回成败(**不发送**).
+ *
+ * 走**原型上的原生 value setter**,再派一个冒泡的 `input`:直接 `el.value = x` 会被
+ * React 的 value tracker 吞掉--页面看着像没写过.既不是 textarea 也不是可编辑区
+ * (挑框之外的手递元素)回 `false`,不假装写过.
+ */
+export function write(element: HTMLElement, text: string): boolean {
+  if (element instanceof HTMLTextAreaElement) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    if (setter === undefined) return false;
+    setter.call(element, text);
+  } else if (element.getAttribute("contenteditable") === "true") {
+    element.textContent = text;
+  } else {
+    return false;
+  }
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
+}
+
+/**
+ * 在框上按回车(站点自己也接这条路).**键码补法只有这一份**:`keyCode` / `which`
+ * 由 `defineProperty` 补成 13(构造参数里塞进去在部分实现上会被丢掉),
+ * 页面里认老属性的判断也认得;keydown 与 keyup 都派,真按键就是这一对.
+ */
+export function pressEnter(element: HTMLElement): void {
+  for (const type of ["keydown", "keyup"]) {
+    const event = new KeyboardEvent(type, {
+      key: "Enter",
+      code: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(event, "keyCode", { value: 13 });
+    Object.defineProperty(event, "which", { value: 13 });
+    element.dispatchEvent(event);
+  }
+}
