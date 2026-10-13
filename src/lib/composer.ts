@@ -10,9 +10,12 @@
  * 等清空,圆键此刻是什么意图.**不碰闸**:写草稿放行、发送才归"代你发言"闸的分界
  * (ADR-0023)与各动作的闸归类一字不动,归 `action.ts` / `run.ts` / `registry.ts`;
  * **不碰时钟**:`awaitCleared` / `triggerSend` / `send` 的时钟由调用方注入,
- * 接线侧默认给 `realClock`.探针 `scripts/page-action.py` 是独立仪器(CODING_STANDARDS
+ * 真钟(`Date` / `setTimeout`)那一份在接线侧 `entrypoints/inject.content.ts` 里,
+ * 本模块只有 `Clock` 类型.探针 `scripts/page-action.py` 是独立仪器(CODING_STANDARDS
  * 第 5 条),不与这里同源.
  */
+
+import { normalizeText } from "./normalize";
 
 /**
  * 写作框的认定放宽到两类容器:`<textarea>` 与 contenteditable(DeepSeek 前端两代
@@ -105,19 +108,12 @@ export type Clock = {
   readonly sleep: (ms: number) => Promise<void>;
 };
 
-/** 接线侧的默认钟;测试一律注入假钟. */
-export const realClock: Clock = {
-  now: () => Date.now(),
-  sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
-};
-
 /** 轮询间隔(毫秒):站点清空输入框是几百毫秒内的事,100ms 够密也够省. */
 export const POLL_MS = 100;
 
 /**
- * 等框被清空(**发出去的标志**):每 `POLL_MS` 读一次,清空立刻回 `true`;到 `timeoutMs`
- * 上限还没清就回 `false`——**不抛**,"站点没发出去"与"还没来得及清"对下一步是同一件事
- * (调用方去点圆键兜底,或者留痕作废).
+ * 等框被清空(**发出去的标志**);到 `timeoutMs` 还没清回 `false`,**不抛**--
+ * "站点没发出去"与"还没来得及清"对下一步是同一件事(调用方去点圆键兜底,或者留痕作废).
  */
 export async function awaitCleared(
   readText: () => string,
@@ -204,15 +200,12 @@ export function circleIntent(): Intent {
 export type StageOutcome = "written" | "draft" | "unwritable";
 
 /**
- * 同一份字的判定:只放宽换行与首尾空白,其余严格相等.
- *
- * 口径与 `armed.ts` 那把钥匙一致(ADR-0020:站点与 React 受控输入在换行与末尾空白
- * 上与我们写进去的不完全一致),两处都由用例钉着:这里钉"上一轮落的短标记再落一次
- * 不算别人的字",`armed.test.ts` 钉"用户手打的话永远不等于标记".
+ * 同一份字的判定:归一化那一份与钥匙共用(`normalize.ts`,ADR-0020:站点与 React
+ * 受控输入在换行与首尾空白上与我们写进去的不完全一致),两处都由用例钉着:这里钉
+ * "上一轮落的短标记再落一次不算别人的字",`armed.test.ts` 钉"用户手打的话永远不等于标记".
  */
 function sameText(left: string, right: string): boolean {
-  const normalize = (value: string): string => value.replace(/\r\n/g, "\n").trim();
-  return normalize(left) === normalize(right);
+  return normalizeText(left) === normalizeText(right);
 }
 
 /**
@@ -235,8 +228,7 @@ export const ENTER_WAIT_MS = 600;
 export const CIRCLE_WAIT_MS = 1200;
 
 /**
- * 把框里**已经写好**的那条字发出去:先按 Enter(站点自己的发送键),等框被清空;
- * 没清空才去点圆键兜底,而**只在圆键此刻的意图是"发送"时点**.
+ * 把框里**已经写好**的那条字发出去;圆键只当**兜底**,且**只在意图是"发送"时点**.
  *
  * 生成期那个圆键是停止(真机 2026-10-05:class 一个不换,只有图标在箭头与方块之间
  * 换),点下去就是替用户中断一次生成--比这条发不出去坏得多.认不出(思考期环形

@@ -28,7 +28,7 @@ import {
   recognizeOutgoingShape,
   rewriteOutgoingBody,
 } from "../src/lib/inject";
-import { pick, realClock, send, stage } from "../src/lib/composer";
+import { pick, send, stage, type Clock } from "../src/lib/composer";
 import { nextMessageId } from "../src/lib/id";
 import { hasReplyAnchor } from "../src/lib/reply";
 import type { ToolInfo } from "../src/lib/relay";
@@ -45,6 +45,12 @@ import { outsideFences } from "../src/lib/said";
 import { parseToggleMessage, wantStateMessage } from "../src/lib/toggle";
 
 type XhrTarget = { readonly method: string; readonly url: string };
+
+/** 真钟归接线侧:模块只认注入进来的 `Clock`,自己不碰 `Date` / `setTimeout`(CODING_STANDARDS 第 1 条). */
+const realClock: Clock = {
+  now: () => Date.now(),
+  sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
 
 /**
  * 页面世界这一侧有两件事(总开关关着时一件都不做:不接管,不注入,不检测,不回灌):

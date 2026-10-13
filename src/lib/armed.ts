@@ -20,6 +20,7 @@
  */
 
 import { CONTINUATION_MARKER, isArmedFresh } from "./continuation";
+import { normalizeText } from "./normalize";
 
 /** 武装挂太久就作废(`armed` 态才有时效;`pending` 不看时间).见 continuation.ts 的说明. */
 export const ARMED_TTL_MS = 10_000;
@@ -73,23 +74,17 @@ export function expireIfStale(state: ArmedState, now: number): ArmedState {
 }
 
 /**
- * 归一化到"能不能与短标记逐字相等"的口径:统一换行,去掉首尾空白.
- *
- * 站点与 React 受控输入框在换行与首尾空白上不完全一致(CRLF vs LF,末尾多一个
- * `\n`),归一化之后**其余字符仍严格相等**--不多不少地放宽这一点.
- */
-function normalize(text: string): string {
-  return text.replace(/\r\n/g, "\n").trim();
-}
-
-/**
  * 这段正文是不是我们那条短标记(**钥匙**).
+ *
+ * 比对前过一遍 `normalize.ts` 的 `normalizeText`(站点与 React 受控输入框在换行与
+ * 首尾空白上不完全一致,CRLF vs LF,末尾多一个 `\n`),归一化之后**其余字符仍严格
+ * 相等**--不多不少地放宽这一点(ADR-0020).
  *
  * 只有逐字等于标记才返回 true:用户手打的消息,粘贴进来的内容,带协议说明的历史
  * 回放,全都不是标记,也全都不该被工具结果顶掉.
  */
 export function matchesMarker(text: string): boolean {
-  return normalize(text) === normalize(CONTINUATION_MARKER);
+  return normalizeText(text) === normalizeText(CONTINUATION_MARKER);
 }
 
 /**
