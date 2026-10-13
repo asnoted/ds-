@@ -34,7 +34,7 @@ import {
   describeThrownFailure,
   type ContinuationFailure,
 } from "./continuationfail";
-import { outgoingUserTextOf, rewriteContinuationBody } from "./inject";
+import type { OutgoingShape } from "./inject";
 import {
   beginRound,
   INITIAL_ROUNDS,
@@ -109,8 +109,8 @@ export type RunEvent =
       readonly continuation: boolean;
       readonly outcome: SettleOutcome;
     }
-  /** 一条出站请求走到改写点:按钥匙认领,给出这条请求的处置. */
-  | { readonly type: "claimed"; readonly body: string; readonly now: number }
+  /** 一条出站请求走到改写点(形状已在接线侧认过一次):按钥匙认领,给出这条请求的处置. */
+  | { readonly type: "claimed"; readonly shape: OutgoingShape; readonly now: number }
   /** 页面会话 id:换了会话 = 轮数归零 + 待发的那条作废. */
   | { readonly type: "session"; readonly key: string | null }
   /** 闸与总开关的状态(隔离世界广播来的同一份消息). */
@@ -120,10 +120,8 @@ export type RunEvent =
 export type ClaimOutcome =
   /** 正文已换成工具结果(短标记逐字相等,钥匙认领走了). */
   | { readonly kind: "substituted"; readonly body: string }
-  /** 不归本趟续聊管:接线侧照旧拼协议说明(ADR-0002 的注入说明). */
-  | { readonly kind: "protocol" }
-  /** 认领走了但请求体形状认不出:原样放行,连协议说明也不拼. */
-  | { readonly kind: "untouched" };
+  /** 不归本趟续聊管:接线侧照旧拼协议说明(ADR-0002 的注入说明);钥匙不符与形状认不出都落这里. */
+  | { readonly kind: "protocol" };
 
 export type RunDecision = {
   readonly state: RunState;
@@ -216,11 +214,12 @@ function onSession(state: RunState, key: string | null): RunDecision {
 /**
  * 一条出站请求走到改写点:先看挂着的过没过期,再拿钥匙(`matchesMarker`)认领.
  *
- * 认不走(正文不是短标记)就原样放行并撤销武装,交给协议说明那一支——用户发的
- * 是他自己的话,不能被工具结果顶掉(#49).认领走了但形状认不出:原样放行,
- * 连协议说明也不拼(这一趟只作废,不动别人).
+ * 形状由接线侧的 `recognizeOutgoingShape` 认过一次,钥匙比对与正文替换共用它.
+ * **钥匙不符与形状认不出是同一条路径**:原样放行走协议说明那一支、武装撤销、留一笔痕
+ * (cause 按 `shapeOk` 分,ADR-0021 两种断点仍能区分)--不再有"认领走了却换不进"
+ * 的第三种半通组合.用户发的是他自己的话时,协议说明照旧拼(#49).
  */
-function onClaimed(state: RunState, body: string, now: number): RunDecision {
+function onClaimed(state: RunState, shape: OutgoingShape, now: number): RunDecision {
   const before = state.armed;
   const armed = expireIfStale(before, now);
   const effects: RunEffect[] = [];
@@ -233,15 +232,14 @@ function onClaimed(state: RunState, body: string, now: number): RunDecision {
     return step({ ...state, armed }, effects, { kind: "protocol" });
   }
 
-  const outcome = claimArmed(armed, outgoingUserTextOf(body), true);
-  if (!outcome.claimed) {
-    effects.push({ kind: "trace", cause: describeContinuationFailure("key-mismatch") });
-    return step({ ...state, armed: outcome.state }, effects, { kind: "protocol" });
-  }
-  const next = rewriteContinuationBody(body, pending);
+  const outcome = claimArmed(armed, shape.pendingText, shape.shapeOk);
+  const next = outcome.claimed ? shape.replacePending(pending) : null;
   if (next === null) {
-    effects.push({ kind: "trace", cause: describeContinuationFailure("shape-unknown") });
-    return step({ ...state, armed: outcome.state }, effects, { kind: "untouched" });
+    effects.push({
+      kind: "trace",
+      cause: describeContinuationFailure(shape.shapeOk ? "key-mismatch" : "shape-unknown"),
+    });
+    return step({ ...state, armed: outcome.state }, effects, { kind: "protocol" });
   }
   return step({ ...state, armed: outcome.state }, effects, { kind: "substituted", body: next });
 }
@@ -286,6 +284,6 @@ export function decide(state: RunState, event: RunEvent): RunDecision {
     case "toggle":
       return onToggle(state, event.speak, event.enabled);
     case "claimed":
-      return onClaimed(state, event.body, event.now);
+      return onClaimed(state, event.shape, event.now);
   }
 }

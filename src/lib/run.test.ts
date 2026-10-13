@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ARMED_TTL_MS } from "./armed";
 import { CONTINUATION_MARKER, STOP_CONTINUATION_LIMIT, buildContinuation } from "./continuation";
 import { describeContinuationFailure, describeThrownFailure } from "./continuationfail";
+import { recognizeOutgoingShape } from "./inject";
 import { errorPayload, okPayload } from "./reply";
 import { INITIAL_ROUNDS, MAX_CONTINUATION_ROUNDS } from "./rounds";
 import { decide, endTask, newRun, type RunState } from "./run";
@@ -183,14 +184,22 @@ describe("出站请求认领:钥匙、过期与处置", () => {
   const USER_BODY = JSON.stringify({ prompt: "帮我看看 README" });
 
   it("正文逐字等于短标记:换成工具结果,武装清空(钥匙认领走了)", () => {
-    const claimed = decide(armedRun(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    const claimed = decide(armedRun(true), {
+      type: "claimed",
+      shape: recognizeOutgoingShape(MARKER_BODY),
+      now: 1_500,
+    });
     expect(claimed.claim).toEqual({ kind: "substituted", body: JSON.stringify({ prompt: CONT }) });
     expect(claimed.state.armed).toEqual({ phase: "idle" });
     expect(claimed.effects).toEqual([]);
   });
 
   it("用户自己发的话:原样放行走协议说明那一支,武装撤销,key-mismatch 留痕(#49)", () => {
-    const claimed = decide(armedRun(true), { type: "claimed", body: USER_BODY, now: 1_500 });
+    const claimed = decide(armedRun(true), {
+      type: "claimed",
+      shape: recognizeOutgoingShape(USER_BODY),
+      now: 1_500,
+    });
     expect(claimed.claim).toEqual({ kind: "protocol" });
     expect(claimed.state.armed).toEqual({ phase: "idle" });
     expect(claimed.effects).toEqual([
@@ -198,10 +207,24 @@ describe("出站请求认领:钥匙、过期与处置", () => {
     ]);
   });
 
+  it("形状认不出(站点换了载荷):与钥匙不符走同一条路径,痕上写形状认不出", () => {
+    const claimed = decide(armedRun(true), {
+      type: "claimed",
+      shape: recognizeOutgoingShape(JSON.stringify({ input: "短标记也在这里面" })),
+      now: 1_500,
+    });
+    // 同一条路径:原样放行走协议说明那一支 + 武装撤销(#4 的"不再有第三种半通组合")
+    expect(claimed.claim).toEqual({ kind: "protocol" });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([
+      { kind: "trace", cause: describeContinuationFailure("shape-unknown") },
+    ]);
+  });
+
   it("armed 挂过 TTL 才撞上请求:先作废留痕,再按没有武装处理", () => {
     const claimed = decide(armedRun(true), {
       type: "claimed",
-      body: MARKER_BODY,
+      shape: recognizeOutgoingShape(MARKER_BODY),
       now: 1_000 + ARMED_TTL_MS + 1,
     });
     expect(claimed.claim).toEqual({ kind: "protocol" });
@@ -214,7 +237,7 @@ describe("出站请求认领:钥匙、过期与处置", () => {
   it("pending 不看时间:等用户按发送那条隔多久仍按钥匙认领", () => {
     const claimed = decide(armedRun(false), {
       type: "claimed",
-      body: MARKER_BODY,
+      shape: recognizeOutgoingShape(MARKER_BODY),
       now: 1_000 + ARMED_TTL_MS * 100,
     });
     expect(claimed.claim).toEqual({ kind: "substituted", body: JSON.stringify({ prompt: CONT }) });
@@ -222,15 +245,27 @@ describe("出站请求认领:钥匙、过期与处置", () => {
   });
 
   it("没有武装等着:处置是协议说明那一支,状态与痕迹都不动", () => {
-    const idle = decide(turnOn(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
+    const idle = decide(turnOn(true), {
+      type: "claimed",
+      shape: recognizeOutgoingShape(MARKER_BODY),
+      now: 1_500,
+    });
     expect(idle.claim).toEqual({ kind: "protocol" });
     expect(idle.state.armed).toEqual({ phase: "idle" });
     expect(idle.effects).toEqual([]);
   });
 
   it("一次即作废:认领走之后再撞同样等于标记的请求,不再替换", () => {
-    const once = decide(armedRun(true), { type: "claimed", body: MARKER_BODY, now: 1_500 });
-    const twice = decide(once.state, { type: "claimed", body: MARKER_BODY, now: 1_600 });
+    const once = decide(armedRun(true), {
+      type: "claimed",
+      shape: recognizeOutgoingShape(MARKER_BODY),
+      now: 1_500,
+    });
+    const twice = decide(once.state, {
+      type: "claimed",
+      shape: recognizeOutgoingShape(MARKER_BODY),
+      now: 1_600,
+    });
     // 一次即作废:武装已被消费,第二次没有正文等着认,也不再留新痕.
     expect(twice.claim).toEqual({ kind: "protocol" });
     expect(twice.effects).toEqual([]);

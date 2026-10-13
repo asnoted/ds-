@@ -24,7 +24,11 @@ import {
   runPaced,
   type SendPace,
 } from "../src/lib/sendpace";
-import { isOutgoingChatRequest, rewriteOutgoingBody } from "../src/lib/inject";
+import {
+  isOutgoingChatRequest,
+  recognizeOutgoingShape,
+  rewriteOutgoingBody,
+} from "../src/lib/inject";
 import { findButton, readPressed } from "../src/lib/page";
 import { nextMessageId } from "../src/lib/id";
 import { hasReplyAnchor } from "../src/lib/reply";
@@ -200,20 +204,19 @@ export default defineContentScript({
     /**
      * 出站改写:挂着的续聊优先(这一趟就是自动续聊那一趟),否则照旧拼协议说明.
      *
-     * 谁该被认领、正文换不换、留哪条痕全在 `run.ts` 的 `claimed` 裁决里;
-     * 这里只照 `ClaimOutcome` 返回:换成的正文 / 原样放行 / 接着拼协议说明.
+     * 出站载荷**只认一次**(`recognizeOutgoingShape`):钥匙比对、正文替换、协议说明
+     * 拼接三种用途共用这一次识别,谁该被认领、正文换不换、留哪条痕全在 `run.ts` 的
+     * `claimed` 裁决里;这里只照 `ClaimOutcome` 返回:换成的正文 / 照旧拼协议说明.
      * 续聊**一次即作废**:替换没成也作废--留着它,下一条出站就是用户自己发的消息,
      * 会被当成续聊那趟,正文被工具结果顶掉(把人说的话吃了,比少一轮严重得多).
      */
     const rewriteOutgoing = (body: string): string | null => {
-      const decision = dispatch({ type: "claimed", body, now: Date.now() });
+      const shape = recognizeOutgoingShape(body);
+      const decision = dispatch({ type: "claimed", shape, now: Date.now() });
       switch (decision.claim?.kind) {
         case "substituted":
           console.log("[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)");
           return decision.claim.body;
-        case "untouched":
-          console.log("[ds-] 续聊正文没能替换进出站请求,这一轮作废(结果没送到模型手上)");
-          return null;
         default: {
           const next = rewriteOutgoingBody(body, catalog);
           if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
