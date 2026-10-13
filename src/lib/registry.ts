@@ -7,7 +7,7 @@
  * `registry.test.ts` 的结构守卫当场红.
  *
  * **闸归类必须在行上显式写标志,不做任何推断**:闸只管发送(ADR-0023),
- * 读写性质 `nature` 只是这笔动作的记述--拿它推闸等于悄悄改 ADR.
+ * 不拿行上别的记述去推闸--推闸等于悄悄改 ADR.
  * `BACKOFF_GATED_ACTIONS` 与 `SPEAK_GATED_ACTIONS` 不再互为子集,各行各写各的.
  *
  * `target` 形态与 `protocol/fixtures/action.json` 对拍:标 `"null"` 的动作由
@@ -42,9 +42,6 @@ import { waitFence, waitReply } from "./wait";
 /** 执行:target 标签页那一跳的执行器;`null` = background 就地执行(不在名册里). */
 export type ActionRun = (frame: ActionFrame) => unknown;
 
-/** 读写性质:记述,不参与闸归类(闸只认行上的显式标志). */
-export type ActionNature = "read" | "write";
-
 /** target 形态:`"tab"` 要目标标签页 id;`"null"` 只能是 null. */
 export type ActionTarget = "tab" | "null";
 
@@ -54,8 +51,6 @@ export type ActionRow = {
   readonly run: ActionRun | null;
   /** target 形态(与协议 fixture 对拍,见文件头). */
   readonly target: ActionTarget;
-  /** 读写性质:读 = 只看不动;写 = 会改页面状态.只作记述,不推闸. */
-  readonly nature: ActionNature;
   /** 总开关豁免:开关关着也照常执行(开关自己的读写,关掉后还得能翻回来). */
   readonly toggleExempt: boolean;
   /**
@@ -93,7 +88,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "tabs.list": {
     run: null,
     target: "null",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -102,7 +96,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "toggle.get": {
     run: null,
     target: "null",
-    nature: "read",
     toggleExempt: true,
     speak: false,
     backoff: false,
@@ -112,7 +105,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "toggle.set": {
     run: null,
     target: "null",
-    nature: "write",
     toggleExempt: true,
     speak: false,
     backoff: false,
@@ -123,7 +115,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "page.state": {
     run: readPageState,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -132,7 +123,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "composer.read": {
     run: readComposer,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -142,7 +132,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "composer.type": {
     run: typeComposer,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -151,7 +140,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "composer.clear": {
     run: clearComposer,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -160,7 +148,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "think.get": {
     run: readThink,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -170,7 +157,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "think.set": {
     run: setThink,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -179,7 +165,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "search.get": {
     run: readSearch,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -188,7 +173,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "search.set": {
     run: setSearch,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -197,7 +181,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "button.get": {
     run: readButton,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -207,7 +190,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "button.click": {
     run: buttonClick,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: true,
     backoff: true,
@@ -216,7 +198,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "send.enter": {
     run: pressEnter,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: true,
     backoff: true,
@@ -226,7 +207,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "chat.new": {
     run: newChat,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -235,7 +215,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "chats.list": {
     run: listChats,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -245,7 +224,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "chat.switch": {
     run: switchChat,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -254,7 +232,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "sidebar.get": {
     run: readSidebar,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -264,7 +241,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "sidebar.set": {
     run: setSidebar,
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -274,7 +250,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "message.copy": {
     run: control("message.copy"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -284,7 +259,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "message.retry": {
     run: control("message.retry"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: true,
     backoff: true,
@@ -293,7 +267,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "message.like": {
     run: control("message.like"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -302,7 +275,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "message.dislike": {
     run: control("message.dislike"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -311,7 +283,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "message.read": {
     run: control("message.read"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -320,7 +291,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "message.share": {
     run: control("message.share"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -329,7 +299,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "code.copy": {
     run: control("code.copy"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -338,7 +307,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "code.download": {
     run: control("code.download"),
     target: "tab",
-    nature: "write",
     toggleExempt: false,
     speak: false,
     backoff: true,
@@ -348,7 +316,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "messages.list": {
     run: listMessages,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -357,7 +324,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "messages.last": {
     run: lastMessage,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -367,7 +333,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "wait.fence": {
     run: waitFence,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,
@@ -376,7 +341,6 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
   "wait.reply": {
     run: waitReply,
     target: "tab",
-    nature: "read",
     toggleExempt: false,
     speak: false,
     backoff: false,

@@ -81,7 +81,7 @@ describe("三道闸名单与限速名单回指到注册行(加动作忘归类当
   });
 });
 
-describe("标志是显式写出来的,不从读写性质推断(ADR-0023 红线)", () => {
+describe("标志是显式写出来的,不靠推断(ADR-0023 红线)", () => {
   it("每个注册行四个标志齐备,都是自己的布尔键", () => {
     for (const [name, row] of Object.entries(ACTION_REGISTRY)) {
       for (const flag of FLAGS) {
@@ -94,17 +94,10 @@ describe("标志是显式写出来的,不从读写性质推断(ADR-0023 红线)"
     }
   });
 
-  it("读写性质推不出闸:读动作两道闸都不在;写动作也各归各的", () => {
-    for (const [name, row] of Object.entries(ACTION_REGISTRY)) {
-      if (row.nature !== "read") continue;
-      expect(row.speak, `${name} 是读却进了代你发言闸`).toBe(false);
-      expect(row.backoff, `${name} 是读却进了退避闸`).toBe(false);
-    }
-    // toggle.set 是写却不在退避闸:target 恒为 null,压根走不到探针那一步.
-    expect(ACTION_REGISTRY["toggle.set"]?.nature).toBe("write");
+  it("闸各归各的:总开关那行不进退避闸,chat.switch 进退避不进代你发言", () => {
+    // toggle.set 不在退避闸:target 恒为 null,压根走不到探针那一步.
     expect(BACKOFF_GATED_ACTIONS.has("toggle.set")).toBe(false);
-    // chat.switch 是写、在退避闸,却不进代你发言闸(不动写作框).
-    expect(ACTION_REGISTRY["chat.switch"]?.nature).toBe("write");
+    // chat.switch 在退避闸,却不进代你发言闸(不动写作框).
     expect(BACKOFF_GATED_ACTIONS.has("chat.switch")).toBe(true);
     expect(SPEAK_GATED_ACTIONS.has("chat.switch")).toBe(false);
   });
