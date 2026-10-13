@@ -17,7 +17,6 @@
   多上下文;挪走它**不报错,而是静默失效**,`/domain-modeling` 还会在根目录懒创建一份空的.
 - **别建 `CLAUDE.md` 之类的别名入口**,也别把本文件内容抄到别处.换 harness 时**指过去**,
   不在仓库里落文件.
-- **本文件只装房规与工具指针**,不装手册.手册都在 `docs/`,见下面的工具指针.
 
 ## 工具指针
 
@@ -34,7 +33,7 @@
 
 ## 起环境
 
-**跑 `scripts/env-up.sh`,别现拼命令**.它幂等,且保证跑完的环境全部对应最新代码.
+**跑 `scripts/env-up.sh`,别现拼命令**(幂等,且保证跑完的环境全部对应最新代码).
 判据与代价见 [`docs/setup.md`](docs/setup.md).
 
 ## 浏览器边界
@@ -94,9 +93,7 @@ Issues 在 GitHub Issues `copytht/ds-`,走 `gh` CLI.细则见 `docs/agents/issue
 - **账面自洽跑 `uv run scripts/audit-issues.py`**(只读,不进 `pnpm quality` -- 它要 `gh`
   与网络).它按 `triage-labels.md` 查五件事:开票缺 / 多角色标签,关票还挂 `needs-*`,
   `wontfix` 与 `ready-*` 打架,开票零标签,`needs-info` 正文与评论皆空的僵尸票.
-  **手工点票会算错**,所以清点交给它.
-- `--trace` 另报关票在提交历史里有无 `#编号` 点名,属信息级 -- 早期提交本就没引用编号的惯例,
-  要改是改今后的规矩.
+- `--trace` 另报关票在提交历史里有无 `#编号` 点名(信息级,不进账面判据).
 
 ## Triage labels
 
@@ -107,7 +104,7 @@ Issues 在 GitHub Issues `copytht/ds-`,走 `gh` CLI.细则见 `docs/agents/issue
 
 单上下文:根目录 `GLOSSARY.md` + `docs/adr/`.细则见 `docs/agents/domain.md`.
 
-- **找决策先看 `docs/adr/README.md` 那份索引**(21 篇的标题 / 状态 / 日期 / 谁取代了谁),
+- **找决策先看 `docs/adr/README.md` 那份索引**(标题 / 状态 / 日期 / 谁取代了谁),
   别一篇篇 `ls` 然后读文件名.它是**生成的**:新写一篇 ADR 就跑
   `uv run scripts/adrs-index.py`,漏了会被 `pnpm quality` 的 `adrs` 守卫判红.
 - **接受过的 ADR 不改**,要推翻就写新 ADR 并在 `Supersedes:` 点名旧篇.
