@@ -62,6 +62,18 @@ export type ActionFixtureFile = FixtureFile<ActionCase> & {
   readonly errorCodes: readonly ActionErrorCode[];
 };
 
+/** read 限额对拍(`read.json`)的脚注态:名字 + 模板(占位符 `{start}` / `{end}` / `{total}` / `{end + 1}`). */
+export type ReadFootnoteCase = {
+  readonly name: string;
+  readonly template: string;
+};
+
+/** read 限额对拍(`read.json`):两半必须相等的数(单页行数 / 单次字节预算)与脚注三态. */
+export type ReadFixtureFile = FixtureFile<ReadFootnoteCase> & {
+  readonly readPageLines: number;
+  readonly readPageBudget: number;
+};
+
 const MODULES = import.meta.glob<FixtureFile<unknown>>("../../protocol/fixtures/*.json", {
   eager: true,
   import: "default",
