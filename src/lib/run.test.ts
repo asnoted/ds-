@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { ARMED_TTL_MS } from "./armed";
-import { CONTINUATION_MARKER, buildContinuation } from "./continuation";
+import { CONTINUATION_MARKER, STOP_CONTINUATION_LIMIT, buildContinuation } from "./continuation";
 import { describeContinuationFailure, describeThrownFailure } from "./continuationfail";
-import { okPayload } from "./reply";
-import { INITIAL_ROUNDS } from "./rounds";
-import { decide, newRun, type RunState } from "./run";
+import { errorPayload, okPayload } from "./reply";
+import { INITIAL_ROUNDS, MAX_CONTINUATION_ROUNDS } from "./rounds";
+import { decide, endTask, newRun, type RunState } from "./run";
 
 const BODY = "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
 const PAYLOAD = okPayload(BODY);
@@ -234,5 +234,98 @@ describe("出站请求认领:钥匙、过期与处置", () => {
     // 一次即作废:武装已被消费,第二次没有正文等着认,也不再留新痕.
     expect(twice.claim).toEqual({ kind: "protocol" });
     expect(twice.effects).toEqual([]);
+  });
+});
+
+describe("轮数刹车与结果到达", () => {
+  it("连到上限那一轮:不入队,报停手,轮数归零(下一次任务重新有满额)", () => {
+    let run = turnOn(true);
+    for (let round = 0; round < MAX_CONTINUATION_ROUNDS; round += 1) {
+      run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    }
+    expect(run.rounds.rounds).toBe(MAX_CONTINUATION_ROUNDS);
+
+    const capped = decide(run, { type: "result", payload: PAYLOAD });
+    expect(capped.state.rounds).toEqual(INITIAL_ROUNDS);
+    // 已经入队那条原样留着(刹车只管这一轮不发新的,不动已排的).
+    expect(capped.state.queued).toBe(run.queued);
+    expect(capped.effects).toEqual([
+      {
+        kind: "stop",
+        cause: STOP_CONTINUATION_LIMIT,
+        note: `自动续聊已连到 ${MAX_CONTINUATION_ROUNDS} 轮上限,停手等用户开口`,
+      },
+    ]);
+  });
+
+  it("载荷不是 status ok:不入队也不刹车,只吭一声(失败不进对话流)", () => {
+    const got = decide(turnOn(true), { type: "result", payload: errorPayload("timeout") });
+    expect(got.state.queued).toBeNull();
+    expect(got.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(got.effects).toEqual([{ kind: "log", note: expect.stringContaining("中继没问成") }]);
+  });
+
+  it("一轮答复没有围栏 = 任务收尾:endTask 只归零轮数,别的不动", () => {
+    let run = turnOn(true);
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    const done = endTask(run);
+    expect(done.rounds).toEqual(INITIAL_ROUNDS);
+    expect(done.armed).toEqual(run.armed);
+    expect(done.queued).toBeNull();
+  });
+});
+
+describe("闸与总开关", () => {
+  it("总开关从开到关:整条链作废——队列清、武装留痕后撤、轮数归零、会话忘掉", () => {
+    let run = turnOn(true);
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    run = decide(run, { type: "session", key: "s1" }).state;
+
+    const off = decide(run, { type: "toggle", speak: true, enabled: false });
+    expect(off.effects).toEqual([
+      { kind: "apply", enabled: false },
+      { kind: "trace", cause: describeContinuationFailure("toggle-off") },
+    ]);
+    expect(off.state.armed).toEqual({ phase: "idle" });
+    expect(off.state.queued).toBeNull();
+    expect(off.state.rounds).toEqual(INITIAL_ROUNDS);
+    expect(off.state.session).toBeNull();
+    expect(off.state.enabled).toBe(false);
+    expect(off.state.speak).toBe(true);
+  });
+
+  it("闸从开到关:挂着的那条静默作废,不留痕也不动总开关", () => {
+    let run = turnOn(true);
+    run = decide(run, { type: "result", payload: PAYLOAD }).state;
+    run = decide(run, { type: "released", message: CONTINUATION_MARKER, now: 1 }).state;
+    expect(run.armed.phase).toBe("armed");
+
+    const closed = decide(run, { type: "toggle", speak: false, enabled: true });
+    expect(closed.state.armed).toEqual({ phase: "idle" });
+    expect(closed.state.speak).toBe(false);
+    expect(closed.state.enabled).toBe(true);
+    expect(closed.effects).toEqual([]);
+  });
+
+  it("重复的同值开关:裁决原样,不重复装卸也不重复留痕", () => {
+    const on = turnOn(true);
+    const again = decide(on, { type: "toggle", speak: true, enabled: true });
+    expect(again.state).toBe(on);
+    expect(again.effects).toEqual([]);
+  });
+
+  it("总开关关着时的关:武装已撤,不再补第二条痕", () => {
+    const off = decide(newRun(), { type: "toggle", speak: false, enabled: false });
+    expect(off.state).toEqual({ ...newRun(), enabled: false });
+    expect(off.effects).toEqual([]);
+  });
+
+  it("队列里不是本趟续聊的那条:照发,但不进本趟的落定账", () => {
+    const released = decide(turnOn(true), { type: "released", message: "你好", now: 1 });
+    expect(released.effects).toEqual([{ kind: "send", message: "你好", continuation: false }]);
+    expect(released.state.armed).toEqual({ phase: "idle" });
+    expect(released.state.queued).toBeNull();
   });
 });

@@ -35,7 +35,13 @@ import {
   type ContinuationFailure,
 } from "./continuationfail";
 import { outgoingUserTextOf, rewriteContinuationBody } from "./inject";
-import { beginRound, INITIAL_ROUNDS, resetRounds, type RoundState } from "./rounds";
+import {
+  beginRound,
+  INITIAL_ROUNDS,
+  MAX_CONTINUATION_ROUNDS,
+  resetRounds,
+  type RoundState,
+} from "./rounds";
 import { isInjectableReply, type ReplyPayload } from "./reply";
 
 /** 一趟续聊的全部状态:接线侧只存这一个值,不再散着记武装 / 轮数 / 会话. */
@@ -146,7 +152,7 @@ function onResult(state: RunState, payload: ReplyPayload): RunDecision {
       {
         kind: "stop",
         cause: STOP_CONTINUATION_LIMIT,
-        note: `自动续聊已连到 ${verdict.next.rounds} 轮上限,停手等用户开口`,
+        note: `自动续聊已连到 ${MAX_CONTINUATION_ROUNDS} 轮上限,停手等用户开口`,
       },
     ]);
   }
