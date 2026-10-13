@@ -13,7 +13,7 @@
 (谚文/假名/西里尔/希腊/阿拉伯/希伯来/泰/天城/亚美尼亚/格鲁吉亚). 箭头 `→`,
 框线 `─`,数学 `≠` 与中文标点都不算坏字, 那些第 3 节明确说了要保留.
 
-**接进 `pnpm quality`**, 跟 `ascii-punct.py --check` 一样是硬判据.
+**接进 `pnpm quality:ci`**(守卫只在 CI 跑), 跟 `ascii-punct.py --check` 一样是硬判据.
 """
 
 from __future__ import annotations

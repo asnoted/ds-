@@ -11,7 +11,8 @@
     uv run scripts/adrs-index.py           # 重新生成 docs/adr/README.md
     uv run scripts/adrs-index.py --check   # 只核对, 不合写回; 有出入退出码 1
 
-`--check` 接进了 `pnpm quality`, 所以"新增了一篇 ADR 却忘了更新索引"当场就会红.
+`--check` 接进了 `pnpm quality:ci`(守卫只在 CI 跑), 所以"新增了一篇 ADR 却忘了
+更新索引"在 CI 里就会红.
 
 **它读什么**: 每篇 ADR 的 H1 与 `Status` / `Date` / `Supersedes` 三行头
 (`docs/agents/domain.md` 说这三行是固定的). 有一处读不出就**退出码 1 并列出是哪篇**,
@@ -71,7 +72,7 @@ def render(entries: list[dict]) -> str:
     out.append("# ADR 索引")
     out.append("")
     out.append(
-        "> **本文件是生成的, 手改会被 `pnpm quality` 判红.** 重新生成: "
+        "> **本文件是生成的, 手改会被 `pnpm quality:ci` 判红.** 重新生成: "
         "`uv run scripts/adrs-index.py`; 只核对: `uv run scripts/adrs-index.py --check`."
     )
     out.append(">")

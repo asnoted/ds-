@@ -2,7 +2,8 @@
 
 `AGENTS.md` 是**房规与导航**(常驻上下文, 写它是为了让 agent 少走弯路); 本文件是
 **判断题**--那种任何护栏都替代不了的跨文件一致性, 由 review agent 施加(`/code-review`
-的 Standards 轴). 机械性的那类不进这里, 它们进 `pnpm quality` 与 `.husky/pre-commit`.
+的 Standards 轴). 机械性的那类不进这里, 它们进 `pnpm quality` / `pnpm quality:ci` 与
+`.husky/pre-commit`.
 
 ## 3. 文档与 scripts 不用中文标点
 
@@ -10,7 +11,8 @@
 中文标点只允许出现在**数据与产物**里(见下表).
 
 `scripts/ascii-punct.py` 既是改它的工具, 也是查它的守卫: `--check` 接进
-`pnpm quality`, 违反规矩的提交在 CI 里就红, 而不是等 review 时被人眼抓到.
+`pnpm quality:ci`(守卫只在 CI 跑, 本地 `pnpm quality` 不带它), 违反规矩的提交在 CI 里
+就红, 而不是等 review 时被人眼抓到.
 
 ### 适用范围
 
@@ -67,7 +69,7 @@
 - **它豁免自己**: 它的映射表键就是字面的中文标点, 被扫一遍键会变成 ASCII,
   映射失效, 工具当场变哑巴而且是**静默**的 -- 报"改好 0 个文件", 看着像
   任务已完成.
-- `pnpm quality` 里的 `--check` 是硬判据, 别用"这个文件特殊"绕过.
+- `pnpm quality:ci` 里的 `--check` 是硬判据, 别用"这个文件特殊"绕过.
 
 ### 来源
 

@@ -1,6 +1,6 @@
 # ADR 索引
 
-> **本文件是生成的, 手改会被 `pnpm quality` 判红.** 重新生成: `uv run scripts/adrs-index.py`; 只核对: `uv run scripts/adrs-index.py --check`.
+> **本文件是生成的, 手改会被 `pnpm quality:ci` 判红.** 重新生成: `uv run scripts/adrs-index.py`; 只核对: `uv run scripts/adrs-index.py --check`.
 >
 > 由 `scripts/adrs-index.py` 扫 21 篇 ADR 生成. 判据与格式见该脚本的文档字符串.
 
