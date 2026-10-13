@@ -16,8 +16,8 @@
 
 ## 决定
 
-1. **正文改走请求体**:`inject.ts` 的 `replacePending`(出站形状由
-   `recognizeOutgoingShape` 一次认出)把那一趟出站的
+1. **正文改走请求体**:`inject.ts` 的 `recognizeOutgoingShape` 认出出站形状,
+   它给出的 `replacePending` 把那一趟出站的
    `prompt`(或 `messages` 里最后一条 user)换成 `buildContinuation` 组出来的正文;对话里
    发的是 `CONTINUATION_MARKER`(`agent:` 锚 + 一行"继续").模型侧的读法**一字未改**
    --仍是首行锚 + TOON 载荷,所以协议说明只加了一句.

@@ -58,7 +58,7 @@ describe("在途角标与保活配对成效果", () => {
   it("一块普通围栏:保活按住在前,角标亮,图标结论带载荷,收摊先灭角标再松保活;动静一头一尾各记一条", async () => {
     const h = harness();
 
-    await createFenceRound(h.deps).dispose([callJson("read", { page: "x" })], 5);
+    await createFenceRound(h.deps).handle([callJson("read", { page: "x" })], 5);
 
     expect(h.effects).toEqual([
       { kind: "watchdog", tabId: 5, now: 1_000 },
@@ -78,7 +78,7 @@ describe("在途角标与保活配对成效果", () => {
       cause: "连接失败",
     });
 
-    const { effects } = await createFenceRound(h.deps).dispose([callJson("read", {})], 5);
+    const { effects } = await createFenceRound(h.deps).handle([callJson("read", {})], 5);
 
     expect(effects).toContainEqual({
       kind: "icon",
@@ -92,7 +92,7 @@ describe("在途角标与保活配对成效果", () => {
     const h = harness();
     h.localAnswer = async () => errorPayload("disabled");
 
-    const { effects } = await createFenceRound(h.deps).dispose(
+    const { effects } = await createFenceRound(h.deps).handle(
       [callJson("send.page", { question: "在吗?" })],
       2,
     );
@@ -120,8 +120,8 @@ describe("同标签页重入护栏", () => {
       });
     const round = createFenceRound(h.deps);
 
-    const first = round.dispose([callJson("send.page", { question: "在吗?" })], 3);
-    const second = await round.dispose([callJson("send.page", { question: "又问?" })], 3);
+    const first = round.handle([callJson("send.page", { question: "在吗?" })], 3);
+    const second = await round.handle([callJson("send.page", { question: "又问?" })], 3);
 
     expect(h.localRuns).toHaveLength(1);
     expect(second.payload).toEqual(
@@ -134,8 +134,8 @@ describe("同标签页重入护栏", () => {
 
     // 护栏松开后,同一标签页的下一轮照常跑;别的标签页从头就不受它拦.
     h.localAnswer = async () => okPayload("问题已发到页面.");
-    await round.dispose([callJson("send.page", { question: "再问?" })], 3);
-    await round.dispose([callJson("send.page", { question: "在吗?" })], 4);
+    await round.handle([callJson("send.page", { question: "再问?" })], 3);
+    await round.handle([callJson("send.page", { question: "在吗?" })], 4);
     expect(h.localRuns).toHaveLength(3);
   });
 });
@@ -148,7 +148,7 @@ describe("非 injectable 整轮作废", () => {
       cause: "连接失败",
     });
 
-    const { payload } = await createFenceRound(h.deps).dispose(
+    const { payload } = await createFenceRound(h.deps).handle(
       [callJson("read", { page: "a" }), callJson("read", { page: "b" })],
       1,
     );
@@ -161,7 +161,7 @@ describe("非 injectable 整轮作废", () => {
     const h = harness();
     h.localAnswer = async () => errorPayload("disabled");
 
-    const { payload } = await createFenceRound(h.deps).dispose(
+    const { payload } = await createFenceRound(h.deps).handle(
       [callJson("send.page", { question: "在吗?" }), callJson("read", { page: "a" })],
       1,
     );
@@ -176,7 +176,7 @@ describe("本地工具命中不翻中继图标", () => {
     const h = harness();
     h.localAnswer = async () => okPayload("问题已发到页面.");
 
-    const { payload, effects } = await createFenceRound(h.deps).dispose(
+    const { payload, effects } = await createFenceRound(h.deps).handle(
       [callJson("send.page", { question: "在吗?" })],
       7,
     );
@@ -191,7 +191,7 @@ describe("本地工具命中不翻中继图标", () => {
   it("消息不带标签页:本地工具回 tab-gone,整轮作废", async () => {
     const h = harness();
 
-    const { payload } = await createFenceRound(h.deps).dispose(
+    const { payload } = await createFenceRound(h.deps).handle(
       [callJson("send.page", { question: "在吗?" })],
       undefined,
     );
@@ -204,7 +204,7 @@ describe("本地工具命中不翻中继图标", () => {
 describe("坏围栏回提示", () => {
   it("排坏的那块回 MALFORMED_CALL_HINT,不打中继,别的块照常执行", async () => {
     const h = harness();
-    const { payload } = await createFenceRound(h.deps).dispose(
+    const { payload } = await createFenceRound(h.deps).handle(
       ["这不是 JSON", callJson("read", { page: "x" })],
       1,
     );
@@ -223,7 +223,7 @@ describe("坏围栏回提示", () => {
       ...Array.from({ length: 8 }, (_, index) => callJson("read", { page: index })),
     ];
 
-    const { payload } = await createFenceRound(h.deps).dispose(calls, 1);
+    const { payload } = await createFenceRound(h.deps).handle(calls, 1);
 
     expect(h.relayCalls).toHaveLength(7);
     expect(payload.status).toBe("ok");
@@ -237,7 +237,7 @@ describe("超 8 块截断附一句", () => {
     const h = harness();
     const calls = Array.from({ length: 10 }, (_, index) => callJson("read", { page: index }));
 
-    const { payload } = await createFenceRound(h.deps).dispose(calls, 1);
+    const { payload } = await createFenceRound(h.deps).handle(calls, 1);
 
     expect(h.relayCalls).toEqual(Array.from({ length: 8 }, () => "read"));
     expect(payload.status).toBe("ok");
@@ -251,7 +251,7 @@ describe("超 8 块截断附一句", () => {
     const h = harness();
     const calls = Array.from({ length: 8 }, (_, index) => callJson("read", { page: index }));
 
-    const { payload } = await createFenceRound(h.deps).dispose(calls, 1);
+    const { payload } = await createFenceRound(h.deps).handle(calls, 1);
 
     expect(h.relayCalls).toHaveLength(8);
     expect(payload.status).toBe("ok");

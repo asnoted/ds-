@@ -540,7 +540,13 @@ export default defineBackground(() => {
     }
   }
 
-  /** 保活的按住计数:几块围栏并发在途,最后一个松手才真松(定时器只排一份). */
+  /**
+   * 保活的按住计数:几块围栏并发在途,最后一个松手才真松(定时器只排一份).
+   *
+   * 计数留在接线侧:处置 module 只按块声明"按住 / 松手"这对效果,而唯一的那个定时器
+   * 是接线侧握着的资源,开与停都属效果的执行(`docs/CODING_STANDARDS.md` 第 1 条的
+   * 不适用).
+   */
   let keepAliveHolds = 0;
   let releaseKeepAlive: (() => void) | undefined;
 
@@ -725,7 +731,7 @@ export default defineBackground(() => {
       // 接线侧照效果清单做;答复(或整轮作废的失败载荷)原路交回.
       const tabId = sender.tab?.id;
       return fenceRound
-        .dispose(request.calls, tabId)
+        .handle(request.calls, tabId)
         .then(({ payload }) => sendResponseMessage(request.id, payload));
     }
     // said 上报(通知式,不等回话):围栏之外的话记进协调者的记录本.

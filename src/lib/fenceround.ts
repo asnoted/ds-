@@ -63,7 +63,7 @@ export type FenceRoundResult = {
 
 export type FenceRound = {
   /** 一轮围栏的处置:几块进来,一份答复载荷出去(整轮作废时是那条失败载荷). */
-  dispose: (calls: readonly string[], tabId: number | undefined) => Promise<FenceRoundResult>;
+  handle: (calls: readonly string[], tabId: number | undefined) => Promise<FenceRoundResult>;
 };
 
 /** 一块围栏的处置:一条答案(进这一轮的正文),或一个失败载荷(整轮作废,不进对话流). */
@@ -140,7 +140,7 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
     }
   }
 
-  async function dispose(
+  async function handle(
     calls: readonly string[],
     tabId: number | undefined,
   ): Promise<FenceRoundResult> {
@@ -175,5 +175,5 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
     };
   }
 
-  return { dispose };
+  return { handle };
 }
