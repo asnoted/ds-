@@ -131,3 +131,71 @@ export async function awaitCleared(
     await clock.sleep(POLL_MS);
   }
 }
+
+/**
+ * 写作框旁那个圆键:站点设计系统的主操作键(真机 2026-10-04:class 与 `aria-label`
+ * 一个不换,只有里面的图标在箭头与方块之间换).
+ *
+ * **一个按钮只对应一个最小单元**(#15 的原则):它此刻是发送还是停止,是**页面的意图**,
+ * 不是控件的身份.所以命中判据只有"在 + 可用",图标不参与;图标唯一去处是读面
+ * (`readIntent`),原先按图标分家的 `send.click` / `stop.click` 是"两个动作抢一个键".
+ */
+export const BUTTON_SELECTOR =
+  'div[role="button"].ds-button--primary.ds-button--filled.ds-button--circle';
+
+/** 圆键此刻承载什么意图--就是人看一眼图标的结论. */
+export type Intent = "send" | "stop" | "unknown";
+
+/**
+ * 圆键在不在,有没有渲染出盒子(**不管可不可用**).读面与点击面都靠它区分
+ * "键在但禁用"与"键不在"两回事.
+ */
+export function circleElement(): HTMLElement | null {
+  const el = document.querySelector<HTMLElement>(BUTTON_SELECTOR);
+  if (el === null) return null;
+  return el.getClientRects().length === 0 ? null : el; // 还没渲染出来:当没找到
+}
+
+/**
+ * 可用的圆键:不在,或被禁用(class 带 `ds-button--disabled`--它没有 `disabled` 属性,
+ * 空输入框时站点就把它标成禁用)都回 null.
+ */
+export function findButton(): HTMLElement | null {
+  const el = circleElement();
+  if (el === null) return null;
+  return el.classList.contains("ds-button--disabled") ? null : el;
+}
+
+/**
+ * 图标口径只有这一处,且**只服务读面**.前缀取自真机路径(真机 2026-10-04 两次抓取):
+ * 箭头 `M8.3125 0.980206...` = 发送,方块 `M2 4.88C2 3.68009...` = 停止,两者同为 16×16.
+ * 站点换图标就少报一种值--**这是要的**:宁可报"认不出",也不猜是发送还是停止.
+ */
+const BUTTON_ICON_PREFIXES: ReadonlyArray<readonly [string, Intent]> = [
+  ["M8.3125 0.980206", "send"],
+  ["M2 4.88C2 3.68009", "stop"],
+];
+
+/** 圆键里那个图标的 `d`(两态共用一套 class,只有这个不同). */
+function circleIconPath(el: HTMLElement): string | null {
+  return el.querySelector("svg path")?.getAttribute("d") ?? null;
+}
+
+/** 图标认哪一个意图;认不出(站点换图标 / 思考期环形)回 `unknown`,**不猜**. */
+export function readIntent(el: HTMLElement): Intent {
+  const icon = circleIconPath(el);
+  if (icon === null) return "unknown";
+  for (const [prefix, intent] of BUTTON_ICON_PREFIXES) {
+    if (icon.startsWith(prefix)) return intent;
+  }
+  return "unknown";
+}
+
+/**
+ * 圆键此刻是什么意图(只读不点).键不在或不可用一律 `unknown`--"认不出"与
+ * "当下不是发送"在这条读面上同一处置:不点它,也不替它猜.
+ */
+export function circleIntent(): Intent {
+  const el = findButton();
+  return el === null ? "unknown" : readIntent(el);
+}

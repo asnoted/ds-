@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ACTION_ERROR_PAGE_CHANGED, ACTION_ERROR_UNKNOWN, PageError } from "./action";
+import { BUTTON_SELECTOR, findButton } from "./composer";
 import { evidenceHtml } from "./evidence";
 import { fixtureCases, type ActionCase } from "./fixtures";
 import {
-  BUTTON_SELECTOR,
   buttonClick,
   clearComposer,
-  findButton,
   listChats,
   newChat,
   pressEnter,
@@ -134,8 +133,15 @@ describe("composer.* 执行器", () => {
   const typeFrame = (text: unknown) =>
     ({ ...FRAME, action: "composer.type", params: { text } }) as const;
 
+  // 挑框判据统一成"可见 + 可写 + 面积最大"(#102):jsdom 不做布局,补一个盒子.
+  const stubBox = (el: Element): void => {
+    (el as HTMLElement).getClientRects = () =>
+      [{ width: 600, height: 160 }] as unknown as DOMRectList;
+  };
+
   it("读得到框里的字", () => {
     document.body.innerHTML = "<textarea>写了一半</textarea>";
+    stubBox(document.querySelector("textarea") as Element);
 
     expect(readComposer(FRAME)).toEqual({ text: "写了一半" });
   });
@@ -143,6 +149,7 @@ describe("composer.* 执行器", () => {
   it("写进去的是原生 setter + 冒泡 input(React 受控输入的写法),且不发送", () => {
     document.body.innerHTML = "<textarea></textarea>";
     const el = document.querySelector("textarea") as HTMLTextAreaElement;
+    stubBox(el);
     const seen: string[] = [];
     el.addEventListener("input", (event) => seen.push((event.target as HTMLTextAreaElement).value));
 
@@ -155,6 +162,7 @@ describe("composer.* 执行器", () => {
   it("params.text 不是字符串就写空", () => {
     document.body.innerHTML = "<textarea>旧字</textarea>";
     const el = document.querySelector("textarea") as HTMLTextAreaElement;
+    stubBox(el);
 
     typeComposer(typeFrame(42));
 
@@ -164,17 +172,23 @@ describe("composer.* 执行器", () => {
   it("清空框里的字", () => {
     document.body.innerHTML = "<textarea>旧字</textarea>";
     const el = document.querySelector("textarea") as HTMLTextAreaElement;
+    stubBox(el);
 
     clearComposer(FRAME);
 
     expect(el.value).toBe("");
   });
 
-  it("没有写作框就抛(由收信那层折成失败码)", () => {
+  it("没有可挑的框就抛(挑不到可见可写的框也算没有)", () => {
     document.body.innerHTML = "<div>无框</div>";
 
     expect(() => typeComposer(typeFrame("x"))).toThrow();
     expect(() => clearComposer(FRAME)).toThrow();
+
+    document.body.innerHTML = "<textarea readonly></textarea>";
+    stubBox(document.querySelector("textarea") as Element); // 只读:不可写,挑不到
+
+    expect(() => typeComposer(typeFrame("x"))).toThrow();
   });
 });
 
@@ -185,29 +199,6 @@ describe("send.* 执行器", () => {
   const stubBox = (el: Element): void => {
     (el as HTMLElement).getClientRects = () => [{ width: 1, height: 1 }] as unknown as DOMRectList;
   };
-
-  it("findButton:在且没禁用就回它", () => {
-    document.body.innerHTML = `<div role="button" class="${BUTTON_SELECTOR.split(".").slice(1).join(" ")}"></div>`;
-    stubBox(document.querySelector(BUTTON_SELECTOR) as Element);
-    expect(findButton()).not.toBeNull();
-  });
-
-  it("findButton:class 带 ds-button--disabled 回 null", () => {
-    document.body.innerHTML = `<div role="button" class="${BUTTON_SELECTOR.split(".").slice(1).join(" ")} ds-button--disabled"></div>`;
-    stubBox(document.querySelector(BUTTON_SELECTOR) as Element);
-    expect(findButton()).toBeNull();
-  });
-
-  it("findButton:没这个键也回 null", () => {
-    document.body.innerHTML = "<div>什么都没有</div>";
-    expect(findButton()).toBeNull();
-  });
-
-  it("findButton:没渲染出盒子(不可见)也当没找到", () => {
-    document.body.innerHTML = `<div role="button" class="${BUTTON_SELECTOR.split(".").slice(1).join(" ")}"></div>`;
-    // 不 stub:jsdom 里天然 getClientRects().length === 0
-    expect(findButton()).toBeNull();
-  });
 
   it("点那个圆键(设计系统的主操作键)", () => {
     document.body.innerHTML = `<textarea></textarea><div role="button" class="${SEND.split(".").slice(1).join(" ")}"></div>`;
@@ -236,6 +227,7 @@ describe("send.* 执行器", () => {
   it("回车:在写作框上派 keydown Enter", () => {
     document.body.innerHTML = "<textarea></textarea>";
     const el = document.querySelector("textarea") as HTMLTextAreaElement;
+    stubBox(el); // 挑框要看得见
     const keys: string[] = [];
     el.addEventListener("keydown", (event) => keys.push((event as KeyboardEvent).key));
 

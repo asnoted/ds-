@@ -1,7 +1,7 @@
 import { ACTION_ERROR_PAGE_CHANGED, ACTION_ERROR_READ_FAILED, PageError } from "./action";
 import type { ActionFrame } from "./action";
 import { parseToolCall } from "./fence";
-import { COMPOSER_SELECTOR } from "./page";
+import { COMPOSER_SELECTOR } from "./composer";
 import { FRAME_FALLBACK_MS, POLL_INTERVAL_MS, parseWaitSeconds } from "./wait-budget";
 
 /**

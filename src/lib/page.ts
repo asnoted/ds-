@@ -5,6 +5,17 @@ import {
   PageError,
 } from "./action";
 import type { ActionFrame } from "./action";
+import {
+  circleElement,
+  findButton,
+  pick,
+  pressEnter as pressEnterKey,
+  read,
+  readIntent,
+  write,
+  COMPOSER_SELECTOR,
+  type Intent,
+} from "./composer";
 
 /**
  * 当前页面的最小状态.这个执行器跑在目标标签页的内容脚本(ISOLATED 世界)里,
@@ -34,14 +45,6 @@ export type AccountState =
   | { readonly kind: "muted"; readonly until: string | null }
   | { readonly kind: "signed-out" }
   | { readonly kind: "unknown" };
-
-/**
- * 写作框的认定放宽到两类容器:`<textarea>` 与 contenteditable(DeepSeek 前端两代都用过).
- *
- * 导出来给 `messages.ts` 认"对话那一条虚拟列表"用(#54)--同一个锚只能有一份,
- * 两边各写一个字面量就会各自漂移.
- */
-export const COMPOSER_SELECTOR = "textarea, [contenteditable='true']";
 
 /**
  * 处罚句只从警示条里认.会话正文里出现"禁言"是常事(#2 的原话),拿全文去搜
@@ -113,81 +116,35 @@ export function readPageState(_frame: ActionFrame): PageState {
   };
 }
 
-/** 写作框:优先 `<textarea>`(DeepSeek 现在就是),退到 contenteditable. */
-function composerElement(): HTMLElement | null {
-  return document.querySelector<HTMLElement>(COMPOSER_SELECTOR);
+/** 挑写作框的判据在 `composer.ts`(动作路与续聊路共用一份);这里只折成动作的失败码. */
+function composerOrThrow(): HTMLElement {
+  const el = pick();
+  if (el === null) throw new PageError(ACTION_ERROR_COMPOSER_ABSENT, "页面上没有写作框");
+  return el;
 }
 
-/**
- * 写进受控输入:走**原型上的原生 value setter**,再派一个冒泡的 `input`.
- * 直接 `el.value = x` 会被 React 的 value tracker 吞掉--页面看着像没写过.
- */
-function writeComposer(el: HTMLElement, text: string): void {
-  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
-    Object.getOwnPropertyDescriptor(proto.prototype, "value")?.set?.call(el, text);
-  } else {
-    el.textContent = text;
-  }
-  el.dispatchEvent(new Event("input", { bubbles: true }));
+/** 写不进去只可能是页面结构变了(`pick` 只回能写的形状)——这条是兜底,别装作写过. */
+function writeOrThrow(el: HTMLElement, text: string): void {
+  if (!write(el, text)) throw new PageError(ACTION_ERROR_PAGE_CHANGED, "写作框写不进去");
 }
 
-/** 读写作框里现有的字(不发送). */
+/** 读写作框里现有的字(不发送);没有写作框回空串(读动作不算错). */
 export function readComposer(_frame: ActionFrame): { text: string } {
-  const el = composerElement();
-  if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-    return { text: el.value };
-  }
-  return { text: el?.textContent ?? "" };
+  const el = pick();
+  return { text: el === null ? "" : read(el) };
 }
 
 /** 往写作框写一段字(**不发送**).`params.text` 不是字符串就写空. */
 export function typeComposer(frame: ActionFrame): Record<string, never> {
-  const el = composerElement();
-  if (el === null) throw new PageError(ACTION_ERROR_COMPOSER_ABSENT, "页面上没有写作框");
   const text = frame.params["text"];
-  writeComposer(el, typeof text === "string" ? text : "");
+  writeOrThrow(composerOrThrow(), typeof text === "string" ? text : "");
   return {};
 }
 
 /** 清空写作框(**不发送**). */
 export function clearComposer(_frame: ActionFrame): Record<string, never> {
-  const el = composerElement();
-  if (el === null) throw new PageError(ACTION_ERROR_COMPOSER_ABSENT, "页面上没有写作框");
-  writeComposer(el, "");
+  writeOrThrow(composerOrThrow(), "");
   return {};
-}
-
-/**
- * 写作框旁那个圆键:站点设计系统的主操作键(真机 2026-10-04:class 与 `aria-label` 一个不换,
- * 只有里面的图标在箭头与方块之间换--详见 `site-dom` 的"圆键两态同元素").
- *
- * **一个按钮只对应一个最小单元**(#15 的原则,2026-10-05 用户定):它此刻是发送还是停止,
- * 是**页面的意图**,不是控件的身份.所以命中判据只有"在 + 可用",图标不参与;
- * 图标唯一去处是 `button.get` 的返回(读面).原先按图标分家的 `send.click` /
- * `stop.click` 是"两个动作抢一个键",合并成这一个.
- */
-export const BUTTON_SELECTOR =
-  'div[role="button"].ds-button--primary.ds-button--filled.ds-button--circle';
-
-/**
- * 圆键在不在,有没有渲染出盒子(**不管可不可用**).`button.get` 与 `button.click`
- * 共读这一处,`readButton` 就是靠它区分"键在但禁用"与"键不在"两回事.
- */
-function circleElement(): HTMLElement | null {
-  const el = document.querySelector<HTMLElement>(BUTTON_SELECTOR);
-  if (el === null) return null;
-  return el.getClientRects().length === 0 ? null : el; // 还没渲染出来:当没找到
-}
-
-/**
- * 可用的圆键:不在,或被禁用(class 带 `ds-button--disabled`--它没有 `disabled` 属性,
- * 空输入框时站点就把它标成禁用)都回 null.
- */
-export function findButton(): HTMLElement | null {
-  const el = circleElement();
-  if (el === null) return null;
-  return el.classList.contains("ds-button--disabled") ? null : el;
 }
 
 /** 点那个圆键(`button.click`).不可用就抛,别假装点过了. */
@@ -198,34 +155,6 @@ export function buttonClick(_frame: ActionFrame): Record<string, never> {
   return {};
 }
 
-/** 那个圆键此刻承载什么意图--就是人看一眼图标的结论. */
-export type Pressed = "send" | "stop" | "unknown";
-
-/**
- * 图标口径只有这一处,且**只服务读面**.前缀取自真机路径(真机 2026-10-04 两次抓取):
- * 箭头 `M8.3125 0.980206...` = 发送,方块 `M2 4.88C2 3.68009...` = 停止,两者同为 16×16.
- * 站点换图标就少报一种值--**这是要的**:宁可报"认不出",也不猜是发送还是停止.
- */
-const BUTTON_ICON_PREFIXES: ReadonlyArray<readonly [string, Pressed]> = [
-  ["M8.3125 0.980206", "send"],
-  ["M2 4.88C2 3.68009", "stop"],
-];
-
-/** 圆键里那个图标的 `d`(两态共用一套 class,只有这个不同). */
-function circleIconPath(el: HTMLElement): string | null {
-  return el.querySelector("svg path")?.getAttribute("d") ?? null;
-}
-
-/** 图标认哪一个意图;认不出(站点换图标 / 思考期环形)回 `unknown`,**不猜**. */
-export function readPressed(el: HTMLElement): Pressed {
-  const icon = circleIconPath(el);
-  if (icon === null) return "unknown";
-  for (const [prefix, pressed] of BUTTON_ICON_PREFIXES) {
-    if (icon.startsWith(prefix)) return pressed;
-  }
-  return "unknown";
-}
-
 /**
  * 读那个圆键此刻是发送还是停止(`button.get`,**只读不点**).agent 要先读后写:
  * 想停一次生成就读到 `stop` 再点,别点下去才知道点了什么.
@@ -233,26 +162,15 @@ export function readPressed(el: HTMLElement): Pressed {
  * "认不出"是**成功**返回(键在但不知是什么是有效事实);圆键整个不在才抛
  * `page-changed`.键在但禁用(空输入框态)照样报--图标就是箭头.
  */
-export function readButton(_frame: ActionFrame): { readonly pressed: Pressed } {
+export function readButton(_frame: ActionFrame): { readonly pressed: Intent } {
   const el = circleElement();
   if (el === null) throw new PageError(ACTION_ERROR_PAGE_CHANGED, "圆键不可用");
-  return { pressed: readPressed(el) };
+  return { pressed: readIntent(el) };
 }
 
-/** 在写作框上按回车(站点自己也接这条路). */
+/** 在写作框上按回车(站点自己也接这条路);键码补法那一份在 `composer.ts`. */
 export function pressEnter(_frame: ActionFrame): Record<string, never> {
-  const el = composerElement();
-  if (el === null) throw new PageError(ACTION_ERROR_COMPOSER_ABSENT, "页面上没有写作框");
-  const opts = {
-    key: "Enter",
-    code: "Enter",
-    keyCode: 13,
-    which: 13,
-    bubbles: true,
-    cancelable: true,
-  };
-  el.dispatchEvent(new KeyboardEvent("keydown", opts));
-  el.dispatchEvent(new KeyboardEvent("keyup", opts));
+  pressEnterKey(composerOrThrow());
   return {};
 }
 

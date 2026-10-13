@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { awaitCleared, pick, POLL_MS, pressEnter, read, write, type Clock } from "./composer";
+import {
+  awaitCleared,
+  BUTTON_SELECTOR,
+  circleElement,
+  circleIntent,
+  findButton,
+  pick,
+  POLL_MS,
+  pressEnter,
+  read,
+  readIntent,
+  write,
+  type Clock,
+} from "./composer";
+import { evidenceHtml } from "./evidence";
 
 /** 假时钟:不真等,`sleep` 直接把虚拟时间推过去,顺便记下每一次等待. */
 function fakeClock(): { clock: Clock; slept: number[] } {
@@ -174,5 +188,91 @@ describe("等清空(发出去的标志)", () => {
     const { clock } = fakeClock();
 
     expect(await awaitCleared(() => "  \n ", { timeoutMs: 600, clock })).toBe(true);
+  });
+});
+
+describe("圆键:此刻是什么意图", () => {
+  // 真机抓的原件(ADR-0018 存证):两态 class 一个不换,只有圆键里的图标不同--
+  // **所以那不是两个控件,是一个**:它此刻是发送还是停止是页面的意图,不是控件的身份.
+  const STOP_HTML = evidenceHtml("circle.stop");
+  const SEND_HTML = evidenceHtml("circle.send");
+  // 思考期:圆键位置换成 36×36 环形 spinner,图标不是两态之一.
+  const SPINNER_HTML = evidenceHtml("circle.spinner");
+  /** 真机抓的是**空输入框态**(带 ds-button--disabled),去掉禁用 class 即空闲态. */
+  const SEND_READY_HTML = SEND_HTML.replace("ds-button--disabled ", "");
+
+  /** jsdom 不做布局:给圆键补一个盒子. */
+  const stubBox = (el: Element): void => {
+    (el as HTMLElement).getClientRects = () =>
+      [{ width: 16, height: 16 }] as unknown as DOMRectList;
+  };
+
+  const circle = (): Element => document.querySelector(BUTTON_SELECTOR) as Element;
+
+  it("意图只认图标:箭头是 send,方块是 stop", () => {
+    document.body.innerHTML = SEND_READY_HTML;
+    stubBox(circle());
+    expect(readIntent(circle() as HTMLElement)).toBe("send");
+
+    document.body.innerHTML = STOP_HTML;
+    stubBox(circle());
+    expect(readIntent(circle() as HTMLElement)).toBe("stop");
+  });
+
+  it("图标认不出(站点换图标 / 思考期环形)回 unknown -- 不猜是发送还是停止", () => {
+    document.body.innerHTML = SPINNER_HTML;
+    stubBox(circle());
+    expect(readIntent(circle() as HTMLElement)).toBe("unknown");
+
+    document.body.innerHTML = STOP_HTML.replace("M2 4.88", "M9 9.99");
+    stubBox(circle());
+    expect(readIntent(circle() as HTMLElement)).toBe("unknown");
+  });
+
+  it('circleElement:键在但禁用也返回(读面分得开"键在但禁用"与"键不在")', () => {
+    document.body.innerHTML = SEND_HTML; // 真机那份就带 ds-button--disabled
+    stubBox(circle());
+
+    expect(circleElement()).not.toBeNull();
+  });
+
+  it("findButton:在且没禁用就回它", () => {
+    document.body.innerHTML = SEND_READY_HTML;
+    stubBox(circle());
+
+    expect(findButton()).not.toBeNull();
+  });
+
+  it("findButton:class 带 ds-button--disabled 回 null", () => {
+    document.body.innerHTML = SEND_HTML;
+    stubBox(circle());
+
+    expect(findButton()).toBeNull();
+  });
+
+  it("findButton:没这个键也回 null", () => {
+    document.body.innerHTML = "<div>什么都没有</div>";
+
+    expect(findButton()).toBeNull();
+  });
+
+  it("findButton:没渲染出盒子(不可见)也当没找到", () => {
+    document.body.innerHTML = STOP_HTML; // 不 stub:jsdom 里天然 getClientRects().length === 0
+
+    expect(circleElement()).toBeNull();
+    expect(findButton()).toBeNull();
+  });
+
+  it('circleIntent:键不在或不可用一律 unknown(认不出与"当下不是发送"同一处置)', () => {
+    document.body.innerHTML = STOP_HTML;
+    stubBox(circle());
+    expect(circleIntent()).toBe("stop");
+
+    document.body.innerHTML = SEND_HTML; // 禁用态:图标是箭头,但键不可用
+    stubBox(circle());
+    expect(circleIntent()).toBe("unknown");
+
+    document.body.innerHTML = "<div>什么都没有</div>";
+    expect(circleIntent()).toBe("unknown");
   });
 });

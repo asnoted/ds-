@@ -29,7 +29,8 @@ import {
   type StopMessage,
 } from "../src/lib/channel";
 import { nextMessageId } from "../src/lib/id";
-import { findButton, readAccount, readComposerPresent, readPressed } from "../src/lib/page";
+import { circleIntent } from "../src/lib/composer";
+import { readAccount, readComposerPresent } from "../src/lib/page";
 import type { ActionFrame } from "../src/lib/action";
 // 本地名册从注册表派生(#99):一件动作一行的声明点在 `src/lib/registry.ts`.
 import { ACTION_ROSTER } from "../src/lib/registry";
@@ -239,7 +240,7 @@ export default defineContentScript({
      * 发送限速(#61):三种"替用户把消息发出去"的原语,执行前先过检查点--
      * 距上一次发送不够 3~5 秒就**等**够(等,不拒,不增失败码).
      *
-     * 圆键那一下可能不是发送(`readPressed` 分得出发送 / 停止 / 认不出),按
+     * 圆键那一下可能不是发送(`composer.circleIntent` 分得出发送 / 停止 / 认不出),按
      * `checkSendIntent` 的三条口径分别处理:**停止永不延迟**,认不出不延迟但照样记账.
      * 其余两种原语(`send.enter` / `message.retry`)恒是发送.
      *
@@ -279,20 +280,14 @@ export default defineContentScript({
     }
 
     /**
-     * 圆键此刻承载的意图:分不出"发送 / 停止 / 认不出"三种.
+     * 圆键此刻承载的意图(读面在 `composer.ts`:图标**不参与命中判据**,这里只读它).
      *
-     * 读 `d` 的用法与 `inject.content.ts` 的 `triggerSend` **同款**(那是"同圆键的先例"):
-     * 图标**不参与命中判据**--名册里仍是一个 `button.click` 对这一个元素,不按图标分家;
-     * 这里只是**动手前先读一下**,判出"停止"就别延迟,别记账.认不出(`unknown`)一律
-     * 当"不延迟,但记账":宁可之后多等一次,也不延迟一次中断,也不漏记一次发送.
+     * 名册里仍是一个 `button.click` 对这一个元素,不按图标分家;这里只是**动手前先读
+     * 一下**,判出"停止"就别延迟,别记账.认不出(`unknown`)一律当"不延迟,但记账":
+     * 宁可之后多等一次,也不延迟一次中断,也不漏记一次发送.
      */
     function readCircleIntent(): SendIntent {
-      const button = findButton();
-      if (button === null) return "unknown";
-      const pressed = readPressed(button);
-      if (pressed === "send") return "send";
-      if (pressed === "stop") return "stop";
-      return "unknown";
+      return circleIntent();
     }
 
     // 页面世界(自动续聊)也发过消息:并进它的时刻,两边的节奏合成一条线.

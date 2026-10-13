@@ -25,7 +25,7 @@ import {
   type SendPace,
 } from "../src/lib/sendpace";
 import { isOutgoingChatRequest, rewriteOutgoingBody } from "../src/lib/inject";
-import { findButton, readPressed } from "../src/lib/page";
+import { findButton, readIntent } from "../src/lib/composer";
 import { nextMessageId } from "../src/lib/id";
 import { hasReplyAnchor } from "../src/lib/reply";
 import type { ToolInfo } from "../src/lib/relay";
@@ -548,7 +548,7 @@ async function triggerSend(composer: HTMLElement): Promise<boolean> {
   // 点下去就是替用户中断一次生成--比这条回灌发不出去坏得多.认不出(思考期环形
   // spinner,报 unknown)同样不点:宁可作废,也不赌那一下是发送.
   const button = findButton();
-  if (button === null || readPressed(button) !== "send") return false;
+  if (button === null || readIntent(button) !== "send") return false;
   button.click();
   return waitForSend(composer, 1200);
 }
