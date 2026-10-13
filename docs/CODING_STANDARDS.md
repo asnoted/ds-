@@ -29,7 +29,7 @@
 
 ### 不适用
 
-纯 DOM 操作(`src/lib/page.ts` 那一堆 `findButton` / `pressEnter`)本就该在能看见
+纯 DOM 操作(`src/lib/composer.ts` 那一堆 `findButton` / `pressEnter`)本就该在能看见
 DOM 的地方,`vitest` 用 jsdom 覆盖.规则针对的是**判定**,不是所有代码.
 
 ---

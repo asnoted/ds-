@@ -76,62 +76,55 @@ describe("expireIfStale / armed 的 TTL", () => {
 
 describe("claimArmed / 认领一条出站请求", () => {
   it("正文逐字等于标记:认领走,换成工具结果,武装清空", () => {
-    const outcome = claimArmed(arm(BODY, 1000), CONTINUATION_MARKER, true);
+    const outcome = claimArmed(arm(BODY, 1000), CONTINUATION_MARKER);
     expect(outcome.claimed).toBe(true);
     expect(outcome.replacement).toBe(BODY);
     expect(outcome.state).toEqual({ phase: "idle" });
   });
 
   it("pending 态同样按钥匙认领(用户自己按了发送)", () => {
-    const outcome = claimArmed(pend(BODY), CONTINUATION_MARKER, true);
+    const outcome = claimArmed(pend(BODY), CONTINUATION_MARKER);
     expect(outcome.claimed).toBe(true);
     expect(outcome.replacement).toBe(BODY);
   });
 
   it("正文是用户手打的话:原样放行(replacement null),且撤销武装(#49 的核心)", () => {
-    const outcome = claimArmed(arm(BODY, 1000), "帮我看看 README", true);
+    const outcome = claimArmed(arm(BODY, 1000), "帮我看看 README");
     expect(outcome.claimed).toBe(false);
-    expect(outcome.replacement).toBeNull();
-    expect(outcome.state).toEqual({ phase: "idle" });
-  });
-
-  it("形状认不出(shapeOk=false):即便正文等于标记也不替换,但认领走了", () => {
-    const outcome = claimArmed(arm(BODY, 1000), CONTINUATION_MARKER, false);
-    expect(outcome.claimed).toBe(true);
     expect(outcome.replacement).toBeNull();
     expect(outcome.state).toEqual({ phase: "idle" });
   });
 
   it("没有正文等着(idle):不认领,不替换,武装原样", () => {
-    const outcome = claimArmed(idleArmed(), CONTINUATION_MARKER, true);
+    const outcome = claimArmed(idleArmed(), CONTINUATION_MARKER);
     expect(outcome.claimed).toBe(false);
     expect(outcome.replacement).toBeNull();
     expect(outcome.state).toEqual({ phase: "idle" });
   });
 
-  it("body 为 null(取不出待发那条):当钥匙不符处理,原样放行并撤销", () => {
-    const outcome = claimArmed(arm(BODY, 1000), null, true);
+  it("body 为 null(形状认不出或取不出待发那条):与钥匙不符同一条路径,原样放行并撤销", () => {
+    const outcome = claimArmed(arm(BODY, 1000), null);
     expect(outcome.claimed).toBe(false);
     expect(outcome.state).toEqual({ phase: "idle" });
   });
 
   it("一次就作废:认领走之后再撞一条同样等于标记的请求,不再替换", () => {
-    const first = claimArmed(arm(BODY, 1000), CONTINUATION_MARKER, true);
+    const first = claimArmed(arm(BODY, 1000), CONTINUATION_MARKER);
     expect(first.replacement).toBe(BODY);
     // 武装已清空:第二次撞同样的正文,不再替换(避免重复把工具结果送两遍)
-    const second = claimArmed(first.state, CONTINUATION_MARKER, true);
+    const second = claimArmed(first.state, CONTINUATION_MARKER);
     expect(second.claimed).toBe(false);
     expect(second.replacement).toBeNull();
   });
 
   it("待发的那条(pending)被消费后不重复替换(用户只按一次发送)", () => {
-    const outcome = claimArmed(pend(BODY), CONTINUATION_MARKER, true);
+    const outcome = claimArmed(pend(BODY), CONTINUATION_MARKER);
     expect(outcome.replacement).toBe(BODY);
-    expect(claimArmed(outcome.state, CONTINUATION_MARKER, true).replacement).toBeNull();
+    expect(claimArmed(outcome.state, CONTINUATION_MARKER).replacement).toBeNull();
   });
 
   it("待发挂着时用户改了内容再发:原样放行并撤销(他发的是自己的话)", () => {
-    const outcome = claimArmed(pend(BODY), "agent:\n继续\n再加一句", true);
+    const outcome = claimArmed(pend(BODY), "agent:\n继续\n再加一句");
     expect(outcome.claimed).toBe(false);
     expect(outcome.replacement).toBeNull();
     expect(outcome.state).toEqual({ phase: "idle" });

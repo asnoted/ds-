@@ -23,7 +23,11 @@ import {
   runPaced,
   type SendPace,
 } from "../src/lib/sendpace";
-import { isOutgoingChatRequest, rewriteOutgoingBody } from "../src/lib/inject";
+import {
+  isOutgoingChatRequest,
+  recognizeOutgoingShape,
+  rewriteOutgoingBody,
+} from "../src/lib/inject";
 import { pick, realClock, send, stage } from "../src/lib/composer";
 import { nextMessageId } from "../src/lib/id";
 import { hasReplyAnchor } from "../src/lib/reply";
@@ -50,7 +54,7 @@ type XhrTarget = { readonly method: string; readonly url: string };
  * 2. **回灌链**:同一次包下来的**响应体**就是检测点(模型回答的唯一来源)→ 认出 ```send 围栏 →
  *    围栏正文交给隔离世界去打本机网关 → 结果进**唯一出站口**排队,出站窗口到点放行(ADR-0002)→
  *    **续聊**:对话里只发一个短标记(`agent:` 首行锚 + 一行字),工具结果由同一次出站的
- *    **请求体替换**交给模型(`rewriteContinuationBody`)--结果不进可见消息(ADR-0014).
+ *    **请求体替换**交给模型(出站形状的 `replacePending`,裁决在 `run.ts`)--结果不进可见消息(ADR-0014).
  *    一条任务里自动续多少轮有上限(`rounds.ts`),到顶停手并在扩展侧留痕.
  *
  * 失败一律不进对话流:中继没问成时这里只留一行日志,页面里不出现任何新消息.
@@ -199,22 +203,21 @@ export default defineContentScript({
     /**
      * 出站改写:挂着的续聊优先(这一趟就是自动续聊那一趟),否则照旧拼协议说明.
      *
-     * 谁该被认领、正文换不换、留哪条痕全在 `run.ts` 的 `claimed` 裁决里;
-     * 这里只照 `ClaimOutcome` 返回:换成的正文 / 原样放行 / 接着拼协议说明.
+     * 出站载荷**只认一次**(`recognizeOutgoingShape`):钥匙比对、正文替换、协议说明
+     * 拼接三种用途共用这一次识别,谁该被认领、正文换不换、留哪条痕全在 `run.ts` 的
+     * `claimed` 裁决里;这里只照 `ClaimOutcome` 返回:换成的正文 / 照旧拼协议说明.
      * 续聊**一次即作废**:替换没成也作废--留着它,下一条出站就是用户自己发的消息,
      * 会被当成续聊那趟,正文被工具结果顶掉(把人说的话吃了,比少一轮严重得多).
      */
     const rewriteOutgoing = (body: string): string | null => {
-      const decision = dispatch({ type: "claimed", body, now: Date.now() });
+      const shape = recognizeOutgoingShape(body);
+      const decision = dispatch({ type: "claimed", shape, now: Date.now() });
       switch (decision.claim?.kind) {
         case "substituted":
           console.log("[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)");
           return decision.claim.body;
-        case "untouched":
-          console.log("[ds-] 续聊正文没能替换进出站请求,这一轮作废(结果没送到模型手上)");
-          return null;
         default: {
-          const next = rewriteOutgoingBody(body, catalog);
+          const next = rewriteOutgoingBody(shape, catalog);
           if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
           return next;
         }
