@@ -1,67 +1,108 @@
-# 房规
+# AGENTS.md
 
-## 谁干活
+根目录 agent 唯一入口.**不落 `CLAUDE.md` 之类别名文件**,换 harness 时指过来.
 
-- **与用户会话的 agent 直接实施**:代码,配置,文档,测试都由它写.
-- **链子(网页 → 子 agent)能用时走,不等它**.能用的活是问第二双眼,跑大段读 legwork;
-  网页被禁言(账号在站点处罚区)时整条链是断的,那时所有活由与用户会话的 agent 直接做.
-- 把子 agent 当**小模型**:指令要小,要具体,要能验证,别把开放式的大目标整包丢过去.
-- 与用户会话的 agent 只做两件事:**把目标和验收标准交给网页,把链子回来的结果原样喂回去**.
-  怎么拆,怎么排围栏,错了怎么修,让**网页**自己想 -- 不替它读文档,不替它诊断,不逐步指派.
+分工:本文件装**规则,命令,入口点**;细节在 `docs/`,见文末"工具指针".
 
-## 文档布局
-
-- **根目录的 `.md` 只许三个**:`AGENTS.md`(agent 唯一入口)/ `README.md` / `GLOSSARY.md`.
-  别的文档一律进 `docs/`.
-- **`GLOSSARY.md` 必须在根目录**.Matt 的技能按"根目录有没有 `GLOSSARY.md`"判断单上下文还是
-  多上下文;挪走它**不报错,而是静默失效**,`/domain-modeling` 还会在根目录懒创建一份空的.
-- **别建 `CLAUDE.md` 之类的别名入口**,也别把本文件内容抄到别处.换 harness 时**指过去**,
-  不在仓库里落文件.
-
-## 工具指针
-
-| 要干什么                               | 去哪儿                                                                                                           |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 判断题(裁定放纯模块,修订型 ADR 的写法) | `docs/CODING_STANDARDS.md` -- **review 阶段**读(`/code-review` 的 Standards 轴,`/implement` 的收尾),写代码时不必 |
-| 起环境 / dsb 的运维点                  | `docs/setup.md`(命令在 `README.md` 的"起环境")                                                                   |
-| 真机验一件页面动作                     | `docs/probe.md`(子命令表 + 判据纪律)                                                                             |
-| 加 / 改页面动作                        | `docs/page-actions.md`(失败码分档,名册按控件划分)                                                                |
-| 站点逆向结论                           | `dsweb/FINDINGS.md`(硬判据在它的 §6.2)                                                                           |
-| 找一个架构决策                         | `docs/adr/README.md` 索引(生成的,漏了会被守卫判红)                                                               |
-| issue 怎么开/关/打标签                 | `docs/agents/issue-tracker.md` + `docs/agents/triage-labels.md`                                                  |
-| 领域词汇与 ADR 的消费方式              | `docs/agents/domain.md`                                                                                          |
-
-## 起环境
-
-**跑 `scripts/env-up.sh`,别现拼命令**(幂等,且保证跑完的环境全部对应最新代码).
-判据与代价见 [`docs/setup.md`](docs/setup.md).
-
-## 浏览器边界
-
-- **禁止用用户的主 browser profile**.跑扩展 / 起浏览器一律走独立 `--user-data-dir` 的实例;
-  `--load-extension` 不得挂到主 profile 实例上,也不得改写主 profile 的扩展设置.
-- **用户正在用浏览器时不许重启它**(不 SIGTERM,不重开窗口).要清 flag,换 profile,装扩展,
-  先问现在方不方便,或让用户自己动手.动主 profile 必须用户**明确**点头,含糊点头不算.
-- **例外:ds-browser(独立 profile 那个)不用先问,直接做** -- `scripts/env-up.sh` 检测到它
-  装的扩展比构建旧,或**在跑却没带 `--load-extension`**(手动开的窗口就是这样:进程在,
-  扩展不在,图标找不到),都会自动重启它.登录态不丢,开着的标签页会关.
-- **除此之外的浏览器一律不动**(主 profile,别人在用的),要动仍先问.
-
-## 技能
-
-用 **Matt 的技能**(上游 `mattpocock/skills`,换掉 OpenSpec,见 ADR-0019).技能在
-`.agents/skills/`,`skills-lock.json` 记版本.
+## 命令
 
 ```sh
-npx skills@latest add mattpocock/skills -a opencode -s '*' -y --copy  # 装
-npx skills update                                                     # 升级
+scripts/env-up.sh                 # 幂等:起缺的,旧代码自动换,末尾打判据
+scripts/env-up.sh --status        # 只读汇总(旧代码也如实报,但不动手)
+scripts/env-up.sh --debug         # 带 --remote-debugging-port,真机探针要这个
+
+pnpm quality                      # 唯一质量门:TS + Python + 三道守卫
+pnpm test                         # vitest
+uv run pytest                     # Python
+uv run ruff check .               # 已含在 pnpm quality
+pnpm exec prettier --write .      # 已含在 pre-commit
+
+uv run scripts/page-action.py read                       # 读页面状态(含圆键图标判定)
+uv run scripts/page-action.py send button.get            # 发一件页面动作
+uv run scripts/page-action.py stop-test                  # 端到端:起生成→点停止→等复位
+uv run scripts/page-action.py --no-pace js '<表达式>'     # 页面上下文跑只读 JS
+uv run scripts/adrs-index.py                             # 重生成 docs/adr/README.md
+uv run scripts/audit-issues.py                           # issue 账面自洽(要 gh + 网络)
 ```
 
-- **别手改技能文件**(升级会冲掉).要调整就在本文件里写覆盖规则.
-- **别的技能库同理**(archify 等):`npm` 装技能要走代理 7897,且**装完先审内容再用** --
-  技能以完整 agent 权限运行.
-- **`.agents/` 已在 `eslint.config.js` 与 `.prettierignore` 里排除**.新增别的 vendored
-  目录要一并加,否则 `pnpm quality` 会冒出上百条与本仓无关的错.
+`pnpm quality` = `check` + `relay:lint` + `relay:test` + `punct`(中文标点守卫)+
+`glyphs`(混入别处文字体系守卫)+ `adrs`(ADR 索引守卫).三道守卫只在本地跑,不进 CI.
+
+## 项目概览
+
+DeepSeek 网页版的**浏览器扩展 + 本机 MCP 中继**(`dsb/`).扩展替用户开口(续聊等页面动作),
+中继把 MCP 工具接进网页;两边只走线协议,不互调.
+
+| 目录                              | 装什么                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------- |
+| `entrypoints/`                    | WXT 入口:`background.ts` / `content.ts` / `inject.content.ts` / `options` / `popup` |
+| `src/lib/`                        | 扩展纯逻辑层(TS,一模块一 `.test.ts`)                                                |
+| `dsb/`                            | 本机中继:MCP 网关(Python)                                                           |
+| `protocol/fixtures/`              | TS 与 pytest 共读的线协议对拍                                                       |
+| `protocol/evidence/controls.json` | 页面控件存证(ADR-0018)                                                              |
+| `scripts/`                        | 探针与守卫工具,全按可复用写                                                         |
+| `docs/adr/`                       | 架构决策记录(`README.md` 是生成索引)                                                |
+| `dsweb/`                          | 站点逆向结论(`FINDINGS.md` §6.2 是硬判据)                                           |
+
+关键入口点:
+
+- `entrypoints/content.ts` 的 `ACTION_ROSTER` -- 内容脚本认得的页面动作名册.
+- `src/lib/page.ts` -- 页面动作执行器,抛带码的 `PageError`.
+- `src/lib/channel.ts` -- 收信层,`failureCode` 在这里映射成外部可见的码.
+- `src/lib/action.ts` -- 扩展自身动作的派发(background),含 `tabs.list` / `toggle.*`.
+- `src/lib/gate.ts` / `src/lib/armed.ts` -- 三道闸:"替人开口"的勾选与发送前最后一道.
+- `src/lib/toggle.ts` / `src/lib/relay.ts` -- 总开关与中继连接.
+- `scripts/page-action.py` -- 真机探针;**绕开 background 直投内容脚本**.
+
+## 状态与配置
+
+- **总开关**:`storage.local` 的 `toggle` 键,缺省 `false`.真源就是 storage;写入触发
+  background 的 `storage.onChanged → syncFromStorage`,内容脚本随即 `apply(true)`
+  装上 fetch/XHR 钩子.
+- **站点下发的配置**:`localStorage` 的 `__ds_remote_feature_store_model` /
+  `__ds_remote_feature_store_provider` / `__ds_remote_feature_store` 三个键.先读配置再猜.
+- **中继**:`mcp.json` 列 MCP server;`DSB_WORK_ROOT` 改工作目录(缺省本仓根),
+  改完**重启中继才生效**.
+- **浏览器**:ds-browser 用独立 `--user-data-dir`,登录态在 profile 里,换 profile 会丢.
+- **没有 spec 目录**:"必须怎样"由 `GLOSSARY.md`,ADR,测试,`protocol/fixtures/action.json`
+  契约样例与 `protocol/evidence/controls.json` 存证承载.
+
+## 扩展架构
+
+页面动作走三层:**名册 → 执行器 → 收信**.
+
+- **名册按控件划分,一个按钮只对应一个动作**.站点把多个意图压进同一个 DOM 元素时
+  (生成期圆键原地变停止键,`class` 与 `aria-label` 一个不换,只有图标 `d` 不同),
+  **合并成一个动作 + 一个独立的读动作**;不要按图标分家成 `send.click` / `stop.click`,
+  那会让两条路对同一元素给出矛盾判断(#32).**图标只出现在读动作的返回里,不参与命中判据.**
+- 执行器抛带码的 `PageError`,失败码四档:撞禁言 / 未登录 `composer-absent`(配
+  `page.state` 的 `account` 分辨是哪一种),找不到认得的东西 `page-changed`,
+  读不完 `read-failed`,**只有这一跳真的走不通才是 `tab-gone`**.
+- `tabs.list` 与 `toggle.*` 只在 **background** 的名册里.探针绕开 background,所以
+  **够不着**:照约定 `send toggle.set` 回 `unknown-action` 是预期,不是链子坏了.
+
+## 中继 dsb
+
+- 内建五件工作工具(`ls` / `read` / `grep` / `write` / `edit`),**钉死在工作文件夹 root 内**;
+  **不给命令执行**.
+- 换中继会丢它起的子进程,`mcp.json` 里那批 MCP server 要重拉一遍.
+
+## 真机验的规矩
+
+细节在 `docs/probe.md`.几条硬的:
+
+- **总开关自己就能开**:`page-action.py storage set --data '{"toggle":true}'`.
+  判据**别读 storage**(那只是真源),读钩子装没装:
+  `js 'String(window.fetch).includes("native code")'` -- `native code` 在 = 没装.
+  不先做这一步,后面全是空跑.
+- **DeepSeek 标签页必须在前台**.后台标签页被节流:虚拟列表不挂行,`messages.*` 与
+  按位置点的控件读成空.看到"对话区 0 行"先查 `document.visibilityState`,
+  别先怀疑动作.开了新会话要读列表,先 `--no-pace focus`.
+- **别拿"读页面 / 读全局数组"当判据**.全文搜会被上一轮残留的渲染命中;
+  `window.__foo` 会被后一轮覆盖,读到一个**看起来合法**的旧值.装观测 → 填 → 发 → 读,
+  闭在同一次调用里.
+- **两个观测点只有一个有值,那是观测漏了,不是事实**;"0 帧 / 空"推不出"没发生".
+- **不凭印象重实现一个已经在生产里跑的定位器,再拿它当真值** -- 去用它.
 
 ## 流程
 
@@ -73,39 +114,45 @@ npx skills update                                                     # 升级
 | 过票         | `/triage`                                                                                            |
 | 不知道用哪个 | `/ask-matt`                                                                                          |
 
-**没有 spec 目录**:"必须怎样"由 `GLOSSARY.md`,ADR,测试,`protocol/fixtures/action.json`
-契约样例与 `protocol/evidence/controls.json` 存证承载.
+- **与用户会话的 agent 直接实施**,代码 / 配置 / 文档 / 测试都由它写.链子(网页 → 子 agent)
+  **能用时走,不等它**;网页被禁言(账号在站点处罚区)时整条链是断的,那时直接做.
+  把子 agent 当小模型:指令要小,要具体,要能验证.
+- 技能在 `.agents/skills/`(`skills-lock.json` 记版本).**别手改**(升级会冲掉),
+  要调整就在本文件写覆盖规则.
+- **判断题在 `docs/CODING_STANDARDS.md`**,review 阶段读(`/code-review` 的 Standards 轴,
+  `/implement` 的收尾),写代码时不必.
+- **`docs/adr/README.md` 是 ADR 索引**(生成的,漏了会被 `adrs` 守卫判红):找决策先看它,
+  别一篇篇 `ls`.**已接受的 ADR 不改**,要推翻就写新篇并在 `Supersedes:` 点名旧篇.
+- Issue 在 GitHub Issues `copytht/ds-`,走 `gh`.五个互斥 triage 标签
+  (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`)
+  见 `docs/agents/triage-labels.md`,细则见 `docs/agents/issue-tracker.md`.
 
-## 脚本
+## 工具指针
 
-- **所有脚本放 `scripts/`,按可复用写**:一件事一个工具,参数化.别写一次性 `/tmp` 脚本,
-  更别把脚本贴进对话就算完.
-- 要临时读页面 / 发页面动作 / 跑表达式 / 读写扩展 storage,**走已有工具的入口**
-  (`scripts/page-action.py`),别另起一个.用法见 [`docs/probe.md`](docs/probe.md).
-- 脚本改动同样过 `pnpm quality`(ruff 会扫 `scripts/`).
+| 要干什么            | 去哪儿                             |
+| ------------------- | ---------------------------------- |
+| 起环境 / dsb 运维   | `docs/setup.md`                    |
+| 真机验一件动作      | `docs/probe.md`                    |
+| 加 / 改页面动作     | `docs/page-actions.md`             |
+| 判断题              | `docs/CODING_STANDARDS.md`         |
+| 站点逆向结论        | `dsweb/FINDINGS.md`(§6.2 是硬判据) |
+| 领域词汇与 ADR 消费 | `docs/agents/domain.md`            |
 
-## Issue tracker
+## 测试要求
 
-Issues 在 GitHub Issues `copytht/ds-`,走 `gh` CLI.细则见 `docs/agents/issue-tracker.md`.
+- **`pnpm quality` 是唯一门**,TS 与 Python 两半一起过.
+- `src/lib/` 一模块一 `.test.ts`;新写模块先补测试.
+- 守卫报红(`punct` / `glyphs` / `adrs`)当场修,别绕过,也别去改守卫.
 
-- issue 与 PR 共用一个编号空间,裸 `#42` 可能是 PR;**PR 不是需求面**(本仓不把外部 PR 当
-  feature request 处理).
-- **账面自洽跑 `uv run scripts/audit-issues.py`**(只读,不进 `pnpm quality` -- 它要 `gh`
-  与网络).它按 `triage-labels.md` 查五件事:开票缺 / 多角色标签,关票还挂 `needs-*`,
-  `wontfix` 与 `ready-*` 打架,开票零标签,`needs-info` 正文与评论皆空的僵尸票.
-- `--trace` 另报关票在提交历史里有无 `#编号` 点名(信息级,不进账面判据).
+### IMPORTANT
 
-## Triage labels
-
-五个互斥角色,标签字符串等于角色名(`needs-triage` / `needs-info` / `ready-for-agent` /
-`ready-for-human` / `wontfix`).见 `docs/agents/triage-labels.md`.
-
-## Domain docs
-
-单上下文:根目录 `GLOSSARY.md` + `docs/adr/`.细则见 `docs/agents/domain.md`.
-
-- **找决策先看 `docs/adr/README.md` 那份索引**(标题 / 状态 / 日期 / 谁取代了谁),
-  别一篇篇 `ls` 然后读文件名.它是**生成的**:新写一篇 ADR 就跑
-  `uv run scripts/adrs-index.py`,漏了会被 `pnpm quality` 的 `adrs` 守卫判红.
-- **接受过的 ADR 不改**,要推翻就写新 ADR 并在 `Supersedes:` 点名旧篇.
-- 输出提到领域概念时用 `GLOSSARY.md` 里的词;**与 ADR 冲突要挑明**,别默默盖过.
+- **禁止**用用户的主 browser profile;跑扩展 / 起浏览器一律独立 `--user-data-dir` 的实例.
+- **禁止**把 `--load-extension` 挂到主 profile 实例上,或改写主 profile 的扩展设置.
+- **禁止**在用户正在用浏览器时重启它(ds-browser 例外:`env-up.sh` 检测到它装的扩展比构建
+  旧,或在跑却没带 `--load-extension`,都会自动重启;登录态不丢,开着的标签页会关).
+- **禁止**在根目录新增 `.md` -- 只许 `AGENTS.md` / `README.md` / `GLOSSARY.md`;
+  `GLOSSARY.md` **必须**在根目录(技能按它判断单 / 多上下文,挪走不会报错而是**静默失效**).
+- **禁止**改 `src/lib/` 里已经上线的定位器再拿它当新事实 -- 去读生产代码.
+- **禁止**把脚本写成一次性贴进对话的,要放 `scripts/` 按可复用写.
+- **禁止**用"读页面 / 读全局数组"当判据(见"真机验的规矩").
+- **禁止**改已接受的 ADR.
