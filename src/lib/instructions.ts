@@ -18,6 +18,22 @@ import { MAX_CONTINUATION_ROUNDS } from "./rounds";
 /** 协议说明的稳定首行:历史消息里带出来的旧说明靠它判重(目录会变,整段前缀会失效). */
 export const INSTRUCTIONS_HEADER = "[ds 协议]";
 
+/**
+ * `read` 脚注三态的字面量:dsb `work.py` 产出那半,这里存同一份教模型认
+ * (两半各自对着线协议 `protocol/fixtures/read.json` 断言,ADR-0026/0027).
+ */
+export const READ_FOOTNOTE_TEMPLATES = {
+  /** 文件读完:不编下一步. */
+  done: "(文件读完:共 {total} 行)",
+  /** 页按行数到头,文件还有:给接着读的 offset. */
+  more: "(第 {start}-{end} 行 / 共 {total} 行,接着读:offset={end + 1})",
+  /** 页被单次字节预算砍在半路:先说被砍,再给 offset. */
+  capped: "(字节预算截断,第 {start}-{end} 行 / 共 {total} 行,接着读:offset={end + 1})",
+} as const;
+
+/** `read` 单页行数:教模型的"接着读"例子按它算(接着读的 offset = 单页行数 + 1). */
+export const READ_PAGE_LINES = 200;
+
 /** 目录里一行:`- name(param, param?) -- 描述`(描述自带 `[server]` 出处). */
 function catalogLine(tool: ToolInfo): string {
   const params = tool.params.length > 0 ? `(${tool.params.join(", ")})` : "";
@@ -52,7 +68,7 @@ ${catalogSection(tools)}- 另有扩展自带的本地工具(不占网关目录,�
 - 本地工具回了失败码时读正文里 \`error\` 那一行,别猜也别原样重排:闸或退避类(\`disabled\` / \`backing-off\`)是人在管,等用户开口再说;页面认不出那件事(\`page-changed\` / \`unknown-action\`)换个问法或晚一轮再排.
 - 结果会自动续着回来(对话里只显示一个短标记,正文不在可见消息里):正文以 \`agent:\` 开头,第二行是 \`status: ok\`;\`answer\` 是工具结果正文--工具自己报的错也在正文里(如 \`tool-not-running\`:子进程没起),照着往下答.
 - \`answer\` 的读法:跟着 \`answer[N]{text}:\`,底下每行一条(缩进两格),第 1 条就是正文第 1 行,依次连起来即完整正文;行首行尾的双引号是包裹,去掉即可,行内偶见的反斜杠只用来包住双引号和反斜杠自己,还原成原字符.换行原样保留,不会被转义.
-- \`read\` 的正文是**逐行带行号**的(\`12: 内容\`),末尾有一句脚注写明读到哪,接着读用什么 \`offset\`(如"接着读:offset=201").文件长就**按那个 offset 翻页**,别改 offset 重读开头,也别拿半页当全貌;脚注说"文件读完"才是读完.行号是呈现层的前缀,正文内容一字不改.
+- \`read\` 的正文是**逐行带行号**的(\`12: 内容\`),末尾有一句脚注写明读到哪,接着读用什么 \`offset\`(如"接着读:offset=${READ_PAGE_LINES + 1}").文件长就**按那个 offset 翻页**,别改 offset 重读开头,也别拿半页当全貌;脚注说"文件读完"才是读完.行号是呈现层的前缀,正文内容一字不改.
 - 自动续聊最多 ${MAX_CONTINUATION_ROUNDS} 轮:到顶会停手,那时等用户开口再继续(不要把同一块围栏重复排一遍).
 - 若没有收到 \`agent:\` 开头的续聊,说明网关没连上:不要追问,不要重排,当作没排过,继续别的内容.
 - 需要人拍板(选哪个,答什么)时,把问题排成另一种围栏块,然后停止回答,等人的回答:

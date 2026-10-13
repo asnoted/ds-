@@ -8,11 +8,15 @@ import {
   type ActionFixtureFile,
   type ConfigCase,
   type FenceCase,
+  type ReadFixtureFile,
+  type ReadFootnoteCase,
   type ReplyCase,
 } from "./fixtures";
+import { MAX_RESULT_CHARS } from "./continuation";
+import { protocolInstructions, READ_FOOTNOTE_TEMPLATES, READ_PAGE_LINES } from "./instructions";
 import { isKnownFailureKind, REPLY_ANCHOR } from "./reply";
 
-const EXPECTED_FILES = ["action.json", "config.json", "fence.json", "reply.json"];
+const EXPECTED_FILES = ["action.json", "config.json", "fence.json", "read.json", "reply.json"];
 
 /** 配置只有一种解析分支:认端口 / 会话号那套已随问答后端废掉(ADR-0011). */
 const KNOWN_CONFIG_KINDS = ["value"];
@@ -116,6 +120,33 @@ describe("配置 fixture 自洽", () => {
       expect(typeof input).toBe("string");
       expect(typeof expected).toBe("object");
     }
+  });
+});
+
+function readFootnoteTemplate(name: string): string {
+  const found = fixtureCases<ReadFootnoteCase>("read.json").find((one) => one.name === name);
+  if (!found) throw new Error(`read.json 缺脚注态:${name}`);
+  return found.template;
+}
+
+describe("read 限额对拍(两半必须相等的数)", () => {
+  it("扩展回灌上限与 fixture 的页预算同数(一页 read 的结果能原样进对话)", () => {
+    const read = fixtureFile("read.json") as ReadFixtureFile;
+    expect(MAX_RESULT_CHARS).toBe(read.readPageBudget);
+  });
+
+  it("教模型的'接着读'例子按 fixture 的单页行数算", () => {
+    const read = fixtureFile("read.json") as ReadFixtureFile;
+    expect(READ_PAGE_LINES).toBe(read.readPageLines);
+    const instructions = protocolInstructions(null);
+    expect(instructions).toContain(`接着读:offset=${read.readPageLines + 1}`);
+    expect(instructions).toContain("文件读完");
+  });
+
+  it("教模型认的脚注三态字面量与 fixture 相等", () => {
+    expect(READ_FOOTNOTE_TEMPLATES.done).toBe(readFootnoteTemplate("文件读完"));
+    expect(READ_FOOTNOTE_TEMPLATES.more).toBe(readFootnoteTemplate("还有下一页"));
+    expect(READ_FOOTNOTE_TEMPLATES.capped).toBe(readFootnoteTemplate("字节预算截断"));
   });
 });
 
