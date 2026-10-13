@@ -174,9 +174,8 @@ export async function runPaced<T>(options: {
  * "停止"不在名单里--中断生成不是发送,永不延迟(见本文件开头第二条口径).
  * `composer.type` / `composer.clear` 也不在:只往输入框里写字不算发出去(#52 让它们
  * 出"代你发言"闸,但仍不参与发送限速).
+ *
+ * 名单从注册表的 `paced` 标志派生(#99):归类写在 `registry.ts` 的行上,
+ * 这里只留出口与口径.
  */
-export const SEND_PRIMITIVES: ReadonlySet<string> = new Set([
-  "send.enter",
-  "button.click",
-  "message.retry",
-]);
+export { SEND_PRIMITIVES } from "./registry";

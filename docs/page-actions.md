@@ -1,6 +1,7 @@
 # 页面动作的设计判据
 
-改名册与执行器时看这份:`entrypoints/content.ts` 的 `ACTION_ROSTER`,
+改名册与执行器时看这份:`src/lib/registry.ts` 的注册表(一件动作一行,名册与三道闸
+名单都从它派生,接线在 `entrypoints/content.ts`),
 `src/lib/page.ts` 的执行器,`protocol/fixtures/action.json` 契约样例与测试.
 要**真机验**一件动作走 [`docs/probe.md`](probe.md).
 

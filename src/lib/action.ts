@@ -15,6 +15,10 @@
 
 import { gateBackoff, type BackoffState } from "./backoff";
 import { isAccountState, type AccountState } from "./page";
+import { BACKOFF_GATED_ACTIONS, SPEAK_GATED_ACTIONS, TOGGLE_ACTIONS } from "./registry";
+
+// 三道闸名单从注册表派生(#99):归类写在 `registry.ts` 的行上,这里只消费.
+export { BACKOFF_GATED_ACTIONS, SPEAK_GATED_ACTIONS, TOGGLE_ACTIONS } from "./registry";
 
 /** 权限钉死的那个站点:标签页只认它(manifest 的 host_permissions 同一个域). */
 export const DEEPSEEK_HOST = "chat.deepseek.com";
@@ -85,62 +89,6 @@ export class PageError extends Error {
     this.name = "PageError";
   }
 }
-
-/** 不受总开关管的两件动作:开关本身的读写.关掉后还得能把开关翻回来. */
-export const TOGGLE_ACTIONS: ReadonlySet<string> = new Set(["toggle.get", "toggle.set"]);
-
-/**
- * "代你发言"闸下的动作:**替你把消息发出去**的那些(#52).
- *
- * 闸的语义收窄过一次:原先管的是"动写作框的",连 `composer.type` / `composer.clear`
- * 都算;现在只管**发**.往输入框里写字不叫替人开口--协调者写的内容只落在草稿里,
- * 人自己按发送才算.读(`composer.read`)照旧不受管.
- *
- * 闸关着时这些一律回 `disabled`,而**页面上不留任何东西**:
- *
- * - `composer.type` 放行,`send.enter` 拦下 → `send.page` 那条问题留在输入框当草稿,
- *   用户自己按发送;
- * - 自动续聊同理:只把短标记写进去,不按发送(`inject.content.ts` 的半自动分支).
- */
-export const SPEAK_GATED_ACTIONS: ReadonlySet<string> = new Set([
-  "send.enter",
-  // 重新生成:让账号再生成一条回答,等同发送--按最坏拦(同圆键的先例).
-  "message.retry",
-  // 圆键(`button.click`)可能在发,也可能在停:一律按"可能是替你开口"拦.
-  // 闸关着时点击结果**判不出**,保守即正确(2026-10-05 用户定,不按 pressed 动态放行).
-  "button.click",
-]);
-
-/**
- * "退避"闸下的动作:会改变页面状态的那些(写动作 + 开启新对话).
- * 只读动作(`composer.read` / `messages.*` / `page.state` / `tabs.list` / `button.get`)
- * **不受退避影响**--账号在处罚区时人与 agent 仍要能读处境.
- * 名单是显式的(与 `SPEAK_GATED_ACTIONS` 同一规矩),新增写动作要
- * 记进来;`chat.new` 虽不动写作框,但它开新对话,也是写.
- */
-export const BACKOFF_GATED_ACTIONS: ReadonlySet<string> = new Set([
-  ...SPEAK_GATED_ACTIONS,
-  // 写作框的写步(#52 之后它们出了 speak 闸,但**仍是写动作**,处罚区里照拦).
-  // 显式列出来,不靠"在 speak 名单里"顺带--那层语义已经换了,靠它会跟着漏.
-  "composer.type",
-  "composer.clear",
-  "chat.new",
-  // 切换会话:改页面状态是写;不动写作框,不"代你发言",故不进 speak 闸.
-  "chat.switch",
-  // 侧栏开关:改页面状态是写;不动写作框,不"代你发言",故不进 speak 闸.
-  "sidebar.set",
-  // 消息工具栏(除 retry 已在 speak 闸里)与代码块:点了会改页面 / 账号状态,是写;不动写作框.
-  "message.copy",
-  "message.like",
-  "message.dislike",
-  "message.read",
-  "message.share",
-  "code.copy",
-  "code.download",
-  // 写作框旁的两个开关(#30):会改页面状态,是写动作;但不"代你发言",故不进 speak 闸.
-  "think.set",
-  "search.set",
-]);
 
 /**
  * 执行结果的同构校验:`{ok,result}` / `{ok,error}` 两条,外加别的键

@@ -29,30 +29,10 @@ import {
   type StopMessage,
 } from "../src/lib/channel";
 import { nextMessageId } from "../src/lib/id";
-import {
-  buttonClick,
-  clearComposer,
-  findButton,
-  listChats,
-  newChat,
-  pressEnter,
-  readAccount,
-  readButton,
-  readComposer,
-  readPressed,
-  readComposerPresent,
-  readPageState,
-  readSidebar,
-  readSearch,
-  readThink,
-  setSearch,
-  setSidebar,
-  setThink,
-  switchChat,
-  typeComposer,
-} from "../src/lib/page";
-import { CONTROL_ACTIONS } from "../src/lib/controls";
+import { findButton, readAccount, readComposerPresent, readPressed } from "../src/lib/page";
 import type { ActionFrame } from "../src/lib/action";
+// 本地名册从注册表派生(#99):一件动作一行的声明点在 `src/lib/registry.ts`.
+import { ACTION_ROSTER } from "../src/lib/registry";
 import {
   mergeSendPace,
   newSendPace,
@@ -62,8 +42,6 @@ import {
   type SendIntent,
   type SendPace,
 } from "../src/lib/sendpace";
-import { lastMessage, listMessages } from "../src/lib/messages";
-import { waitFence, waitReply } from "../src/lib/wait";
 import {
   parseToggleMessage,
   readToggle,
@@ -258,40 +236,6 @@ export default defineContentScript({
     });
 
     /**
-     * 本地名册:动作名 → 执行器.实现的就往这里加一项,收信那层不用动.
-     * 没实现的动作由收信那层当场回 `unknown-action`(不白等中继的 30s).
-     */
-    const ACTION_ROSTER: ActionRoster = {
-      "page.state": readPageState,
-      "composer.read": readComposer,
-      "composer.type": typeComposer,
-      "composer.clear": clearComposer,
-      // 写作框旁边那两个小开关(#30).
-      "think.get": readThink,
-      "think.set": setThink,
-      "search.get": readSearch,
-      "search.set": setSearch,
-      "button.get": readButton,
-      "button.click": buttonClick,
-      "send.enter": pressEnter,
-      "chat.new": newChat,
-      // 会话切换(chat-switch-action):先读列表拿 id,再按 id / 标题切.
-      "chats.list": listChats,
-      "chat.switch": switchChat,
-      // 侧栏开关(sidebar-toggle):读写成对,同一个控件的两态.
-      "sidebar.get": readSidebar,
-      "sidebar.set": setSidebar,
-      // 消息工具栏六项 + 代码块两项(message-and-code-actions).
-      ...CONTROL_ACTIONS,
-      // 只读那批:读对话走 DOM(#20 口径),不碰站点的响应体.
-      "messages.list": listMessages,
-      "messages.last": lastMessage,
-      // 等动作(#22):等围栏,等回灌--只读,不动写作框.
-      "wait.fence": waitFence,
-      "wait.reply": waitReply,
-    };
-
-    /**
      * 发送限速(#61):三种"替用户把消息发出去"的原语,执行前先过检查点--
      * 距上一次发送不够 3~5 秒就**等**够(等,不拒,不增失败码).
      *
@@ -361,6 +305,8 @@ export default defineContentScript({
 
     // background 打过来的动作帧(走 `tabs.sendMessage`):当场交回一个 ActionOutcome;
     // 认不出的信封一声不吭,不抢 send 那条路的消息.
+    // 本地名册从注册表派生(#99):动作名 → 执行器,加一件动作只在 `registry.ts` 加一行.
+    // 认不出的动作由收信那层当场回 `unknown-action`(不白等中继的 30s).
     browser.runtime.onMessage.addListener(actionListener(paceRoster(ACTION_ROSTER)));
 
     // 总开关或"代你发言"闸改了立刻广播,刷新与重启靠 storage 自己保持.
