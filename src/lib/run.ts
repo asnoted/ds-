@@ -16,7 +16,7 @@
  * (ADR-0014/0015);失败留痕不进正文(ADR-0004).
  */
 
-import { arm, disarm, idleArmed, type ArmedState } from "./armed";
+import { arm, disarm, idleArmed, pend, planContinuation, type ArmedState } from "./armed";
 import { CONTINUATION_MARKER, STOP_CONTINUATION_LIMIT, buildContinuation } from "./continuation";
 import { describeContinuationFailure, type ContinuationFailure } from "./continuationfail";
 import { beginRound, INITIAL_ROUNDS, resetRounds, type RoundState } from "./rounds";
@@ -151,9 +151,15 @@ function onReleased(state: RunState, message: string, now: number): RunDecision 
     return step(state, [{ kind: "send", message, continuation: false }]);
   }
   const continuation = state.queued;
-  return step({ ...state, queued: null, armed: arm(continuation, now) }, [
-    { kind: "send", message: CONTINUATION_MARKER, continuation: true },
-  ]);
+  const base = { ...state, queued: null };
+  // 走向由纯函数判(armed.ts 的 planContinuation):闸关着那一支的裁决里没有发送步,
+  // 接线层照着做就碰不到 Enter(#52 的 AC 首条).
+  if (planContinuation(state.speak).action === "arm-and-send") {
+    return step({ ...base, armed: arm(continuation, now) }, [
+      { kind: "send", message: CONTINUATION_MARKER, continuation: true },
+    ]);
+  }
+  return step({ ...base, armed: pend(continuation) }, [{ kind: "stage" }]);
 }
 
 /** 发送 / 落草稿落定:没发出去立刻撤武装(留着它,下一个出站会顶掉用户的话). */

@@ -41,3 +41,21 @@ describe("放行那一刻才武装(AC①:入队不武装)", () => {
     expect(got.effects).toEqual([]);
   });
 });
+
+describe("闸关时只落草稿(AC②:stage-only 结构里没有发送步)", () => {
+  it("放行那一刻闸关着:挂 pending,裁决清单里整张都没有发送步(#52)", () => {
+    const queued = decide(turnOn(false), { type: "result", payload: PAYLOAD });
+    const released = decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+    });
+    expect(released.state.armed).toEqual({
+      phase: "pending",
+      continuation: buildContinuation(PAYLOAD),
+    });
+    // 整张效果清单深度相等:只有"落草稿"一步,没有 send(接线层因此碰不到 Enter).
+    expect(released.effects).toEqual([{ kind: "stage" }]);
+    expect(released.effects.some((effect) => effect.kind === "send")).toBe(false);
+  });
+});
