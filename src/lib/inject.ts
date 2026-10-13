@@ -58,6 +58,116 @@ function prependOnce(text: string, tools: readonly ToolInfo[] | null): string | 
 }
 
 /**
+ * 认得出的出站请求体形状,一次识别给出四种用法:待发文本 / 替换正文 / 遍历所有
+ * 用户文本 / 形状是否认得出(#4 的 adapter).
+ *
+ * 钥匙比对(`pendingText` → `armed.ts` 的 `matchesMarker`)、协议说明拼接
+ * (`rewriteOutgoingBody` 的 `mapAllUserTexts`)、正文替换(`replacePending`)
+ * 共用这一次解析与这一条形状规则--站点换出站载荷形状时只改这里,不会再出现
+ * 「钥匙认得出、替换认不出」的半通状态.
+ *
+ * 形状两条(与 ADR-0014 的替换口径一致):`prompt` 是字符串(站点原生只带这一条
+ * 新消息),或 `messages` 是数组(整段历史一起带).**两条都不在 → `shapeOk:false`,
+ * 其余三种用法全部落空**.
+ */
+export type OutgoingShape = {
+  /** 形状认不认得出;认不出时下面三用全部落空. */
+  readonly shapeOk: boolean;
+  /** 用法一:待发那条用户消息的正文(钥匙比对用);取不出 → null. */
+  readonly pendingText: string | null;
+  /** 用法二:把待发那条换成 `text`,返回新请求体;认不出或没有待发的槽位 → null. */
+  readonly replacePending: (text: string) => string | null;
+  /** 用法三:对每条用户文本各映一次;形状认不出或没有一处改动 → null. */
+  readonly mapAllUserTexts: (map: (text: string) => string | null) => string | null;
+};
+
+/** 待发那条的槽位:`prompt` 非空白字符串,否则 `messages` 里最后一条 user 的 `content`. */
+type PendingSlot =
+  { readonly kind: "prompt" } | { readonly kind: "messages"; readonly index: number };
+
+function locatePending(root: Record<string, unknown>): PendingSlot | null {
+  const prompt = root["prompt"];
+  if (typeof prompt === "string" && prompt.trim() !== "") return { kind: "prompt" };
+  const { messages } = root;
+  if (Array.isArray(messages)) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const entry = messages[index];
+      if (!isPlainObject(entry)) continue;
+      if (entry["role"] !== "user" || typeof entry["content"] !== "string") continue;
+      return { kind: "messages", index };
+    }
+  }
+  return null;
+}
+
+export function recognizeOutgoingShape(bodyText: string): OutgoingShape {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    payload = undefined;
+  }
+  const root = isPlainObject(payload) ? payload : null;
+  const shapeOk =
+    root !== null && (typeof root["prompt"] === "string" || Array.isArray(root["messages"]));
+  const empty: OutgoingShape = {
+    shapeOk,
+    pendingText: null,
+    replacePending: () => null,
+    mapAllUserTexts: () => null,
+  };
+  if (root === null || !shapeOk) return empty;
+
+  const slot = locatePending(root);
+  const pendingText =
+    slot === null
+      ? null
+      : slot.kind === "prompt"
+        ? (root["prompt"] as string)
+        : (((root["messages"] as Record<string, unknown>[])[slot.index] as Record<string, unknown>)[
+            "content"
+          ] as string);
+  return {
+    shapeOk,
+    pendingText,
+    replacePending: (text: string) => {
+      const slot = locatePending(root);
+      if (slot === null) return null;
+      const next = structuredClone(payload) as Record<string, unknown>;
+      if (slot.kind === "prompt") next["prompt"] = text;
+      else
+        ((next["messages"] as Record<string, unknown>[])[slot.index] as Record<string, unknown>)[
+          "content"
+        ] = text;
+      return JSON.stringify(next);
+    },
+    mapAllUserTexts: (map: (text: string) => string | null) => {
+      const next = structuredClone(payload) as Record<string, unknown>;
+      let changed = false;
+      if (typeof next["prompt"] === "string") {
+        const mapped = map(next["prompt"]);
+        if (mapped !== null) {
+          next["prompt"] = mapped;
+          changed = true;
+        }
+      }
+      if (Array.isArray(next["messages"])) {
+        for (const entry of next["messages"] as Record<string, unknown>[]) {
+          if (!isPlainObject(entry)) continue;
+          if (entry["role"] !== "user" || typeof entry["content"] !== "string") continue;
+          const mapped = map(entry["content"]);
+          if (mapped !== null) {
+            entry["content"] = mapped;
+            changed = true;
+          }
+        }
+      }
+      return changed ? JSON.stringify(next) : null;
+    },
+  };
+}
+
+/**
  * 改写一段即将发送的请求体.认得出的载荷有两条形状:
  * `prompt`(站点原生的发消息接口只带这一条新消息)与 `messages`(整段历史一起带的形状).
  * 两条形状里 `role: "user"` 的内容都会带上协议说明,其余角色不动.
