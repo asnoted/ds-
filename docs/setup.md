@@ -33,6 +33,18 @@ env-up 跑完要看到这四条都过:
   扩展不在,图标找不到),都会自动重启它.登录态不丢,开着的标签页会关.
 - **除此之外的浏览器一律不动**(主 profile,别人在用的),要动仍先问.
 
+## jj 与 git 的双视图,两处会咬人
+
+本仓 jujutsu 优先(`AGENTS.md`),但 jj 看得见 git 的一切,两个视图会短暂对不上:
+
+- **工作副本落后于分支 ref**:bookmark 前移后,主仓的检出还停在旧 tip -- 此时跑
+  质量门,数目是旧代码的账(spec #96 的 retro 候选 1,咬过两次).**用
+  `scripts/quality-gate.sh` 代替裸 `pnpm quality:ci`**:它先报"被测的是哪个提交"
+  再跑门,对不上一眼可见.只报不跑用 `--quiet`.
+- **worktree 是纯 git**:给子代理开的 worktree(`opencode worktree create`)没有 `.jj`,
+  jj 命令在那儿跑不了 -- 用 git 提交,主仓 jj 照样看得见分支 ref,不冲突.
+  要在 worktree 里用 jj 就 `jj git init --colocate`.
+
 ## 换新的代价
 
 - **换中继会丢它起的子进程** -- `mcp.json` 里那批 MCP server 要重拉一遍.

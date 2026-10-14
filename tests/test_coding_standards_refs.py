@@ -83,3 +83,18 @@ def test_coding_standards_references_resolve() -> None:
         if referenced_section(m.group(1)) not in existing
     ]
     assert not dangling, "引用了不存在的节(补回该节, 或改指正确落点):\n" + "\n".join(dangling)
+
+
+def test_coding_standards_sections_are_contiguous() -> None:
+    """节编号必须从 1 起连续: 引用守卫只查"被引的节在不在", 查不出"节自己少了".
+
+    §1 与 §2 曾在同一次 merge 里一起丢, 两次都是人眼撞见的(#97 与 spec #96 的
+    review 修复批). 编号断了就红, 这类静默丢失到此为止.
+    """
+    ids = sorted(section_ids())
+    expected = list(range(1, len(ids) + 1))
+    assert ids and ids[0] == 1, f"§1 不在(现有节: {ids}) -- 判断题的第一条丢了"
+    assert ids == expected, (
+        "节编号不连续, 中间有节丢了(从 git 历史把它逐字恢复回来, 别重写):\n"
+        f"  现有: {ids}\n  应为: {expected}"
+    )
