@@ -13,6 +13,7 @@ import {
   type TabCandidate,
   type TabsApi,
   type ToggleApi,
+  type StorageApi,
 } from "./action";
 import type { ActionFrame } from "./action";
 import { fixtureCases, fixtureFile, type ActionCase, type ActionFixtureFile } from "./fixtures";
@@ -193,6 +194,125 @@ function toggleApi(initial = false): ToggleApi & { value: boolean; sets: number 
   };
   return api;
 }
+
+function storageApi(): StorageApi & {
+  stored: Record<string, unknown>;
+  gets: number;
+  sets: number;
+  removes: number;
+} {
+  const api = {
+    stored: {} as Record<string, unknown>,
+    gets: 0,
+    sets: 0,
+    removes: 0,
+    async get(keys: readonly string[]): Promise<Record<string, unknown>> {
+      api.gets += 1;
+      const out: Record<string, unknown> = {};
+      for (const key of keys) if (key in api.stored) out[key] = api.stored[key];
+      return out;
+    },
+    async set(data: Record<string, unknown>): Promise<void> {
+      api.sets += 1;
+      api.stored = { ...api.stored, ...data };
+    },
+    async remove(keys: readonly string[]): Promise<void> {
+      api.removes += 1;
+      for (const key of keys) delete api.stored[key];
+    },
+  };
+  return api;
+}
+
+describe("storage.get / storage.set / storage.remove", () => {
+  it("set 落盘,get 回读同一批键", async () => {
+    const storage = storageApi();
+    expect(
+      await runAction(
+        frame({ action: "storage.set", params: { data: { "ds-/watchdog": { silenceMs: 1000 } } } }),
+        context({ storage }),
+      ),
+    ).toEqual({ ok: true, result: { stored: { "ds-/watchdog": { silenceMs: 1000 } } } });
+    expect(
+      await runAction(
+        frame({ action: "storage.get", params: { keys: ["ds-/watchdog"] } }),
+        context({ storage }),
+      ),
+    ).toEqual({ ok: true, result: { stored: { "ds-/watchdog": { silenceMs: 1000 } } } });
+  });
+
+  it("remove 删键,get 回读不再有(漏网的键照留)", async () => {
+    const storage = storageApi();
+    await storage.set({ a: 1, b: 2 });
+    expect(
+      await runAction(
+        frame({ action: "storage.remove", params: { keys: ["a"] } }),
+        context({ storage }),
+      ),
+    ).toEqual({ ok: true, result: { removed: ["a"] } });
+    expect(
+      await runAction(
+        frame({ action: "storage.get", params: { keys: ["a", "b"] } }),
+        context({ storage }),
+      ),
+    ).toEqual({ ok: true, result: { stored: { b: 2 } } });
+  });
+
+  it("参数形状不对 → unknown-action,别假装读写过了", async () => {
+    const storage = storageApi();
+    const badKeys = [undefined, null, "k", [1], "k,"];
+    for (const bad of badKeys) {
+      expect(
+        await runAction(
+          frame({ action: "storage.get", params: { keys: bad } }),
+          context({ storage }),
+        ),
+      ).toEqual({ ok: false, error: "unknown-action" });
+      expect(
+        await runAction(
+          frame({ action: "storage.remove", params: { keys: bad } }),
+          context({ storage }),
+        ),
+      ).toEqual({ ok: false, error: "unknown-action" });
+    }
+    const badData = [undefined, null, "x", 1, [], ["a"]];
+    for (const bad of badData) {
+      expect(
+        await runAction(
+          frame({ action: "storage.set", params: { data: bad } }),
+          context({ storage }),
+        ),
+      ).toEqual({ ok: false, error: "unknown-action" });
+    }
+    expect(storage.gets).toBe(0);
+    expect(storage.sets).toBe(0);
+    expect(storage.removes).toBe(0);
+  });
+
+  it("context 没接 storage → 三件都回 unknown-action(同 toggle.* 一个口径)", async () => {
+    expect(
+      await runAction(frame({ action: "storage.get", params: { keys: [] } }), context()),
+    ).toEqual({
+      ok: false,
+      error: "unknown-action",
+    });
+    expect(
+      await runAction(frame({ action: "storage.set", params: { data: {} } }), context()),
+    ).toEqual({ ok: false, error: "unknown-action" });
+    expect(
+      await runAction(frame({ action: "storage.remove", params: { keys: [] } }), context()),
+    ).toEqual({ ok: false, error: "unknown-action" });
+  });
+
+  it("总开关关着时 storage.* 照常执行(豁免,同 toggle.* 理由)", async () => {
+    const storage = storageApi();
+    const ctx = context({ enabled: false, storage });
+    expect(await runAction(frame({ action: "storage.get", params: { keys: [] } }), ctx)).toEqual({
+      ok: true,
+      result: { stored: {} },
+    });
+  });
+});
 
 describe("toggle.get / toggle.set", () => {
   it("toggle.get 回总开关当前状态", async () => {

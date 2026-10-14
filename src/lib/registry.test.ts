@@ -141,4 +141,18 @@ describe("target 形态与 fixture / 探针 docstring 的知识对得上", () =>
       .map(([name]) => name);
     expect([...named].sort()).toEqual([...local].sort());
   });
+
+  it("探针的 TARGET_NULL_ACTIONS 名单 = 注册表里 target 恒为 null 的行", () => {
+    const probe = PROBE_SOURCES["../../scripts/page-action.py"];
+    const block = probe?.match(/TARGET_NULL_ACTIONS = frozenset\(([\s\S]*?)\)\n/);
+    expect(block, "page-action.py 丢了 TARGET_NULL_ACTIONS 名单").not.toBeNull();
+    const names = [...(block?.[1] ?? "").matchAll(/"([a-z.]+)"/g)]
+      .flatMap((m) => (m[1] === undefined ? [] : [m[1]]))
+      .sort();
+    const local = Object.entries(ACTION_REGISTRY)
+      .filter(([, row]) => row.target === "null")
+      .map(([name]) => name)
+      .sort();
+    expect(names).toEqual(local);
+  });
 });

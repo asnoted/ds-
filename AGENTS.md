@@ -1,12 +1,12 @@
 # AGENTS.md
 
-Limit the amount of comments you put in the code to a strict minimum. You should almost never add comments, except sometimes on non-trivial code, function definitions if the arguments aren't self-explanatory, and class definitions and their members.
+Limit the number of comments in code to a strict minimum. You should almost never add comments, except occasionally to non-trivial code, to function definitions whose arguments are not self-explanatory, and to class definitions and their members.
 
-NEVER edit AGENTS.md
+NEVER edit `AGENTS.md`; maintainers only.
 
-## tool
+## Tools
 
-all and new tools in here, and use jujutsu first.
+All new tools go here. Use Jujutsu first.
 
 ```sh
 scripts/env-up.sh                 # 幂等:起缺的,旧代码自动换,末尾打判据
@@ -43,25 +43,15 @@ DeepSeek 网页版的**浏览器扩展 + 本机 MCP 中继**(`dsb/`).扩展替�
 - 根目录只许 `AGENTS.md` / `README.md` / `GLOSSARY.md`;别的文档一律进 `docs/`.
 - 输出提到领域概念时用 `GLOSSARY.md` 里的词;与 ADR 冲突要挑明,别默默盖过.
 
-## workflow
+## Workflow
 
 不知道干什么`/ask-matt`
 
 - **思考问题问网页**
 
-## 工具指针
-
-| 要干什么          | 去哪儿                             |
-| ----------------- | ---------------------------------- |
-| 起环境 / 中继运维 | `docs/setup.md`                    |
-| 真机验一件动作    | `docs/probe.md`                    |
-| 加 / 改页面动作   | `docs/page-actions.md`             |
-| 判断题            | `docs/CODING_STANDARDS.md`         |
-| 站点逆向结论      | `dsweb/FINDINGS.md`(§6.2 是硬判据) |
-
 ## 测试要求
 
-- pnpm quality 嵌入 git 流程.
+- 嵌入 pre-commit.
 
 ### IMPORTANT
 

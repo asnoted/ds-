@@ -112,6 +112,17 @@ export type ToggleApi = {
   set(value: boolean): Promise<boolean>;
 };
 
+/**
+ * `storage.local` 的读写口(`storage.get` / `storage.set` / `storage.remove`).
+ * 与 `toggle.*` 同一条真源、同一处接线(background 的 `actionContext`),
+ * 只是不碰总开关那把钥匙:探针要走消息流读写持久态,不再自己捅 storage.
+ */
+export type StorageApi = {
+  get(keys: readonly string[]): Promise<Record<string, unknown>>;
+  set(data: Record<string, unknown>): Promise<void>;
+  remove(keys: readonly string[]): Promise<void>;
+};
+
 export type ActionContext = {
   /** 动作现读总开关:关着不执行,回 `disabled`. */
   readonly enabled: boolean;
@@ -124,6 +135,8 @@ export type ActionContext = {
   readonly tabs: TabsApi;
   /** 总开关读写口;没接上时 `toggle.get/set` 落 `unknown-action`. */
   readonly toggle?: ToggleApi;
+  /** `storage.local` 读写口;没接上时 `storage.*` 落 `unknown-action`(同 `toggle.*` 一个口径). */
+  readonly storage?: StorageApi;
   /**
    * target 标签页的执行口:把帧送到那个标签页并拿回结果.
    * 抛错 / 答不上同构载荷都由这一层折成 `tab-gone`(见 `sendMessageSendToTab`),
@@ -131,6 +144,14 @@ export type ActionContext = {
    */
   readonly sendToTab?: (tabId: number, frame: ActionFrame) => Promise<ActionOutcome>;
 };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((one) => typeof one === "string");
+}
 
 /** 这条 url 是不是 chat.deepseek.com 的(认不出的,别的站的一律不算). */
 export function isDeepSeekUrl(url: string): boolean {
@@ -247,6 +268,29 @@ export async function runAction(
     // 参数不是布尔就不落一个"写成了"的假象:当认不出这个形状.
     if (typeof enabled !== "boolean") return { ok: false, error: ACTION_ERROR_UNKNOWN };
     return { ok: true, result: { enabled: await context.toggle.set(enabled) } };
+  }
+  // storage.local 的读写口:探针走消息流取持久态,不再自己捅 storage.
+  if (
+    frame.action === "storage.get" ||
+    frame.action === "storage.set" ||
+    frame.action === "storage.remove"
+  ) {
+    if (context.storage === undefined) return { ok: false, error: ACTION_ERROR_UNKNOWN };
+    if (frame.action === "storage.get") {
+      const keys = frame.params["keys"];
+      if (!isStringArray(keys)) return { ok: false, error: ACTION_ERROR_UNKNOWN };
+      return { ok: true, result: { stored: await context.storage.get(keys) } };
+    }
+    if (frame.action === "storage.set") {
+      const data = frame.params["data"];
+      if (!isPlainObject(data)) return { ok: false, error: ACTION_ERROR_UNKNOWN };
+      await context.storage.set(data);
+      return { ok: true, result: { stored: data } };
+    }
+    const keys = frame.params["keys"];
+    if (!isStringArray(keys)) return { ok: false, error: ACTION_ERROR_UNKNOWN };
+    await context.storage.remove(keys);
+    return { ok: true, result: { removed: keys } };
   }
   return { ok: false, error: ACTION_ERROR_UNKNOWN }; // 名册有,扩展还没实现
 }

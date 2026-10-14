@@ -110,6 +110,32 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
     backoff: false,
     paced: false,
   },
+  // storage.local 的读写口(探针走消息流取持久态).豁免总开关,理由同 toggle.*:
+  // 关掉后探针仍要能读到闸与退避的现值,否则排查只能自己捅 storage.
+  "storage.get": {
+    run: null,
+    target: "null",
+    toggleExempt: true,
+    speak: false,
+    backoff: false,
+    paced: false,
+  },
+  "storage.set": {
+    run: null,
+    target: "null",
+    toggleExempt: true,
+    speak: false,
+    backoff: false,
+    paced: false,
+  },
+  "storage.remove": {
+    run: null,
+    target: "null",
+    toggleExempt: true,
+    speak: false,
+    backoff: false,
+    paced: false,
+  },
 
   // — 名册:内容脚本执行,target 要标签页 —
   "page.state": {

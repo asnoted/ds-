@@ -21,12 +21,12 @@
   uv run scripts/page-action.py toggles-off   # 测试环境:把深度思考,智能搜索都关掉
   uv run scripts/page-action.py evidence      # 存证对账:留档原件 vs 站点当前那一颗(ADR-0018)
 
-`send` 遇瞬时失败(`read-failed` / `page-changed` / `no-site-tab` / CDP 超时)不直接回错误:
-脚本自己排队,等限速时间到重发,`--attempts` 定总次数(默认 5).
+`send` / `storage` 遇瞬时失败(`read-failed` / `page-changed` / `no-site-tab` / CDP 超时)
+不直接回错误:脚本自己排队,等限速时间到重发,`--attempts` 定总次数(默认 5).
 
 两件只有探针知道的事(原先记在 AGENTS.md, 搬进来自带):
 
-1. `target: null` 只有 `tabs.list` 与 `toggle.*` 答得出. `page.state` /
+1. `target: null` 只有 `tabs.list` / `toggle.*` / `storage.*` 答得出. `page.state` /
    `composer.*` / `messages.*` / `chat.new` 要先 `tabs.list` 拿标签页 id 再带上,
    其余一律落 `ACTION_ERROR_UNKNOWN` -- **那是探针错了, 不是链子坏了**,
    别照着它去修扩展.
@@ -70,6 +70,20 @@ SITE_MATCH = os.environ.get("DSB_SITE_MATCH", "https://chat.deepseek.com/")
 
 #: 站点上的动作信封(与 `src/lib/channel.ts` 的 `ACTION_MESSAGE_TYPE` 同一份).
 ACTION_MESSAGE_TYPE = "ds-/action"
+
+#: `target: null` 的动作:由 background 的 `runAction` 就地执行(内容脚本名册里没有
+#: 它们),所以发法不同--`runtime.sendMessage` 直送 background.名单与文件头那句
+#: 知识,注册表里 `target` 恒为 null 的行逐字对应(`registry.test.ts` 守卫对拍).
+TARGET_NULL_ACTIONS = frozenset(
+    {
+        "tabs.list",
+        "toggle.get",
+        "toggle.set",
+        "storage.get",
+        "storage.set",
+        "storage.remove",
+    }
+)
 
 #: 默认动手前的随机等待区间(秒).用户 2026-10-04 拍板:"注意速率"--别把站点当
 #: 自己家机器连打,隔开一段,每次长度还不一样.
@@ -600,6 +614,12 @@ def ensure_extension_page() -> dict:
 
 
 def send_action(action: str, params: dict) -> object:
+    """发一帧动作,回 `parse_outcome` 之前的原始回包(多半是一段 JSON 字符串).
+
+    `TARGET_NULL_ACTIONS` 那族由 background 的 `runAction` 就地执行,内容脚本名册里
+    没有它们--走 `runtime.sendMessage` 从扩展页直送;其余仍 `tabs.sendMessage` 投进
+    站点标签页,在内容脚本的名册上就地跑(绕开三道闸,探针要能直接验执行器).
+    """
     ext = ensure_extension_page()
     frame = {
         "type": "action",
@@ -608,6 +628,17 @@ def send_action(action: str, params: dict) -> object:
         "params": params,
         "target": None,
     }
+    if action in TARGET_NULL_ACTIONS:
+        script = (
+            "(async () => {"
+            f"  const frame = {json.dumps(frame)};"
+            f"  const r = await chrome.runtime.sendMessage("
+            f"{{ type: {json.dumps(ACTION_MESSAGE_TYPE)}, frame }});"
+            "  if (r === undefined) return JSON.stringify({ error: 'no-reply' });"
+            "  return JSON.stringify(r);"
+            "})()"
+        )
+        return unwrap(run(ext["webSocketDebuggerUrl"], script, timeout=75.0))
     script = (
         "(async () => {"
         "  const tabs = await chrome.tabs.query({});"
@@ -693,28 +724,43 @@ def send_action_queued(
     return result  # 循环至少走一轮,到不了这里(类型兜底)
 
 
-def storage_op(op: str, keys_json: str, data_json: str) -> object:
-    """读写扩展 storage.local:开发探针要看 / 清退避这类持久态,从扩展页上下文发."""
-    ext = ensure_extension_page()
+def storage_op(
+    op: str,
+    keys_json: str,
+    data_json: str,
+    *,
+    attempts: int,
+    pace_spec: str | None,
+    no_pace: bool,
+) -> object:
+    """读写扩展 storage.local:走消息流的 `storage.*` 动作,不在扩展页上下文直接捅 API.
+
+    红线'应当走消息流'对探针同样算数;瞬时失败的排队重发与 `send` 同一条路.
+    """
     try:
         keys = json.loads(keys_json)
         data = json.loads(data_json)
     except json.JSONDecodeError as error:
         print(f"[page-action] --keys/--data 不是合法 JSON:{error}", file=sys.stderr)
         raise SystemExit(2) from error
-    if op == "get":
-        script = f"chrome.storage.local.get({json.dumps(keys)}).then((v) => JSON.stringify(v))"
-    elif op == "remove":
-        script = (
-            f"chrome.storage.local.remove({json.dumps(keys)})"
-            ".then(() => JSON.stringify({ ok: true }))"
-        )
+    if op == "set":
+        if not isinstance(data, dict):
+            print("[page-action] --data 必须是对象", file=sys.stderr)
+            raise SystemExit(2)
+        action, params = "storage.set", {"data": data}
     else:
-        script = (
-            f"chrome.storage.local.set({json.dumps(data)})"
-            ".then(() => JSON.stringify({ ok: true }))"
-        )
-    return unwrap(run(ext["webSocketDebuggerUrl"], script))
+        if not isinstance(keys, list) or not all(isinstance(key, str) for key in keys):
+            print("[page-action] --keys 必须是字符串数组", file=sys.stderr)
+            raise SystemExit(2)
+        action = "storage.get" if op == "get" else "storage.remove"
+        params = {"keys": keys}
+    return send_action_queued(
+        action,
+        params,
+        attempts=attempts,
+        pace_spec=pace_spec,
+        no_pace=no_pace,
+    )
 
 
 def unwrap(message: object) -> object:
@@ -905,7 +951,7 @@ def main() -> None:
     send = sub.add_parser("send", help="给 DeepSeek 标签页发一件页面动作")
     send.add_argument("action", help="动作名,如 button.get")
     send.add_argument("--params", default="{}", help="动作参数 JSON,默认 {}")
-    storage = sub.add_parser("storage", help="读写扩展 storage.local(开发探针)")
+    storage = sub.add_parser("storage", help="读写扩展 storage.local(走消息流 storage.*)")
     storage.add_argument("op", choices=["get", "set", "remove"], help="get 读 / set 写 / remove 删")
     storage.add_argument("--keys", default="[]", help="get / remove 的键数组(JSON)")
     storage.add_argument("--data", default="{}", help="set 的对象(JSON)")
@@ -1070,7 +1116,18 @@ def main() -> None:
 
     if args.command == "storage":
         print(
-            json.dumps(storage_op(args.op, args.keys, args.data), ensure_ascii=False, indent=2),
+            json.dumps(
+                storage_op(
+                    args.op,
+                    args.keys,
+                    args.data,
+                    attempts=args.attempts,
+                    pace_spec=args.pace,
+                    no_pace=args.no_pace,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            ),
         )
         return
 

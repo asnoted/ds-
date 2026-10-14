@@ -13,6 +13,7 @@ import { describeStop } from "../src/lib/continuation";
 import {
   actionRequestMessage,
   parseAccountReport,
+  parseActionRequest,
   parseAskClearedReport,
   parseAskReport,
   parseStopReport,
@@ -672,6 +673,16 @@ export default defineBackground(() => {
           return value;
         },
       },
+      // storage.local 读写口:探针走消息流取持久态,不再自己捅 storage.
+      storage: {
+        get: async (keys) => await browser.storage.local.get([...keys]),
+        set: async (data) => {
+          await browser.storage.local.set({ ...data });
+        },
+        remove: async (keys) => {
+          await browser.storage.local.remove([...keys]);
+        },
+      },
       // 带 target 的动作投进那个标签页:帧裹一层 ds-/action 送过去;
       // 标签页没了 / 内容脚本没注入(sendMessage 抛错)都折成 tab-gone,不冒泡.
       sendToTab: sendMessageSendToTab((tabId, frameToTab) =>
@@ -725,6 +736,13 @@ export default defineBackground(() => {
 
   // 隔离世界送来的围栏:打中继,把同构载荷原路交回.
   browser.runtime.onMessage.addListener((message, sender) => {
+    // 动作帧走 runtime 通道进来(探针 / 扩展页入口):`target: null` 那族(tabs.list /
+    // toggle.* / storage.*)只能在这儿就地执行,内容脚本的名册里没有它们.三道闸照走
+    // --`storage.*` 与 `toggle.*` 行上自带总开关豁免,读写退避现值不受开关自己挡.
+    const action = parseActionRequest(message);
+    if (action !== null) {
+      return actionContext().then((context) => runAction(action.frame, context));
+    }
     const request = parseSendRequest(message);
     if (request !== null) {
       // 围栏进来的动静、在途角标、图标结论、看门狗的落地动静全由处置 module 声明,
