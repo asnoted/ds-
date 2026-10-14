@@ -17,6 +17,13 @@
 | `toggles-off`                 | 测试环境关掉深度思考与智能搜索(`--debug` 会顺带跑)                   |
 | `evidence`                    | 存证对账:留档按钮原件 vs 站点当前(ADR-0018,只读,不进 `pnpm quality`) |
 
+独立探针脚本(不走 `page-action.py` 的名册路径):
+
+| 脚本                        | 干什么                                                      |
+| --------------------------- | ----------------------------------------------------------- |
+| `scripts/watchdog-probe.py` | 看门狗腿:造动静 + 等静默,判催办有没有真发(`silenceMs` 旋钮) |
+| `scripts/sw-cdp-probe.py`   | 最小复现:验 SW 的 CDP evaluate 与 console 事件通不通        |
+
 带调试口的环境是 `scripts/env-up.sh --debug`(会顺带跑 `toggles-off`).
 
 ## 逆向结论的去处
@@ -44,8 +51,10 @@
   - [ ] 人已在独立 profile 勾上"替人开口"(`storage get --keys '["speak"]'` 有键且为真)?
         没勾则 `send.page` 投递腿与看门狗催办**必然**回 `disabled` -- 那是闸,不是故障;
         agent 不许自授发言权,标 UNREACHABLE 后照常继续其余场景.
-  - [ ] 看门狗另有一道:探针至今没有触发入口(名册与 `page-action.py` 子命令都没有),
-        有闸也要人手动制造催办时机才能验.
+  - [ ] 看门狗另有一道:触发时机不是探针能直接造的(名册与 `page-action.py` 子命令都没有
+        催办入口),但 `scripts/watchdog-probe.py` 走的是 `watchdog.ts` 明写的 `silenceMs`
+        storage 旋钮 + 一条 `composer.read` chain 信封刷动静,然后等静默窗到点--**验完必须
+        把 `ds-/watchdog` 键删掉**(否则 1s 窗口留着,催办会一直刷).
 
 ## 开真机前先做这一步
 
@@ -78,6 +87,9 @@ uv run scripts/page-action.py --no-pace js 'String(window.fetch).includes("nativ
 - `--no-pace` / `--pace` 抓瞬态时用(生成中,思考期那种几秒的窗口),**必须连读**,
   否则限速下根本抓不到.放错位置 argparse 会拒绝,报错自己会说该放哪.
   `list` 只读本地目标清单,不等.
+- `send` 遇瞬时失败(`read-failed` / `page-changed` / `no-site-tab` / CDP 超时)不回错误给调用人:
+  脚本自己排队,照走限速后重发,`--attempts` 定总次数(默认 5,给 1 即不重发).
+  闸类(`disabled` / `backing-off`)**不重发**--那是人在管.
 
 ## 判据纪律
 
@@ -88,6 +100,10 @@ uv run scripts/page-action.py --no-pace js 'String(window.fetch).includes("nativ
   - **两个观测点只有一个有值时,那是观测漏了,不是事实**."0 帧 / 空"不能推出"没发生"
     (先把 `net` 的 `[]` 当成"前端拒发",推出了互相矛盾的结论 -- CDP `Network` 域漏抓,
     页内 XHR 钩子同时抓几千帧).
+  - **CDP 控制台事件只能靠等回包的 `call()` 顺路吃**(`scripts/watchdog-probe.py` 的
+    `Recorder`):`Runtime.consoleAPICalled` 在 enable 后就持续推,若 fire-and-forget
+    evaluate 后再单独 pump,那期间的事件已被 CDP 推走丢掉 -- 纯监听模式也录不到一行.
+    别把"录到 0 行"读成"没发生",先确认观测路通(`scripts/sw-cdp-probe.py` 有最小复现).
 - **真机结果只有一半可信时别硬下结论**:能交叉验证(`messages.list` 读角色 + 正文)就验;
   拿不到就在票里写明"间接证据"与"未验证项".
 - **不要凭印象重实现一个已经在生产里跑的定位器,再拿它当真值** -- 去用它.

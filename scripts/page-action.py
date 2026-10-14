@@ -21,6 +21,9 @@
   uv run scripts/page-action.py toggles-off   # 测试环境:把深度思考,智能搜索都关掉
   uv run scripts/page-action.py evidence      # 存证对账:留档原件 vs 站点当前那一颗(ADR-0018)
 
+`send` 遇瞬时失败(`read-failed` / `page-changed` / `no-site-tab` / CDP 超时)不直接回错误:
+脚本自己排队,等限速时间到重发,`--attempts` 定总次数(默认 5).
+
 两件只有探针知道的事(原先记在 AGENTS.md, 搬进来自带):
 
 1. `target: null` 只有 `tabs.list` 与 `toggle.*` 答得出. `page.state` /
@@ -622,6 +625,74 @@ def send_action(action: str, params: dict) -> object:
     return unwrap(result)
 
 
+#: 页面侧的瞬时失败码:排队等限速后重发. 闸类(`disabled` / `backing-off`)不在里面--
+#: 那是人在管,重发多少次都一样;`unknown-action` 是探针写错了动作名,重发只会原样再错.
+#: `cdp-timeout` 是探针自己折的(扩展页 75s 没答):多半是 SW 刚睡 / 页面正忙,下一拍通常就好.
+TRANSIENT_ERRORS = {"read-failed", "page-changed", "no-site-tab", "cdp-timeout"}
+
+
+def transient_error(result: object) -> str | None:
+    """是瞬时失败就回失败码,否则 None.
+
+    `unwrap` 拿到的是页面里 `JSON.stringify` 过的字符串,先解开再认.
+    """
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(result, dict):
+        return None
+    error = result.get("error")
+    if isinstance(error, str) and error in TRANSIENT_ERRORS and result.get("ok") is not True:
+        return error
+    return None
+
+
+def wake_service_worker(ext: dict) -> None:
+    """MV3 的 SW 空闲即睡,睡着时 `tabs.sendMessage` 会 reject(内容脚本的回程要过 SW).
+
+    重发前先叫醒它:`runtime.sendMessage` 一条 ping 就够,没人回话也照样把 SW 拉起来.
+    没有监听器会 reject,那是常态,吞掉.
+    """
+    run(ext["webSocketDebuggerUrl"], "chrome.runtime.sendMessage({dsWake:1}).catch(() => 0)", 10.0)
+
+
+def send_action_queued(
+    action: str,
+    params: dict,
+    *,
+    attempts: int,
+    pace_spec: str | None,
+    no_pace: bool,
+) -> object:
+    """瞬时失败不把错误直接抛回给调用人:脚本自己排队,等限速时间到再发.
+
+    页面忙 / DOM 刚重挂(`read-failed` / `page-changed`)这类失败下一拍通常就好,
+    挨过去比返回一个半途错误有用. 每次重发照走 `pace()`--排队本身就是限速的一部分.
+    `cdp-timeout` 这一支多半是 SW 睡了,重发前顺手 `wake_service_worker()` 叫醒它.
+    """
+    result: object = None
+    for attempt in range(1, attempts + 1):
+        try:
+            result = send_action(action, params)
+        except SystemExit as error:  # run() 把 CDP 超时折成 SystemExit(4)
+            if error.code != 4:
+                raise
+            result = {"ok": False, "error": "cdp-timeout"}
+        failure = transient_error(result)
+        if failure is None or attempt == attempts:
+            return result
+        print(
+            f"[page-action] {failure}:排队,等限速后重发({attempt}/{attempts - 1})",
+            file=sys.stderr,
+        )
+        if failure == "cdp-timeout":
+            wake_service_worker(ensure_extension_page())
+        pace(pace_spec, no_pace=no_pace)
+    return result  # 循环至少走一轮,到不了这里(类型兜底)
+
+
 def storage_op(op: str, keys_json: str, data_json: str) -> object:
     """读写扩展 storage.local:开发探针要看 / 清退避这类持久态,从扩展页上下文发."""
     ext = ensure_extension_page()
@@ -800,6 +871,13 @@ def main() -> None:
         help="动手前随机等 MIN..MAX 秒(默认 8..20;给 0 关闭;例:--pace 3,6)",
     )
     parser.add_argument("--no-pace", action="store_true", help="别等,立刻动手(默认是等的)")
+    parser.add_argument(
+        "--attempts",
+        type=int,
+        default=5,
+        metavar="N",
+        help="send 遇瞬时失败(read-failed 等)排队重发的总次数(默认 5;给 1 即不重发)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="列 CDP 目标")
     sub.add_parser("focus", help="把 DeepSeek 标签页置到前台(读页面列表前必须先来一下)")
@@ -851,6 +929,9 @@ def main() -> None:
         "--codes", action="store_true", help="另把同源 <script src> 正文下载到 codes/"
     )
     args = parser.parse_args()
+
+    if args.attempts < 1:
+        parser.error("--attempts 至少是 1(1 = 不重发)")
 
     require_cdp()
 
@@ -967,7 +1048,17 @@ def main() -> None:
             print("[page-action] --params 必须是对象", file=sys.stderr)
             raise SystemExit(2)
         print(
-            json.dumps(send_action(args.action, params), ensure_ascii=False, indent=2),
+            json.dumps(
+                send_action_queued(
+                    args.action,
+                    params,
+                    attempts=args.attempts,
+                    pace_spec=args.pace,
+                    no_pace=args.no_pace,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            ),
         )
         return
 
