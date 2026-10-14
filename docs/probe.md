@@ -104,6 +104,10 @@ uv run scripts/page-action.py --no-pace js 'String(window.fetch).includes("nativ
     `Recorder`):`Runtime.consoleAPICalled` 在 enable 后就持续推,若 fire-and-forget
     evaluate 后再单独 pump,那期间的事件已被 CDP 推走丢掉 -- 纯监听模式也录不到一行.
     别把"录到 0 行"读成"没发生",先确认观测路通(`scripts/sw-cdp-probe.py` 有最小复现).
+  - **enable 瞬间 CDP 会把 SW 缓冲的 console 整批回放**,一次上千行,跨数小时(实测
+    500+ 次探活的历史). **判定只认 enable 之后的行** -- 用 `consoleAPICalled` 的
+    `timestamp` 过滤(`watchdog-probe.py` 的 `realtime_lines`). 不过滤就会把历史催办
+    当成本轮证据,据此下的诊断是错的(#104 原描述即被它污染,已更正).
 - **真机结果只有一半可信时别硬下结论**:能交叉验证(`messages.list` 读角色 + 正文)就验;
   拿不到就在票里写明"间接证据"与"未验证项".
 - **不要凭印象重实现一个已经在生产里跑的定位器,再拿它当真值** -- 去用它.

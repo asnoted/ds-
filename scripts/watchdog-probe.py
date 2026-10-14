@@ -67,8 +67,37 @@ class Recorder:
 
     def __init__(self, ws: websockets.ClientConnection) -> None:
         self.ws = ws
-        self.lines: list[str] = []
+        self.events: list[tuple[float, str]] = []
         self._seq = 0
+
+    @property
+    def lines(self) -> list[str]:
+        return [text for _ts, text in self.events]
+
+    def realtime_lines(self, since_ms: float) -> list[str]:
+        """只要 `since_ms` 之后的行.
+
+        **必须过滤**:enable 的瞬间 CDP 会把 SW 缓冲的历史 console 整批回放
+        (实测一次能回放上千行,跨数小时),不过滤就会把上一轮探针的催办行
+        当成这一轮的判定(踩过:证据链被污染).
+        """
+        return [text for ts, text in self.events if ts >= since_ms]
+
+    def _record(self, message: dict) -> None:
+        method = message.get("method", "")
+        params = message.get("params", {})
+        if method == "Runtime.consoleAPICalled":
+            args = params.get("args", [])
+            value = args[0].get("value") if args else None
+            ts = float(params.get("timestamp", 0))
+            if isinstance(value, str) and value:
+                self.events.append((ts, value))
+        elif method == "Log.entryAdded":
+            entry = params.get("entry", {})
+            text = entry.get("text")
+            ts = float(entry.get("timestamp", 0))
+            if isinstance(text, str) and text:
+                self.events.append((ts, text))
 
     async def call(self, expr: str, timeout: float = 8.0) -> object:
         self._seq += 1
@@ -94,17 +123,7 @@ class Recorder:
             message = json.loads(raw)
             if message.get("id") == my_id:
                 return message
-            method = message.get("method", "")
-            params = message.get("params", {})
-            if method == "Runtime.consoleAPICalled":
-                args = params.get("args", [])
-                value = args[0].get("value") if args else None
-                if isinstance(value, str) and value:
-                    self.lines.append(value)
-            elif method == "Log.entryAdded":
-                text = params.get("entry", {}).get("text")
-                if isinstance(text, str) and text:
-                    self.lines.append(text)
+            self._record(message)
 
     async def pump(self, seconds: float) -> None:
         """不发命令,只在超时内吃事件(等静默那一段用)."""
@@ -117,18 +136,7 @@ class Recorder:
                 raw = await asyncio.wait_for(self.ws.recv(), timeout=remaining)
             except TimeoutError:
                 return
-            message = json.loads(raw)
-            method = message.get("method", "")
-            params = message.get("params", {})
-            if method == "Runtime.consoleAPICalled":
-                args = params.get("args", [])
-                value = args[0].get("value") if args else None
-                if isinstance(value, str) and value:
-                    self.lines.append(value)
-            elif method == "Log.entryAdded":
-                text = params.get("entry", {}).get("text")
-                if isinstance(text, str) and text:
-                    self.lines.append(text)
+            self._record(json.loads(raw))
 
 
 async def main() -> int:
@@ -148,6 +156,8 @@ async def main() -> int:
 
         await sw.call(f"chrome.storage.local.set({{'ds-/watchdog':{{'silenceMs':{SILENCE_MS}}}}})")
         await site.call(ACTIVITY_EXPR)
+        # 从这一刻起的 console 才算这一轮的证据(enable 瞬间的整批回放是历史,见 realtime_lines).
+        armed_at = time.time() * 1000
         print(
             f"[watchdog-probe] 存 silenceMs={SILENCE_MS},造动静,等催办({WAIT_SECS}s)...",
             flush=True,
@@ -156,13 +166,31 @@ async def main() -> int:
         await sw.pump(WAIT_SECS)
 
     lines = sw.lines
-    print(f"\n[watchdog-probe] 共录到 {len(lines)} 行 console/log", flush=True)
-    hits = [line for line in lines if "看门狗" in line]
-    print("=== 判定 ===")
-    if lines and not hits:
-        print("(录到的行里没有看门狗相关的,前几行:)")
-        for line in lines[:8]:
-            print(f"  全部| {line}")
+    live = sw.realtime_lines(armed_at)
+    print(
+        f"\n[watchdog-probe] 共录到 {len(lines)} 行,其中 {len(live)} 行是本轮实时"
+        "(其余为 enable 回放)",
+        flush=True,
+    )
+    if lines:
+        # 摘要:动静从哪来. 看门狗催办后页面若有回话/围栏,SW 会连带刷屏--
+        # 这正是"停手之后又开始催"的常见来源(真动静,不是催办自己刷窗).
+        tally: dict[str, int] = {}
+        for line in lines:
+            key = line[:40]
+            tally[key] = tally.get(key, 0) + 1
+        print("  高频前缀(含回放):", flush=True)
+        for key, count in sorted(tally.items(), key=lambda kv: -kv[1])[:5]:
+            print(f"    {count:4d}x {key}", flush=True)
+    hits = [line for line in live if "看门狗" in line]
+    nudges = sum(1 for line in live if "催办已发" in line)
+    stands = sum(1 for line in live if "停手" in line)
+    print("=== 判定(只认本轮实时行)===")
+    print(f"  实时催办 {nudges} 次 / 实时停手 {stands} 次")
+    if live and not hits:
+        print("(实时行里没有看门狗相关的,实时前几行:)")
+        for line in live[:8]:
+            print(f"  实时| {line}")
     for line in hits:
         print(f"  {line}")
     if any("催办已发" in line for line in hits):
