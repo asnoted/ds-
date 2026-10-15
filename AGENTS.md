@@ -53,7 +53,7 @@ DeepSeek 网页版的**浏览器扩展 + 本机 MCP 中继**(`dsb/`).扩展替�
 
 - 嵌入 pre-commit.
 
-### IMPORTANT
+## IMPORTANT
 
 - **本文件不写实现细节**
 - **禁止**绕过限速,**应当**走消息流
