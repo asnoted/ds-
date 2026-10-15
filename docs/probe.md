@@ -19,10 +19,10 @@
 
 独立探针脚本(不走 `page-action.py` 的名册路径):
 
-| 脚本                        | 干什么                                                      |
-| --------------------------- | ----------------------------------------------------------- |
-| `scripts/watchdog-probe.py` | 看门狗腿:造动静 + 等静默,判催办有没有真发(`silenceMs` 旋钮) |
-| `scripts/sw-cdp-probe.py`   | 最小复现:验 SW 的 CDP evaluate 与 console 事件通不通        |
+| 脚本                        | 干什么                                                                                                |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `scripts/watchdog-probe.py` | 看门狗腿:造动静 + 等静默,判催办有没有真发(`silenceMs` 旋钮);`--generating` 那腿验"生成相不插嘴"(#104) |
+| `scripts/sw-cdp-probe.py`   | 最小复现:验 SW 的 CDP evaluate 与 console 事件通不通                                                  |
 
 带调试口的环境是 `scripts/env-up.sh --debug`(会顺带跑 `toggles-off`).
 
@@ -39,10 +39,11 @@
 
 ## 探针够不着什么
 
-- **`target: null` 那条是产品链路的约定,探针够不着**:`tabs.list` 与 `toggle.*` 由
-  **background** 派发(`src/lib/action.ts`),而探针绕开 background 直接投内容脚本,
-  内容脚本的 `ACTION_ROSTER`(`entrypoints/content.ts`)里没有这两个.照约定去
-  `send toggle.set` 只会回 `unknown-action` -- **那是够不着,不是链子坏了**.
+- **`target: null` 那族走另一条路**:`tabs.list` / `toggle.*` / `storage.*` 由
+  **background** 的 `runAction` 就地执行(内容脚本的 `ACTION_ROSTER` 里没有它们),
+  `page-action.py` 因此对 `TARGET_NULL_ACTIONS` 那份名单改走 `runtime.sendMessage`
+  直送 background;照老路往站点标签页投只会回 `unknown-action` -- **那是路不对,
+  不是链子坏了**.
 - **本地工具(`send.page` 等)不在名册里**,只能注入 chain 信封触发,写法见
   `scripts/page-action.py` 的文件头.
 - **人做的有两件**:登录 DeepSeek,以及勾"替人开口".脚本只打印不代劳;没勾闸则写动作回
@@ -53,7 +54,8 @@
         agent 不许自授发言权,标 UNREACHABLE 后照常继续其余场景.
   - [ ] 看门狗另有一道:触发时机不是探针能直接造的(名册与 `page-action.py` 子命令都没有
         催办入口),但 `scripts/watchdog-probe.py` 走的是 `watchdog.ts` 明写的 `silenceMs`
-        storage 旋钮 + 一条 `composer.read` chain 信封刷动静,然后等静默窗到点--**验完必须
+        storage 旋钮 + 一条 `composer.read` chain 信封刷动静,然后等静默窗到点(`--generating`
+        那腿改投 `send.page` 造生成相,验"临催读圆键,生成中不插嘴" #104)--**验完必须
         把 `ds-/watchdog` 键删掉**(否则 1s 窗口留着,催办会一直刷).
 
 ## 开真机前先做这一步

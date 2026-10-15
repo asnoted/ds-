@@ -13,13 +13,16 @@
  * 动静多久",导航与投递都在 `background.ts` 里走真执行(单测只测决策,
  * 见 `watchdog.test.ts`).
  *
- * 两个边界:
+ * 三个边界:
  *
  * - **站外漂移看不见**:没有 tabs 权限,非本站标签页的 url 读不到--
  *   真机故障正是站内漂到新对话,那一档在扫的范围里;不为它扩权.
  * - **催办计数只认送出去的**:催办走与动作流同一套执行门(总开关 /
  *   替人发言 / 退避),闸拦着时这次不算催,下扫再试--所以决策层不动
  *   计数,由编排层按投递结果增.
+ * - **正在生成时不插嘴**(#104):临催前读一次圆键,在停止相就只把静默
+ *   窗口顺延(`watchdogSeenOutput`),不发消息也不动连催计数--输出多半是
+ *   催办自己惹来的回复,连计数一起清就成了"催办喂活自己的动静源".
  */
 
 import { pageSessionIdOf } from "./channel";
@@ -150,4 +153,16 @@ export function watchdogDecision(
  */
 export function watchdogSeenActivity(state: WatchdogState, now: number): WatchdogState {
   return { ...state, lastActivityAt: now, nudges: 0, stoodDown: false };
+}
+
+/**
+ * 页面正在输出(圆键在"停止"相):**只把静默窗口往后推**.
+ *
+ * 与 `watchdogSeenActivity` 的分家是 #104 的要害:输出证明页面活着,但那份
+ * 活多半是催办自己惹来的回复--连催计数与停手一起清,三次封顶就永远到不了.
+ * 所以这里不碰 `nudges` / `stoodDown`:靠输出续命的会话照旧会在连续三次
+ * 催办后停手,链子的真动静(围栏 / 回灌)才享有完整的复位.
+ */
+export function watchdogSeenOutput(state: WatchdogState, now: number): WatchdogState {
+  return { ...state, lastActivityAt: now };
 }

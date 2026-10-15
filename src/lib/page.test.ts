@@ -7,6 +7,7 @@ import { fixtureCases, type ActionCase } from "./fixtures";
 import {
   buttonClick,
   clearComposer,
+  isGenerating,
   listChats,
   newChat,
   pressEnter,
@@ -467,6 +468,18 @@ describe("那个圆键:button.get / button.click", () => {
     document.body.innerHTML = "<div>什么都没有</div>";
 
     expect(thrownCode(() => readButton(FRAME))).toBe(ACTION_ERROR_PAGE_CHANGED);
+  });
+
+  it("isGenerating:回话里 pressed=stop 才算正在生成(#104)", () => {
+    expect(isGenerating({ pressed: "stop" })).toBe(true);
+    expect(isGenerating({ pressed: "send" })).toBe(false);
+    expect(isGenerating({ pressed: "unknown" })).toBe(false); // 认不出 ≠ 在生成,催办照走
+  });
+
+  it("isGenerating:回话形状不对一律不算(看不见就别拿它拦催办)", () => {
+    for (const result of [{}, { pressed: 1 }, { pressed: null }, null, undefined, "stop"]) {
+      expect(isGenerating(result)).toBe(false);
+    }
   });
 
   it("button.click:方块态(生成中)照点 -- 那就是停止,页面自己的语义", () => {

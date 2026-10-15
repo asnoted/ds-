@@ -48,7 +48,7 @@ import {
 } from "../src/lib/icon";
 import { nextMessageId } from "../src/lib/id";
 import type { LocalTool, LocalToolEnv } from "../src/lib/localtools";
-import type { AccountState } from "../src/lib/page";
+import { type AccountState, isGenerating } from "../src/lib/page";
 import {
   FAILURE_RELAY_UNREACHABLE,
   MCP_CALL_TIMEOUT_MS,
@@ -89,6 +89,7 @@ import {
   readWatchdogConfig,
   watchdogDecision,
   watchdogSeenActivity,
+  watchdogSeenOutput,
   type WatchdogState,
 } from "../src/lib/watchdog";
 
@@ -403,8 +404,11 @@ export default defineBackground(() => {
    * 会在用户的输入框里留下半截"继续".跳过即不算催(计数不动),下扫再试.
    * 写步本身现在不受 speak 闸管(#52:只管发),所以这个判断必须在这里显式做.
    */
-  async function deliverNudge(tabId: number, text: string): Promise<boolean> {
-    const context = await actionContext();
+  async function deliverNudge(
+    tabId: number,
+    text: string,
+    context: ActionContext,
+  ): Promise<boolean> {
     if (!context.speak) {
       console.log('[ds-] "代你发言"闸关着,这次催办整个跳过(不留半截在输入框里)');
       return false;
@@ -420,6 +424,25 @@ export default defineBackground(() => {
       return false;
     }
     return (await runAction(frame("send.enter", {}), context)).ok;
+  }
+
+  /**
+   * 催办前的那道判读(#104):页面正在生成(圆键在"停止"相)就先别插嘴.
+   * `button.get` 是只读动作,不进 speak 闸;读不出来(键认不出 / 标签页
+   * 答不上)按"没观测到输出"处理,催办照旧走--看不见不等于它在说话.
+   */
+  async function pageIsGenerating(tabId: number, context: ActionContext): Promise<boolean> {
+    const outcome = await runAction(
+      {
+        type: "action",
+        id: nextMessageId("watchdog"),
+        action: "button.get",
+        params: {},
+        target: String(tabId),
+      },
+      context,
+    );
+    return outcome.ok && isGenerating(outcome.result);
   }
 
   /**
@@ -443,11 +466,12 @@ export default defineBackground(() => {
       }
       alive.add(tab.id);
       const before = watches.get(tab.id) ?? INITIAL_WATCHDOG_STATE;
+      const now = Date.now();
       const { act, next } = watchdogDecision(
         before,
         {
           tabUrl: tab.url,
-          now: Date.now(),
+          now,
         },
         config,
       );
@@ -460,14 +484,22 @@ export default defineBackground(() => {
           console.log("[ds-] 看门狗:导航回去没成", error);
         }
       } else if (act.kind === "nudge") {
-        const delivered = await deliverNudge(tab.id, act.text);
-        // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
-        watches.set(tab.id, delivered ? { ...next, nudges: next.nudges + 1 } : next);
-        console.log(
-          delivered
-            ? `[ds-] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
-            : "[ds-] 看门狗:催办没送出去(闸拦着或标签页答不上),不算催",
-        );
+        const context = await actionContext();
+        if (await pageIsGenerating(tab.id, context)) {
+          // 顺延窗口,但计数与停手原样带过:输出多半是催办惹来的回复,
+          // 连计数一起清就成了催办喂活自己(#104).
+          watches.set(tab.id, watchdogSeenOutput(next, now));
+          console.log(`[ds-] 看门狗:标签页 ${tab.id} 正在生成,本轮不催,静默窗口顺延`);
+        } else {
+          const delivered = await deliverNudge(tab.id, act.text, context);
+          // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
+          watches.set(tab.id, delivered ? { ...next, nudges: next.nudges + 1 } : next);
+          console.log(
+            delivered
+              ? `[ds-] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
+              : "[ds-] 看门狗:催办没送出去(闸拦着或标签页答不上),不算催",
+          );
+        }
       } else if (act.kind === "stand-down") {
         console.log(`[ds-] 看门狗:连催 ${config.maxNudges} 次无动静,停手`);
         recordFailure("watchdog", `连催 ${config.maxNudges} 次无动静`);

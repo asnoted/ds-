@@ -168,6 +168,17 @@ export function readButton(_frame: ActionFrame): { readonly pressed: Intent } {
   return { pressed: readIntent(el) };
 }
 
+/**
+ * `button.get` 回话 → 页面此刻正在生成(#104,看门狗催办前的那道判读).
+ *
+ * **只认圆键在"停止"相**;键认不出 / 回话形状不对都不算在生成--
+ * 看门狗不按看不见的东西行事:没观测到输出,催办照旧走.
+ */
+export function isGenerating(result: unknown): boolean {
+  if (typeof result !== "object" || result === null) return false;
+  return (result as { pressed?: unknown }).pressed === "stop";
+}
+
 /** 在写作框上按回车(站点自己也接这条路);键码补法那一份在 `composer.ts`. */
 export function pressEnter(_frame: ActionFrame): Record<string, never> {
   pressEnterKey(composerOrThrow());

@@ -6,6 +6,7 @@ import {
   readWatchdogConfig,
   watchdogDecision,
   watchdogSeenActivity,
+  watchdogSeenOutput,
   type WatchdogState,
 } from "./watchdog";
 
@@ -156,6 +157,45 @@ describe("watchdogDecision", () => {
       now: 5_000 + DEFAULT_WATCHDOG_CONFIG.silenceMs - 1,
     });
     expect(act).toEqual({ kind: "nothing" });
+  });
+
+  it("页面在输出:只顺延窗口,nudges 与停手原样(#104)", () => {
+    const state = armedState({ nudges: 2, stoodDown: true, lastActivityAt: 1 });
+    const next = watchdogSeenOutput(state, 5_000);
+    expect(next.lastActivityAt).toBe(5_000);
+    // 输出不是链子动静:催办计数不打折,停手只有围栏 / 回灌能解.
+    expect(next.nudges).toBe(2);
+    expect(next.stoodDown).toBe(true);
+    expect(next.sessionUrl).toBe(SESSION_URL);
+    // 顺延后未超窗 → 不动;超窗但停着 → 照旧不动(输出没把停手掀翻).
+    const { silenceMs } = DEFAULT_WATCHDOG_CONFIG;
+    expect(watchdogDecision(next, { tabUrl: SESSION_URL, now: 5_000 + silenceMs - 1 }).act).toEqual(
+      { kind: "nothing" },
+    );
+    expect(watchdogDecision(next, { tabUrl: SESSION_URL, now: 5_000 + silenceMs }).act).toEqual({
+      kind: "nothing",
+    });
+  });
+
+  it("每轮都靠输出顺延窗口,三次催办照样走到停手(#104)", () => {
+    const { silenceMs, maxNudges } = DEFAULT_WATCHDOG_CONFIG;
+    let state = armedState();
+    let now = 1_000;
+    const kinds: string[] = [];
+    for (let round = 0; round <= maxNudges; round += 1) {
+      now += silenceMs;
+      const decision = watchdogDecision(state, { tabUrl: SESSION_URL, now });
+      kinds.push(decision.act.kind);
+      state = decision.next;
+      if (decision.act.kind === "nudge") {
+        state = { ...state, nudges: state.nudges + 1 }; // 编排层:送出去了才增
+        now += 10;
+        state = watchdogSeenOutput(state, now); // 模型回了一段,输出把窗口顺延
+      }
+    }
+    // 顺延只推迟时刻,不吞计数:第三催之后的窗口仍到停手.
+    expect(kinds).toEqual(["nudge", "nudge", "nudge", "stand-down"]);
+    expect(state.stoodDown).toBe(true);
   });
 });
 

@@ -24,14 +24,26 @@ SW 侧操作都走 `call()`,它在等自己回包时把途经的 `Runtime.consol
   - 出现 `连催 ... 停手`   → 未完成(计数到顶)
   - 到时无催办行           → 未完成(静默没到点 / 没动静)
 
+`--generating`(生成相那条腿,#104):不投 `composer.read` 那条动静,改投 `send.page`
+要一篇长文 -- 页面进生成相,静默也到点,看门狗临催前读圆键应当改口 `本轮不催,静默窗口
+顺延`.这一腿的 `silenceMs` 给 10s(取舍在下面那行):投完到真正开写约 5s(pace 的 3~5s),
+窗口短于它就会在开写前到点,抢先催一条;窗口又必须短于闹钟周期(30s),否则等不到扫.
+
+判定(--generating):
+  - `本轮不催` ≥1 且 `催办已发` = 0 → 完成(生成相判读生效)
+  - 出现 `催办已发`                  → 未完成(开写前被抢先催,或判读没生效)
+  - 两者都没有                       → 未完成(没造出动静 / 没等到扫)
+
 用法:
   uv run scripts/watchdog-probe.py
+  uv run scripts/watchdog-probe.py --generating   # 验完删 ds-/watchdog 键
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import time
 import urllib.request
 from contextlib import AsyncExitStack
@@ -44,12 +56,41 @@ SITE_PREFIX = "https://chat.deepseek.com/"
 SILENCE_MS = 1000
 WAIT_SECS = 40
 
+#: 生成相那条腿(`--generating`)的窗口:开写要等 pace 的 3~5s,窗口短于它就会
+#: 在开写前到点抢先催;又必须短于健康闹钟的 30s 周期,否则等不到扫.
+GENERATE_SILENCE_MS = 10_000
+
+#: 长任务正文(同 `page-action.py stop-test` 的默认消息):写几十秒,盖得住一次扫描.
+GENERATE_TEXT = "请写一篇 3000 字的散文,主题是海边的灯塔,分段,慢慢写,一定要写满."
+
+#: 造动静 + 造生成的那条 chain 信封:本地工具 `send.page` 两步走动作流,
+#: 发完即回确认,页面随即进入生成相;它经 `fenceround` 的 `watchdog` 效果
+#: 刷动静时刻,所以这一腿不用再单独投 `composer.read`.
+GENERATE_EXPR = (
+    "window.postMessage({source:'ds-/chain',kind:'call',id:'probe-wd-generating',"
+    "calls:[JSON.stringify({tool:'send.page',arguments:{question:"
+    + json.dumps(GENERATE_TEXT)
+    + "}})]},'*');'sent'"
+)
+
 #: 一条无害的 chain 信封:本地工具 `composer.read` 只读写作框,不发送,不留痕.
 #: 投它走 `content.ts` → `background` → `fenceround.handle` → `watchdog` 效果 →
 #: `watchdogSeen` 刷动静时刻. 用本地工具而非中继工具:中继那腿要真网关在跑.
 ACTIVITY_EXPR = (
     "window.postMessage({source:'ds-/chain',kind:'call',id:'probe-wd-activity',"
     "calls:[JSON.stringify({tool:'composer.read',arguments:{}})]},'*');'sent'"
+)
+
+#: 生成相那条腿的采样:从 SW 问一次 `button.get`,把圆键读数留在时间线上 --
+#: 判"扫的那一刻页面在不在生成"要有当时的读数,不能只看最后谁对谁错.
+PHASE_EXPR = (
+    "(async()=>{const tabs=await chrome.tabs.query({});"
+    f"const t=tabs.find((x)=>x.url&&x.url.startsWith({json.dumps(SITE_PREFIX)}));"
+    "if(!t)return 'no-site-tab';"
+    "const frame={type:'action',id:'probe-wd-phase',action:'button.get',params:{},"
+    "target:String(t.id)};"
+    "const r=await chrome.tabs.sendMessage(t.id,{type:'ds-/action',frame});"
+    "return JSON.stringify(r);})()"
 )
 
 
@@ -139,7 +180,7 @@ class Recorder:
             self._record(json.loads(raw))
 
 
-async def main() -> int:
+async def main(generating: bool) -> int:
     sw_url = ws_url_of("service_worker", lambda u: "background.js" in u)
     site_url = ws_url_of("page", lambda u: u.startswith(SITE_PREFIX))
     async with AsyncExitStack() as stack:
@@ -154,16 +195,30 @@ async def main() -> int:
         value = baseline.get("result", {}).get("result", {}).get("value") if baseline else None
         print(f"[watchdog-probe] SW evaluate 基线: {value!r} (期望 'warmup')", flush=True)
 
-        await sw.call(f"chrome.storage.local.set({{'ds-/watchdog':{{'silenceMs':{SILENCE_MS}}}}})")
-        await site.call(ACTIVITY_EXPR)
+        silence = GENERATE_SILENCE_MS if generating else SILENCE_MS
+        await sw.call(f"chrome.storage.local.set({{'ds-/watchdog':{{'silenceMs':{silence}}}}})")
+        await site.call(GENERATE_EXPR if generating else ACTIVITY_EXPR)
         # 从这一刻起的 console 才算这一轮的证据(enable 瞬间的整批回放是历史,见 realtime_lines).
         armed_at = time.time() * 1000
         print(
-            f"[watchdog-probe] 存 silenceMs={SILENCE_MS},造动静,等催办({WAIT_SECS}s)...",
+            f"[watchdog-probe] 存 silenceMs={silence},"
+            + ("投 send.page 造生成" if generating else "造动静")
+            + f",等判定({WAIT_SECS}s)...",
             flush=True,
         )
-        # 静默窗口内不打 SW(免得 evaluate 的回包把事件吃掉却没记),只 pump.
-        await sw.pump(WAIT_SECS)
+        # 静默窗口内别乱打 SW:走 `call()` 是安全的(它等自己回包时顺路记 console,
+        # 见文件头).默认腿只 pump;生成相那条腿每 3s 采一次圆键读数,留成时间线 --
+        # "扫的那一刻页面在不在生成"要拿当时的读数说话,不能只看最后谁对谁错.
+        samples: list[tuple[float, str]] = []
+        if generating:
+            deadline = time.monotonic() + WAIT_SECS
+            while time.monotonic() < deadline:
+                await sw.pump(3.0)
+                phase = await sw.call(PHASE_EXPR, timeout=8.0)
+                got = phase.get("result", {}).get("result", {}).get("value")
+                samples.append((time.time() * 1000, str(got)))
+        else:
+            await sw.pump(WAIT_SECS)
 
     lines = sw.lines
     live = sw.realtime_lines(armed_at)
@@ -185,14 +240,35 @@ async def main() -> int:
     hits = [line for line in live if "看门狗" in line]
     nudges = sum(1 for line in live if "催办已发" in line)
     stands = sum(1 for line in live if "停手" in line)
+    skipped = sum(1 for line in live if "本轮不催" in line)
     print("=== 判定(只认本轮实时行)===")
-    print(f"  实时催办 {nudges} 次 / 实时停手 {stands} 次")
+    print(
+        f"  实时催办 {nudges} 次 / 实时停手 {stands} 次"
+        + (f" / 实时不催 {skipped} 次" if generating else "")
+    )
     if live and not hits:
         print("(实时行里没有看门狗相关的,实时前几行:)")
         for line in live[:8]:
             print(f"  实时| {line}")
     for line in hits:
         print(f"  {line}")
+    if generating:
+        print("  时间线(相对投 send.page 那一刻,采样=圆键读数):")
+        marks: list[tuple[float, str]] = [
+            (armed_at, "投 send.page"),
+            *((ts, f"圆键 {text}") for ts, text in samples),
+            *((ts, text) for ts, text in sw.events if ts >= armed_at and "看门狗" in text),
+        ]
+        for ts, text in sorted(marks):
+            print(f"    +{(ts - armed_at) / 1000:6.1f}s {text}")
+        if skipped >= 1 and nudges == 0:
+            print("结论: 生成相判读生效(临催读到停止相,顺延窗口不插嘴,#104)")
+            return 0
+        if nudges >= 1:
+            print("结论: 未完成(生成相里仍发了催办,或开写前被抢先催)")
+            return 2
+        print("结论: 未完成(没造出动静 / 没等到扫,控制台无判定行)")
+        return 2
     if any("催办已发" in line for line in hits):
         print("结论: 看门狗催办完成(speak 闸开着,写+发两步都过)")
         return 0
@@ -210,4 +286,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(asyncio.run(main("--generating" in sys.argv[1:])))
