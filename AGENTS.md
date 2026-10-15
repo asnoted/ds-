@@ -6,7 +6,7 @@ NEVER edit `AGENTS.md`; maintainers only.
 
 ## Tools
 
-All new tools go here. Use Jujutsu first.
+All new tools go here. Use jj first.
 
 ```sh
 scripts/env-up.sh                 # 幂等:起缺的,旧代码自动换,末尾打判据
