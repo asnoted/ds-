@@ -14,6 +14,7 @@ import {
   resultMessage,
   saidReportMessage,
   continuationFailReportMessage,
+  endTaskReportMessage,
   stopReportMessage,
   parseSendNote,
   sendNoteMessage,
@@ -25,6 +26,7 @@ import {
   type AskMessage,
   type CallMessage,
   type ContinuationFailMessage,
+  type EndTaskMessage,
   type SaidMessage,
   type StopMessage,
 } from "../src/lib/channel";
@@ -137,6 +139,17 @@ export default defineContentScript({
       }
     };
 
+    /** 任务收尾(这轮答复没有围栏):报给 background 收掉看门狗的那笔活(#104). */
+    const reportEndTask = async (end: EndTaskMessage): Promise<void> => {
+      try {
+        await browser.runtime.sendMessage(
+          endTaskReportMessage(end.id, pageSessionIdOf(location.href)),
+        );
+      } catch (error) {
+        console.log("[ds-] 任务收尾上报没有送出去", error);
+      }
+    };
+
     /** 续聊这一跳失败:报给 background 落一笔失败痕(#51),不进对话流. */
     const reportContinuationFail = async (fail: ContinuationFailMessage): Promise<void> => {
       try {
@@ -225,6 +238,10 @@ export default defineContentScript({
       }
       if (chain?.kind === "stop") {
         void reportStop(chain);
+        return;
+      }
+      if (chain?.kind === "end-task") {
+        void reportEndTask(chain);
         return;
       }
       if (chain?.kind === "continuation-fail") {

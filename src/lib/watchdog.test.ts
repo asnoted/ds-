@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WATCHDOG_CONFIG,
   INITIAL_WATCHDOG_STATE,
+  MAX_CONSECUTIVE_NUDGED_TASKS,
   readWatchdogConfig,
   watchdogDecision,
   observedOutput,
   watchdogSeenActivity,
-  watchdogSeenOutput,
+  watchdogSeenPassing,
+  watchdogTaskClosed,
   type WatchdogState,
 } from "./watchdog";
 
@@ -15,13 +17,16 @@ const SESSION_URL = "https://chat.deepseek.com/a/chat/s/sid-1";
 const OTHER_SESSION_URL = "https://chat.deepseek.com/a/chat/s/sid-2";
 const NEW_CHAT_URL = "https://chat.deepseek.com/";
 
-/** 一条记住过会话,且有过动静的状态. */
+/** 一条记住过会话、回灌落过地(所以活开着)、有过动静的状态. */
 function armedState(overrides: Partial<WatchdogState> = {}): WatchdogState {
   return {
     sessionUrl: SESSION_URL,
     lastActivityAt: 1_000,
+    taskOpen: true,
     nudges: 0,
     stoodDown: false,
+    nudgedTasks: 0,
+    sealed: false,
     ...overrides,
   };
 }
@@ -66,7 +71,7 @@ describe("watchdogDecision", () => {
     expect(act).toEqual({ kind: "nothing" });
   });
 
-  it("静默超窗 → 催办,正文取配置", () => {
+  it("活开着,静默超窗 → 催办,正文取配置", () => {
     const config = { ...DEFAULT_WATCHDOG_CONFIG, nudgeText: "还在吗" };
     const { act } = watchdogDecision(
       armedState(),
@@ -103,7 +108,15 @@ describe("watchdogDecision", () => {
     expect(act).toEqual({ kind: "nothing" });
   });
 
-  it("连催到上限 → 停手", () => {
+  it("活没收尾:再安静也不开口(任务门,#104)", () => {
+    const { act } = watchdogDecision(armedState({ taskOpen: false, nudgedTasks: 1 }), {
+      tabUrl: SESSION_URL,
+      now: Number.MAX_SAFE_INTEGER,
+    });
+    expect(act).toEqual({ kind: "nothing" });
+  });
+
+  it("本笔活连催到上限 → 停手", () => {
     const { act, next } = watchdogDecision(
       armedState({ nudges: DEFAULT_WATCHDOG_CONFIG.maxNudges }),
       { tabUrl: SESSION_URL, now: 1_000 + DEFAULT_WATCHDOG_CONFIG.silenceMs },
@@ -128,6 +141,19 @@ describe("watchdogDecision", () => {
     expect(act).toEqual({ kind: "navigate-back", url: SESSION_URL });
   });
 
+  it("已封(连续两笔活靠催办推进)→ 不催,但仍拉回", () => {
+    const silent = watchdogDecision(armedState({ sealed: true }), {
+      tabUrl: SESSION_URL,
+      now: 1_000 + DEFAULT_WATCHDOG_CONFIG.silenceMs,
+    });
+    expect(silent.act).toEqual({ kind: "nothing" });
+    const drifted = watchdogDecision(armedState({ sealed: true }), {
+      tabUrl: NEW_CHAT_URL,
+      now: 1_000,
+    });
+    expect(drifted.act).toEqual({ kind: "navigate-back", url: SESSION_URL });
+  });
+
   it("催办没送出去(计数未增)时再扫 → 又催", () => {
     // 编排层只在投递成功时增计数;决策层对原样状态重复给催,
     // 这就是"闸拦着不算催,下扫再试"的纯函数侧面.
@@ -140,7 +166,68 @@ describe("watchdogDecision", () => {
     expect(second.act).toEqual(first.act);
   });
 
-  it("动静落地:计数与停手清零,窗口重算", () => {
+  it("每轮都靠路过动静顺延窗口,满额的两催照样走到停手(#104)", () => {
+    const { silenceMs, maxNudges } = DEFAULT_WATCHDOG_CONFIG;
+    let state = armedState();
+    let now = 1_000;
+    const kinds: string[] = [];
+    for (let round = 0; round <= maxNudges; round += 1) {
+      now += silenceMs;
+      const decision = watchdogDecision(state, { tabUrl: SESSION_URL, now });
+      kinds.push(decision.act.kind);
+      state = decision.next;
+      if (decision.act.kind === "nudge") {
+        state = { ...state, nudges: state.nudges + 1 }; // 编排层:送出去了才增
+        now += 10;
+        state = watchdogSeenPassing(state, now); // 模型回了一段,输出把窗口顺延
+      }
+    }
+    // 顺延只推迟时刻,不吞计数:两催之后的窗口仍到停手.
+    expect(kinds).toEqual(["nudge", "nudge", "stand-down"]);
+    expect(state.stoodDown).toBe(true);
+  });
+
+  it("任务门一整圈:每笔活各有满额,连着两笔回催就封手(#104)", () => {
+    const { silenceMs, nudgeText } = DEFAULT_WATCHDOG_CONFIG;
+    let now = 1_000;
+    let state: WatchdogState = { ...INITIAL_WATCHDOG_STATE, sessionUrl: SESSION_URL };
+
+    /** 一笔活:回灌落地开活 → 静默连催到停手 → 收活结账. */
+    const runTask = (): void => {
+      state = watchdogSeenActivity(state, now);
+      for (;;) {
+        now += silenceMs;
+        const decision = watchdogDecision(state, { tabUrl: SESSION_URL, now });
+        state = decision.next;
+        if (decision.act.kind === "nudge") {
+          expect(decision.act).toEqual({ kind: "nudge", text: nudgeText });
+          state = { ...state, nudges: state.nudges + 1 };
+        } else {
+          expect(decision.act).toEqual({ kind: "stand-down" });
+          break;
+        }
+      }
+      state = watchdogTaskClosed(state);
+    };
+
+    runTask();
+    expect(state).toMatchObject({ taskOpen: false, nudgedTasks: 1, sealed: false });
+    runTask();
+    expect(state).toMatchObject({ taskOpen: false, nudgedTasks: 2, sealed: true });
+
+    // 封手后第三笔活照常开,但静默再久也一个字都不发.
+    state = watchdogSeenActivity(state, now);
+    const decision = watchdogDecision(state, {
+      tabUrl: SESSION_URL,
+      now: now + silenceMs,
+    });
+    expect(decision.act).toEqual({ kind: "nothing" });
+    expect(MAX_CONSECUTIVE_NUDGED_TASKS).toBe(2);
+  });
+});
+
+describe("回灌落地 / 路过动静 / 收活", () => {
+  it("活开着时落地:只刷窗口,预算与停手原样(按笔活算,#104)", () => {
     const stoodDown = armedState({
       nudges: DEFAULT_WATCHDOG_CONFIG.maxNudges,
       stoodDown: true,
@@ -148,25 +235,43 @@ describe("watchdogDecision", () => {
     });
     const next = watchdogSeenActivity(stoodDown, 5_000);
     expect(next.lastActivityAt).toBe(5_000);
-    expect(next.nudges).toBe(0);
-    expect(next.stoodDown).toBe(false);
+    expect(next.taskOpen).toBe(true);
+    // 同笔活里的第二次落地不解预算:催办惹来的回复解不开上限.
+    expect(next.nudges).toBe(DEFAULT_WATCHDOG_CONFIG.maxNudges);
+    expect(next.stoodDown).toBe(true);
     // 会话锚点不动.
     expect(next.sessionUrl).toBe(SESSION_URL);
-    // 清零后再扫:静默从新时刻算,未超窗 → 不动.
+    // 到顶的停手还在:超窗再扫也停着.
     const { act } = watchdogDecision(next, {
       tabUrl: SESSION_URL,
-      now: 5_000 + DEFAULT_WATCHDOG_CONFIG.silenceMs - 1,
+      now: 5_000 + DEFAULT_WATCHDOG_CONFIG.silenceMs,
     });
     expect(act).toEqual({ kind: "nothing" });
   });
 
-  it("页面在输出:只顺延窗口,nudges 与停手原样(#104)", () => {
-    const state = armedState({ nudges: 2, stoodDown: true, lastActivityAt: 1 });
-    const next = watchdogSeenOutput(state, 5_000);
+  it("收着尾时落地:开活,预算归零", () => {
+    const closed = armedState({ taskOpen: false, lastActivityAt: 1, nudgedTasks: 1 });
+    const next = watchdogSeenActivity(closed, 5_000);
+    expect(next.taskOpen).toBe(true);
+    expect(next.nudges).toBe(0);
+    expect(next.stoodDown).toBe(false);
     expect(next.lastActivityAt).toBe(5_000);
-    // 输出不是链子动静:催办计数不打折,停手只有围栏 / 回灌能解.
-    expect(next.nudges).toBe(2);
+    // 连续笔数是跨活的账,开活不动.
+    expect(next.nudgedTasks).toBe(1);
+    expect(next.sealed).toBe(false);
+  });
+
+  it("路过动静(生成 / 围栏出门 / 整轮作废):只顺延窗口(#104)", () => {
+    const state = armedState({
+      nudges: DEFAULT_WATCHDOG_CONFIG.maxNudges,
+      stoodDown: true,
+      lastActivityAt: 1,
+    });
+    const next = watchdogSeenPassing(state, 5_000);
+    expect(next.lastActivityAt).toBe(5_000);
+    expect(next.nudges).toBe(DEFAULT_WATCHDOG_CONFIG.maxNudges);
     expect(next.stoodDown).toBe(true);
+    expect(next.taskOpen).toBe(true);
     expect(next.sessionUrl).toBe(SESSION_URL);
     // 顺延后未超窗 → 不动;超窗但停着 → 照旧不动(输出没把停手掀翻).
     const { silenceMs } = DEFAULT_WATCHDOG_CONFIG;
@@ -178,7 +283,39 @@ describe("watchdogDecision", () => {
     });
   });
 
-  it("临催前的观察窗:一拍读到生成就不出手,读不到连看三拍(#104)", async () => {
+  it("收活结账:本笔活的连催与停手清零,回催过的笔数记进连续", () => {
+    const state = armedState({
+      nudges: DEFAULT_WATCHDOG_CONFIG.maxNudges,
+      stoodDown: true,
+      nudgedTasks: 1,
+    });
+    const next = watchdogTaskClosed(state);
+    expect(next.taskOpen).toBe(false);
+    expect(next.nudges).toBe(0);
+    expect(next.stoodDown).toBe(false);
+    expect(next.nudgedTasks).toBe(MAX_CONSECUTIVE_NUDGED_TASKS);
+    expect(next.sealed).toBe(true);
+  });
+
+  it("干净收尾的活:连续笔数清零", () => {
+    const next = watchdogTaskClosed(armedState({ nudgedTasks: 1 }));
+    expect(next.taskOpen).toBe(false);
+    expect(next.nudgedTasks).toBe(0);
+    expect(next.sealed).toBe(false);
+  });
+
+  it("收活幂等:活没收尾的不动,收过尾的原样返回", () => {
+    const closed = armedState({ taskOpen: false, nudgedTasks: 1 });
+    expect(watchdogTaskClosed(closed)).toBe(closed);
+    const open = armedState({ nudges: 1, nudgedTasks: 1 });
+    const next = watchdogTaskClosed(open);
+    expect(next).not.toBe(open);
+    expect(next.taskOpen).toBe(false);
+  });
+});
+
+describe("临催前的观察窗", () => {
+  it("一拍读到生成就不出手,读不到连看三拍(#104)", async () => {
     const gaps: number[] = [];
     const sleep = async (ms: number): Promise<void> => {
       gaps.push(ms);
@@ -194,27 +331,6 @@ describe("watchdogDecision", () => {
     expect(await observedOutput(async () => false, sleep)).toBe(false);
     expect(gaps).toHaveLength(4);
   });
-
-  it("每轮都靠输出顺延窗口,三次催办照样走到停手(#104)", () => {
-    const { silenceMs, maxNudges } = DEFAULT_WATCHDOG_CONFIG;
-    let state = armedState();
-    let now = 1_000;
-    const kinds: string[] = [];
-    for (let round = 0; round <= maxNudges; round += 1) {
-      now += silenceMs;
-      const decision = watchdogDecision(state, { tabUrl: SESSION_URL, now });
-      kinds.push(decision.act.kind);
-      state = decision.next;
-      if (decision.act.kind === "nudge") {
-        state = { ...state, nudges: state.nudges + 1 }; // 编排层:送出去了才增
-        now += 10;
-        state = watchdogSeenOutput(state, now); // 模型回了一段,输出把窗口顺延
-      }
-    }
-    // 顺延只推迟时刻,不吞计数:第三催之后的窗口仍到停手.
-    expect(kinds).toEqual(["nudge", "nudge", "nudge", "stand-down"]);
-    expect(state.stoodDown).toBe(true);
-  });
 });
 
 describe("readWatchdogConfig", () => {
@@ -225,9 +341,9 @@ describe("readWatchdogConfig", () => {
   });
 
   it("部分覆写,缺的落默认", () => {
-    expect(readWatchdogConfig({ maxNudges: 2 })).toEqual({
+    expect(readWatchdogConfig({ maxNudges: 5 })).toEqual({
       ...DEFAULT_WATCHDOG_CONFIG,
-      maxNudges: 2,
+      maxNudges: 5,
     });
   });
 

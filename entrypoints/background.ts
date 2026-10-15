@@ -17,6 +17,7 @@ import {
   parseAskClearedReport,
   parseAskReport,
   parseStopReport,
+  parseEndTaskReport,
   parseContinuationFailReport,
   parseSendRequest,
   parseSaidReport,
@@ -36,7 +37,12 @@ import {
   type FailureRecord,
   type FailureWhere,
 } from "../src/lib/failurelog";
-import { createFenceRound, type FenceRoundEffect, type RelayAnswer } from "../src/lib/fenceround";
+import {
+  createFenceRound,
+  type FenceRoundEffect,
+  type FenceRoundPhase,
+  type RelayAnswer,
+} from "../src/lib/fenceround";
 import {
   afterHealthProbe,
   badgeText,
@@ -90,7 +96,8 @@ import {
   watchdogDecision,
   observedOutput,
   watchdogSeenActivity,
-  watchdogSeenOutput,
+  watchdogSeenPassing,
+  watchdogTaskClosed,
   type WatchdogState,
 } from "../src/lib/watchdog";
 
@@ -387,13 +394,35 @@ export default defineBackground(() => {
   }
 
   /**
-   * 围栏(页面模型排出 send 围栏,围栏正文送进隔离世界)或回灌
-   * (答复送回内容脚本)落地:这是一条动静,刷新标签页的
-   * 动静时刻--连催计数与停手随之清零.时刻由围栏处置 module 的时钟带进来.
+   * 围栏动静落地(时刻由围栏处置 module 的时钟带进来):**答复落地**(`land`)
+   * = 回灌把结果交到模型手上,开一笔活(还没开就从这里开,预算归零);
+   * **围栏出门 / 整轮作废**(`out` / `void`)只顺延静默窗口,活与预算原样.
    */
-  function watchdogSeen(tabId: number, now: number): void {
+  function watchdogSeen(tabId: number, now: number, phase: FenceRoundPhase): void {
     const before = watches.get(tabId) ?? INITIAL_WATCHDOG_STATE;
-    watches.set(tabId, watchdogSeenActivity(before, now));
+    watches.set(
+      tabId,
+      phase === "land" ? watchdogSeenActivity(before, now) : watchdogSeenPassing(before, now),
+    );
+  }
+
+  /**
+   * 收活:内容脚本报"这轮答复没有围栏"(模型干净收尾),或续聊到顶停手--
+   * 结账:本笔活的连催与停手清零,这笔回催过就给连续笔数记一笔;
+   * 连续两笔都靠催办推进就封掉本武装期(#104),封的那一下照 ADR-0004
+   * 留一笔(环节 `watchdog`).没开过的活收到收尾是重复的,幂等.
+   */
+  function closeWatchdogTask(tabId: number, why: string): void {
+    const before = watches.get(tabId);
+    if (before === undefined) return;
+    const after = watchdogTaskClosed(before);
+    if (after === before) return;
+    watches.set(tabId, after);
+    console.log(`[ds-] 看门狗:${why},本笔活收尾`);
+    if (!before.sealed && after.sealed) {
+      recordFailure("watchdog", `连续 ${after.nudgedTasks} 笔活靠催办推进,本武装期停手`);
+      console.log(`[ds-] 看门狗:连续 ${after.nudgedTasks} 笔活都靠催办推进,封手到总开关关一次`);
+    }
   }
 
   /**
@@ -493,14 +522,24 @@ export default defineBackground(() => {
         const tabId = tab.id;
         const context = await actionContext();
         if (await observedOutput(() => pageIsGenerating(tabId, context), nap)) {
-          // 顺延窗口,但计数与停手原样带过:输出多半是催办惹来的回复,
-          // 连计数一起清就成了催办喂活自己(#104).
-          watches.set(tab.id, watchdogSeenOutput(next, now));
-          console.log(`[ds-] 看门狗:标签页 ${tab.id} 正在生成,本轮不催,静默窗口顺延`);
+          // 判读那几拍只顺延窗口,活与预算原样(这几拍里可能刚好收活,
+          // 别把旧账写回去):输出多半是催办惹来的回复,连预算一起清就成了
+          // 催办喂活自己的动静源(#104).
+          const fresh = watches.get(tabId) ?? next;
+          watches.set(tabId, watchdogSeenPassing(fresh, now));
+          console.log(`[ds-] 看门狗:标签页 ${tabId} 正在生成,本轮不催,静默窗口顺延`);
+        } else if (!(watches.get(tabId) ?? next).taskOpen) {
+          // 判读那几秒里模型正好干净收尾:活没了,没资格催(任务门).
+          console.log(`[ds-] 看门狗:标签页 ${tabId} 刚才收了活,本轮不催`);
         } else {
-          const delivered = await deliverNudge(tab.id, act.text, context);
+          const delivered = await deliverNudge(tabId, act.text, context);
           // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
-          watches.set(tab.id, delivered ? { ...next, nudges: next.nudges + 1 } : next);
+          // 投递途中可能刚好收活,按收活后的账记,别把开着的活写回去.
+          const latest = watches.get(tabId) ?? next;
+          watches.set(
+            tabId,
+            delivered && latest.taskOpen ? { ...latest, nudges: latest.nudges + 1 } : latest,
+          );
           console.log(
             delivered
               ? `[ds-] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
@@ -508,8 +547,8 @@ export default defineBackground(() => {
           );
         }
       } else if (act.kind === "stand-down") {
-        console.log(`[ds-] 看门狗:连催 ${config.maxNudges} 次无动静,停手`);
-        recordFailure("watchdog", `连催 ${config.maxNudges} 次无动静`);
+        console.log(`[ds-] 看门狗:本笔活连催 ${config.maxNudges} 次无动静,停手`);
+        recordFailure("watchdog", `本笔活连催 ${config.maxNudges} 次无动静`);
       }
     }
     // 关掉 / 离开本站的标签页不再扫:状态跟着标签页走,不留僵尸.
@@ -612,7 +651,7 @@ export default defineBackground(() => {
         applyOutcome(effect.payload, effect.cause);
         return;
       case "watchdog":
-        if (effect.tabId !== undefined) watchdogSeen(effect.tabId, effect.now);
+        if (effect.tabId !== undefined) watchdogSeen(effect.tabId, effect.now, effect.phase);
         return;
       case "log":
         console.log(`[ds-] ${effect.note}`);
@@ -770,6 +809,12 @@ export default defineBackground(() => {
   browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
     if (!(TOGGLE_STORAGE_KEY in changes)) return;
+    // 留一行痕:闹钟排没排、活清没清,看这行就知道跟着开关走了没有.
+    console.log(
+      `[ds-] 开关变了:排班与图标跟着走(${
+        readToggle(changes[TOGGLE_STORAGE_KEY].newValue) ? "开" : "关"
+      })`,
+    );
     void syncFromStorage();
   });
 
@@ -814,11 +859,22 @@ export default defineBackground(() => {
       return undefined;
     }
     // 续聊到顶停手(页面世界报的):不是故障而是刹车,但同样要留得下来
-    // --"怎么忽然不自动往下答了"得有个交代(ADR-0004).
+    // --"怎么忽然不自动往下答了"得有个交代(ADR-0004).停手也意味着我们
+    // 这一侧的参与到头了,看门狗那笔活一并收掉,别再往死里催(#104 任务门).
     const stop = parseStopReport(message);
     if (stop !== null) {
       console.log(`[ds-] 页面报停手:${stop.cause}`);
       recordFailure("rounds", describeStop(stop.cause));
+      const stopTabId = sender.tab?.id;
+      if (stopTabId !== undefined) closeWatchdogTask(stopTabId, "续聊到顶停手");
+      return undefined;
+    }
+    // 任务收尾(页面世界报的:这轮答复没有围栏 = 模型自己收了尾):给看门狗
+    // 结账--收活、记连续笔数,连续两笔都靠催办推进就封手(#104 任务门).
+    const ended = parseEndTaskReport(message);
+    if (ended !== null) {
+      const endedTabId = sender.tab?.id;
+      if (endedTabId !== undefined) closeWatchdogTask(endedTabId, "模型干净收尾");
       return undefined;
     }
     // 续聊这一跳失败(#51):发不出去,正文换不进去,钥匙不符...此前只有控制台

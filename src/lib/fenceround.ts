@@ -20,6 +20,12 @@ import { findLocalTool, type LocalTool } from "./localtools";
 import { MAX_CALLS_PER_ROUND, joinCallAnswers, type ToolAnswer, type ToolCall } from "./relay";
 import { errorPayload, isInjectableReply, okPayload, type ReplyPayload } from "./reply";
 
+/**
+ * 一次"动静"的三种来路:`out` 围栏出门、`void` 整轮作废、`land` 答复落地.
+ * 看门狗只有 `land` 拿来开一笔活(回灌真交出去了),另两种只顺延窗口.
+ */
+export type FenceRoundPhase = "out" | "void" | "land";
+
 /** 一轮围栏处置交给接线侧的效果:模块只声明与推送,执行(定时器 / browser API)在接线侧. */
 export type FenceRoundEffect =
   /** 在途角标:一块围栏出门到回话,转速跟着亮灭. */
@@ -28,8 +34,13 @@ export type FenceRoundEffect =
   | { readonly kind: "keep-alive"; readonly on: boolean }
   /** 图标结论:中继的回话(带 cause,失败留痕由接线侧落笔);只有中继路径才发. */
   | { readonly kind: "icon"; readonly payload: ReplyPayload; readonly cause: string | null }
-  /** 看门狗记忆:围栏出门与答复落地各记一条动静. */
-  | { readonly kind: "watchdog"; readonly tabId: number | undefined; readonly now: number }
+  /** 看门狗记忆:围栏出门、整轮作废、答复落地各记一条动静,phase 说得出是哪种. */
+  | {
+      readonly kind: "watchdog";
+      readonly tabId: number | undefined;
+      readonly now: number;
+      readonly phase: FenceRoundPhase;
+    }
   /** 只吭一声(不进失败痕)的说明,如本地工具的失败码. */
   | { readonly kind: "log"; readonly note: string };
 
@@ -150,14 +161,14 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
       deps.apply(effect);
     };
     // 围栏进了中继 = 页面模型排出了围栏;答复送回 = 回灌落地.两头各是一条动静.
-    emit({ kind: "watchdog", tabId, now: deps.now() });
+    emit({ kind: "watchdog", tabId, now: deps.now(), phase: "out" });
 
     const planned = calls.slice(0, MAX_CALLS_PER_ROUND);
     const answers: ToolAnswer[] = [];
     for (const call of planned) {
       const outcome = await sendCall(call, tabId, emit);
       if (!outcome.ok) {
-        emit({ kind: "watchdog", tabId, now: deps.now() }); // 整轮作废,答复(失败载荷)照样送回
+        emit({ kind: "watchdog", tabId, now: deps.now(), phase: "void" }); // 整轮作废,答复(失败载荷)照样送回
         return { payload: outcome.payload, effects };
       }
       answers.push(outcome.answer);
@@ -165,7 +176,7 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
 
     const dropped = calls.length - planned.length;
     const joined = joinCallAnswers(answers);
-    emit({ kind: "watchdog", tabId, now: deps.now() });
+    emit({ kind: "watchdog", tabId, now: deps.now(), phase: "land" });
     if (dropped <= 0) return { payload: okPayload(joined), effects };
     return {
       payload: okPayload(

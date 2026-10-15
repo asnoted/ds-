@@ -87,6 +87,17 @@ export type StopMessage = {
 };
 
 /**
+ * 页面世界报"这一轮答复没有围栏 = 任务收尾了"(`run.ts` 的 `endTask` 那一刻):
+ * 隔离世界原样转给 background 关掉看门狗的那笔活(#104 任务门).通知式,
+ * 不等回话,也不进对话流;没开过的活收尾是重复的,收信那层幂等.
+ */
+export type EndTaskMessage = {
+  readonly source: typeof CHAIN_MESSAGE_SOURCE;
+  readonly kind: "end-task";
+  readonly id: string;
+};
+
+/**
  * 页面世界报"续聊这一跳失败了"(#51):发不出去,正文换不进去,钥匙不符...
  * 报给 background 落一笔失败痕,悬停时回看得到.通知式,不等回话,不进对话流.
  *
@@ -127,6 +138,7 @@ export type ChainMessage =
   | SaidMessage
   | ToolsMessage
   | StopMessage
+  | EndTaskMessage
   | ContinuationFailMessage;
 
 export type SendRequest = {
@@ -148,6 +160,9 @@ export const ASK_CLEARED_MESSAGE_TYPE = "ds-/ask-cleared";
 
 /** 隔离世界 → background 的"续聊到顶停手"上报信封标记. */
 export const STOP_MESSAGE_TYPE = "ds-/stop";
+
+/** 隔离世界 → background 的"任务收尾"上报信封标记(#104 任务门). */
+export const END_TASK_MESSAGE_TYPE = "ds-/end-task";
 
 /** 隔离世界 → background 的"续聊这一跳失败了"上报信封标记(#51). */
 export const CONTINUATION_FAIL_MESSAGE_TYPE = "ds-/continuation-fail";
@@ -207,6 +222,13 @@ export type StopReport = {
   readonly type: typeof STOP_MESSAGE_TYPE;
   readonly id: string;
   readonly cause: string;
+  readonly page: string | null;
+};
+
+/** 隔离世界 → background 的任务收尾上报(#104 任务门):带页面会话 id 同款留痕. */
+export type EndTaskReport = {
+  readonly type: typeof END_TASK_MESSAGE_TYPE;
+  readonly id: string;
   readonly page: string | null;
 };
 
@@ -293,6 +315,11 @@ export function stopMessage(id: string, cause: string): StopMessage {
   return { source: CHAIN_MESSAGE_SOURCE, kind: "stop", id, cause };
 }
 
+/** 页面世界报"这一轮答复没有围栏,任务收尾"→ 隔离世界 → background 收活(#104). */
+export function endTaskMessage(id: string): EndTaskMessage {
+  return { source: CHAIN_MESSAGE_SOURCE, kind: "end-task", id };
+}
+
 /** 页面世界报"续聊这一跳失败"→ 隔离世界 → background 落失败痕(#51). */
 export function continuationFailMessage(id: string, cause: string): ContinuationFailMessage {
   return { source: CHAIN_MESSAGE_SOURCE, kind: "continuation-fail", id, cause };
@@ -347,6 +374,10 @@ export function stopReportMessage(
   page: string | null = null,
 ): StopReport {
   return { type: STOP_MESSAGE_TYPE, id, cause, page };
+}
+
+export function endTaskReportMessage(id: string, page: string | null = null): EndTaskReport {
+  return { type: END_TASK_MESSAGE_TYPE, id, page };
 }
 
 /** 页面世界报"续聊这一跳失败"→ 隔离世界 → background 落失败痕(#51). */
@@ -424,6 +455,9 @@ export function parseChainMessage(data: unknown): ChainMessage | null {
     if (!isValidText(cause)) return null;
     return stopMessage(id, cause);
   }
+  if (data["kind"] === "end-task") {
+    return endTaskMessage(id);
+  }
   if (data["kind"] === "continuation-fail") {
     const cause = data["cause"];
     if (!isValidText(cause)) return null;
@@ -485,6 +519,17 @@ export function parseStopReport(data: unknown): StopReport | null {
   const page = pageSessionOf(data);
   if (page === undefined) return null;
   return stopReportMessage(id, cause, page);
+}
+
+/** 认隔离世界 → background 的"任务收尾"上报(#104 任务门,同款). */
+export function parseEndTaskReport(data: unknown): EndTaskReport | null {
+  if (!isPlainObject(data)) return null;
+  if (data["type"] !== END_TASK_MESSAGE_TYPE) return null;
+  const id = data["id"];
+  if (!isValidId(id)) return null;
+  const page = pageSessionOf(data);
+  if (page === undefined) return null;
+  return endTaskReportMessage(id, page);
 }
 
 /** 认隔离世界 → background 的"续聊失败"上报(#51,同款). */

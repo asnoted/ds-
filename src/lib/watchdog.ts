@@ -5,13 +5,18 @@
  *
  * - 记住武装后标签页所在的会话 url,它一离开就把它导航回去(漂移是
  *   观察到的死因,所以先于静默处理);
- * - 距上次围栏 / 回灌超过静默窗口就往页面发一条催办(正文固定,可配);
- * - 连催到上限仍无动静就停手并留痕,不无限催;
+ * - **任务门**(#104):只有"活开着"才有催办资格--回灌把结果交给模型
+ *   开一笔活(`watchdogSeenActivity`),模型干净收尾(内容脚本报 end-task)
+ *   收掉它(`watchdogTaskClosed`);没事可做的会话结构上一个字都不会发;
+ * - 活开着且距上次动静超过静默窗口才催办:每笔活最多 `maxNudges` 条,
+ *   送满仍无动静就停手并留痕(ADR-0004);
+ * - **连续两笔活都靠催办推进就封掉本武装期**(#104 的兜底):不无限替人
+ *   开口,总开关关一次(watches 清空)才解;
  * - 总开关关掉即全停(闹钟与状态都由编排层清掉).
  *
  * 决策全是纯函数:编排层(service worker)只喂"此刻标签页在哪,距上次
- * 动静多久",导航与投递都在 `background.ts` 里走真执行(单测只测决策,
- * 见 `watchdog.test.ts`).
+ * 动静多久",开活 / 收活与投递在 `background.ts` 里走真执行(单测只测
+ * 决策与状态迁移,见 `watchdog.test.ts`).
  *
  * 三个边界:
  *
@@ -19,10 +24,11 @@
  *   真机故障正是站内漂到新对话,那一档在扫的范围里;不为它扩权.
  * - **催办计数只认送出去的**:催办走与动作流同一套执行门(总开关 /
  *   替人发言 / 退避),闸拦着时这次不算催,下扫再试--所以决策层不动
- *   计数,由编排层按投递结果增.
- * - **正在生成时不插嘴**(#104):临催前读一次圆键,在停止相就只把静默
- *   窗口顺延(`watchdogSeenOutput`),不发消息也不动连催计数--输出多半是
- *   催办自己惹来的回复,连计数一起清就成了"催办喂活自己的动静源".
+ *   计数,由编排层按投递结果增.计数与停手按**笔活**算:开活清零、收活
+ *   结账,围栏 / 回灌的动静**不**给预算打折--否则催办惹来的回复会把
+ *   上限永远解不开(催办喂活自己,#104).
+ * - **正在生成时不插嘴**(#104):临催前读圆键连看三拍,在停止相就只把
+ *   静默窗口顺延(`watchdogSeenPassing`),不发消息也不动连催计数.
  */
 
 import { pageSessionIdOf } from "./channel";
@@ -31,7 +37,7 @@ import { pageSessionIdOf } from "./channel";
 export type WatchdogConfig = {
   /** 静默窗口(毫秒):距上次围栏 / 回灌超过它才催办.默认 15 分钟. */
   readonly silenceMs: number;
-  /** 连催上限:送出去的催办累计到这么多次仍无动静就停手.默认 3 次. */
+  /** 每笔活的连催上限:送出去的催办累计到这么多次仍无动静就停手.默认 2 次. */
   readonly maxNudges: number;
   /** 催办正文:打进取页作框的那句.默认"继续". */
   readonly nudgeText: string;
@@ -39,9 +45,12 @@ export type WatchdogConfig = {
 
 export const DEFAULT_WATCHDOG_CONFIG: WatchdogConfig = {
   silenceMs: 15 * 60_000,
-  maxNudges: 3,
+  maxNudges: 2,
   nudgeText: "继续",
 };
+
+/** 连续几笔活都靠催办推进,本武装期就整个封掉(#104:不无限替人开口). */
+export const MAX_CONSECUTIVE_NUDGED_TASKS = 2;
 
 /** 存储键:存 `WatchdogConfig` 的部分覆写,缺的落默认. */
 export const WATCHDOG_CONFIG_STORAGE_KEY = "ds-/watchdog";
@@ -52,17 +61,26 @@ export type WatchdogState = {
   readonly sessionUrl: string | null;
   /** 上次围栏或回灌的时刻(毫秒);null = 武装后还没有动静. */
   readonly lastActivityAt: number | null;
-  /** 连催次数:上次动静以来送出去了几回催办. */
+  /** 活开着:回灌交了结果而模型还没干净收尾(收尾由内容脚本报 end-task). */
+  readonly taskOpen: boolean;
+  /** 本笔活已送出的催办;开活与收活时归零. */
   readonly nudges: number;
-  /** 已停手:连催到上限仍无动静,本武装期不再催(有动静才复位). */
+  /** 本笔活已停手:连催到上限仍无动静(开活时归零). */
   readonly stoodDown: boolean;
+  /** 连续几笔活是靠催办推进的;干净收尾的活把它清零. */
+  readonly nudgedTasks: number;
+  /** 本武装期已封:连续 `MAX_CONSECUTIVE_NUDGED_TASKS` 笔活都靠催办推进. */
+  readonly sealed: boolean;
 };
 
 export const INITIAL_WATCHDOG_STATE: WatchdogState = {
   sessionUrl: null,
   lastActivityAt: null,
+  taskOpen: false,
   nudges: 0,
   stoodDown: false,
+  nudgedTasks: 0,
+  sealed: false,
 };
 
 /** 看门狗的一次决定. */
@@ -107,8 +125,9 @@ export function readWatchdogConfig(raw: unknown): WatchdogConfig {
  * 一次扫描:给此刻的标签页现场,决定拉回 / 催办 / 停手 / 不动.
  *
  * 顺序按真机故障的因果排:先记住会话锚点,再修漂移(标签页离开了
- * 记住的会话--观察到的死因),最后判静默.`next` 里催办计数不增:
- * 送没送出去决策层不知道,那由编排层按投递结果增(见模块头"两个边界").
+ * 记住的会话--观察到的死因),最后判静默;静默里再过任务门:活没收尾
+ * 就没资格开口,封了就一个字都不发.`next` 里催办计数不增:
+ * 送没送出去决策层不知道,那由编排层按投递结果增(见模块头"三个边界").
  */
 export function watchdogDecision(
   state: WatchdogState,
@@ -137,7 +156,11 @@ export function watchdogDecision(
   }
   // 静默:距上次围栏 / 回灌超过窗口.还没动静过(null)谈不上静默.
   if (next.lastActivityAt !== null && facts.now - next.lastActivityAt >= config.silenceMs) {
-    if (next.stoodDown) return { act: { kind: "nothing" }, next };
+    // 任务门(#104):模型自己收尾了(end-task 上报)= 这条会话没事可做,
+    // 再安静也不开口--催出去的「继续」是纯垃圾,还会引它再回一句.
+    if (!next.taskOpen) return { act: { kind: "nothing" }, next };
+    // 已封(连续两笔活都靠催办推进)与本笔活已停手:都不再催.
+    if (next.sealed || next.stoodDown) return { act: { kind: "nothing" }, next };
     if (next.nudges >= config.maxNudges) {
       return { act: { kind: "stand-down" }, next: { ...next, stoodDown: true } };
     }
@@ -147,24 +170,49 @@ export function watchdogDecision(
 }
 
 /**
- * 围栏(页面模型排出 send 围栏,问句送进隔离世界)或回灌(答复送回
- * 内容脚本)落地:刷新动静时刻--连催计数与停手随之清零,本武装期
- * 的静默窗口重算.会话 url 不动:动静可能正来自被拉回后的会话.
+ * 回灌落地(答复送回内容脚本)= **开一笔活**:结果已经交到模型手上,
+ * 球在它那边;刷新动静时刻,收活前的连催预算从这里归零.
+ *
+ * 已经在活里(同笔活的第二次落地)只刷新时刻,不动预算--预算按笔活算,
+ * 给它打折就又回到"催办惹来的回复把上限解开"的老路(#104).
+ * 会话 url 不动:动静可能正来自被拉回后的会话.
  */
 export function watchdogSeenActivity(state: WatchdogState, now: number): WatchdogState {
-  return { ...state, lastActivityAt: now, nudges: 0, stoodDown: false };
+  const base: WatchdogState = { ...state, lastActivityAt: now };
+  if (state.taskOpen) return base;
+  return { ...base, taskOpen: true, nudges: 0, stoodDown: false };
 }
 
 /**
- * 页面正在输出(圆键在"停止"相):**只把静默窗口往后推**.
+ * **路过动静**:页面正在输出(圆键在"停止"相)、围栏出门、整轮作废--
+ * 都只把静默窗口往后推,既不改活也不动预算.
  *
- * 与 `watchdogSeenActivity` 的分家是 #104 的要害:输出证明页面活着,但那份
- * 活多半是催办自己惹来的回复--连催计数与停手一起清,三次封顶就永远到不了.
- * 所以这里不碰 `nudges` / `stoodDown`:靠输出续命的会话照旧会在连续三次
- * 催办后停手,链子的真动静(围栏 / 回灌)才享有完整的复位.
+ * 与 `watchdogSeenActivity` 的分家是 #104 的要害:这些动静证明页面活着,
+ * 但多半是催办自己惹来的回复--拿它解计数,三次封顶就永远到不了;
+ * 而"回灌交没交出去"才决定该不该有下一笔回催的资格.
  */
-export function watchdogSeenOutput(state: WatchdogState, now: number): WatchdogState {
+export function watchdogSeenPassing(state: WatchdogState, now: number): WatchdogState {
   return { ...state, lastActivityAt: now };
+}
+
+/**
+ * 收活(内容脚本报 end-task:这一轮答复没有围栏 = 模型干净收尾;续聊到顶
+ * 停手也算收活):**结账**--本笔活的连催与停手清零;这笔回催过就给
+ * `nudgedTasks` 记一笔(连续两笔封掉,#104),干净收尾的活把连续笔数清零.
+ *
+ * 活没收尾时收到收尾上报是重复的,原样返回(收活幂等,别把账记两遍).
+ */
+export function watchdogTaskClosed(state: WatchdogState): WatchdogState {
+  if (!state.taskOpen) return state;
+  const streak = state.nudges > 0 ? state.nudgedTasks + 1 : 0;
+  return {
+    ...state,
+    taskOpen: false,
+    nudges: 0,
+    stoodDown: false,
+    nudgedTasks: streak,
+    sealed: state.sealed || streak >= MAX_CONSECUTIVE_NUDGED_TASKS,
+  };
 }
 
 /** 临催前观察窗的形状:几拍采样,拍与拍之间隔多久(`observedOutput`). */

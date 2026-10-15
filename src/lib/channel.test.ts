@@ -25,11 +25,15 @@ import {
   parseChainMessage,
   parseSaidReport,
   parseStopReport,
+  parseEndTaskReport,
+  END_TASK_MESSAGE_TYPE,
   parseContinuationFailReport,
   CONTINUATION_FAIL_MESSAGE_TYPE,
   parseToolsRequest,
   parseToolsResponse,
   callMessage,
+  endTaskMessage,
+  endTaskReportMessage,
   resultMessage,
   saidMessage,
   saidReportMessage,
@@ -79,6 +83,30 @@ describe('停手信封(页面世界报"续聊到顶")', () => {
   it("别的 type 不抢这条消息", () => {
     expect(parseStopReport(saidReportMessage("说句话"))).toBeNull();
     expect(parseStopReport({ type: STOP_MESSAGE_TYPE, id: "", cause: "x" })).toBeNull();
+  });
+});
+
+describe('任务收尾信封(页面世界报"这轮答复没有围栏",#104)', () => {
+  it("页面世界 → 隔离世界:kind / id 对得上就收", () => {
+    const message = endTaskMessage("task-1");
+    expect(parseChainMessage(message)).toEqual(message);
+  });
+
+  it("id 缺的不收", () => {
+    expect(parseChainMessage({ source: CHAIN_MESSAGE_SOURCE, kind: "end-task" })).toBeNull();
+  });
+
+  it("隔离世界 → background:带上页面会话 id,缺省是 null", () => {
+    expect(parseEndTaskReport(endTaskReportMessage("task-1", "abc"))).toEqual(
+      endTaskReportMessage("task-1", "abc"),
+    );
+    expect(parseEndTaskReport(endTaskReportMessage("task-1"))?.page).toBeNull();
+    expect(parseEndTaskReport({ ...endTaskReportMessage("task-1"), page: "" })).toBeNull();
+  });
+
+  it("别的 type 不抢这条消息", () => {
+    expect(parseEndTaskReport(stopReportMessage("r", "x"))).toBeNull();
+    expect(parseEndTaskReport({ type: END_TASK_MESSAGE_TYPE, id: "" })).toBeNull();
   });
 });
 

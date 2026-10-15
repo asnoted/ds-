@@ -61,13 +61,13 @@ describe("在途角标与保活配对成效果", () => {
     await createFenceRound(h.deps).handle([callJson("read", { page: "x" })], 5);
 
     expect(h.effects).toEqual([
-      { kind: "watchdog", tabId: 5, now: 1_000 },
+      { kind: "watchdog", tabId: 5, now: 1_000, phase: "out" },
       { kind: "keep-alive", on: true },
       { kind: "in-flight", on: true },
       { kind: "icon", payload: okPayload("查到了"), cause: null },
       { kind: "in-flight", on: false },
       { kind: "keep-alive", on: false },
-      { kind: "watchdog", tabId: 5, now: 1_000 },
+      { kind: "watchdog", tabId: 5, now: 1_000, phase: "land" },
     ]);
   });
 
@@ -85,7 +85,7 @@ describe("在途角标与保活配对成效果", () => {
       payload: errorPayload(FAILURE_RELAY_UNREACHABLE),
       cause: "连接失败",
     });
-    expect(effects.at(-1)).toEqual({ kind: "watchdog", tabId: 5, now: 1_000 });
+    expect(effects.at(-1)).toEqual({ kind: "watchdog", tabId: 5, now: 1_000, phase: "void" });
   });
 
   it("本地工具失败只吭一声:在途角标照样配对,图标结论一条不发", async () => {

@@ -6,6 +6,7 @@ import {
   askMessage,
   callMessage,
   continuationFailMessage,
+  endTaskMessage,
   pageSessionIdOf,
   parseChainMessage,
   parseSendNote,
@@ -311,8 +312,11 @@ export default defineContentScript({
         pendingAsk = false;
         return;
       }
-      // 这一轮答复里没有围栏 = 任务收尾:轮数归零,下一次任务重新有满额.
+      // 这一轮答复里没有围栏 = 任务收尾:轮数归零,下一次任务重新有满额;
+      // 同时报 background 收掉看门狗的那笔活(#104 任务门)。没开过的活报收尾
+      // 是重复的,收信那层幂等,所以不看轮数一律报(没开活就没人等这条).
       run = endTask(run);
+      window.postMessage(endTaskMessage(nextMessageId("end-task")), "*");
       const ask = detectAskQuestion(raw);
       if (ask !== null) {
         pendingAsk = true;
