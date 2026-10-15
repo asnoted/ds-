@@ -5,6 +5,7 @@ import {
   INITIAL_WATCHDOG_STATE,
   readWatchdogConfig,
   watchdogDecision,
+  observedOutput,
   watchdogSeenActivity,
   watchdogSeenOutput,
   type WatchdogState,
@@ -175,6 +176,23 @@ describe("watchdogDecision", () => {
     expect(watchdogDecision(next, { tabUrl: SESSION_URL, now: 5_000 + silenceMs }).act).toEqual({
       kind: "nothing",
     });
+  });
+
+  it("临催前的观察窗:一拍读到生成就不出手,读不到连看三拍(#104)", async () => {
+    const gaps: number[] = [];
+    const sleep = async (ms: number): Promise<void> => {
+      gaps.push(ms);
+    };
+    // 第一拍就停着:立刻算生成,不白等.
+    expect(await observedOutput(async () => true, sleep)).toBe(true);
+    expect(gaps).toEqual([]);
+    // 空档里前两拍没读到,第三拍读到 → 仍算生成(这就是单拍采样会踩空的那一档).
+    const reads = [false, false, true];
+    expect(await observedOutput(async () => reads.shift() ?? false, sleep)).toBe(true);
+    expect(gaps).toHaveLength(2);
+    // 三拍都没读到 → 不算生成,催办照走.
+    expect(await observedOutput(async () => false, sleep)).toBe(false);
+    expect(gaps).toHaveLength(4);
   });
 
   it("每轮都靠输出顺延窗口,三次催办照样走到停手(#104)", () => {

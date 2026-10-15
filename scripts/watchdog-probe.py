@@ -29,10 +29,20 @@ SW 侧操作都走 `call()`,它在等自己回包时把途经的 `Runtime.consol
 顺延`.这一腿的 `silenceMs` 给 10s(取舍在下面那行):投完到真正开写约 5s(pace 的 3~5s),
 窗口短于它就会在开写前到点,抢先催一条;窗口又必须短于闹钟周期(30s),否则等不到扫.
 
+扫的相位是探活闹钟排死的(30s 一响,相位跟投递无关):干等实测两轮扫都落在 +40s,而生成只
+20s 出头,永远差一截,判据只能得出"没扫到生成相".所以投递前先读闹钟对表
+(`wait_for_sweep`),把投递摆在"下次响铃 - 18s";对表睡觉那段时间窗口先停长到 15 分钟,
+免得上一轮的静默尾巴被一次扫抢着催,白留催办.
+
+生成相采样 1s 一拍(`SAMPLE_SECS`),时间线只打相变.单拍采样踩过空档:流式输出里页面会在
+停止/发送两相之间抖出 2~3s 的空档,采样正好落在空档就得出"现在没在生成",催办打进跑着的
+会话(真机实测) -- 所以临催侧改成 `watchdog.observedOutput` 连看三拍(隔 2s,读到一次
+"停止"就不出手),这一腿的判据也按时间线说话,不只看谁对谁错.
+
 判定(--generating):
-  - `本轮不催` ≥1 且 `催办已发` = 0 → 完成(生成相判读生效)
-  - 出现 `催办已发`                  → 未完成(开写前被抢先催,或判读没生效)
-  - 两者都没有                       → 未完成(没造出动静 / 没等到扫)
+  - `本轮不催` ≥1 且没有催办前 5s 内还在读停止相 → 完成(观察窗兜住了空档)
+  - 有那样的催办           → 未完成(催办正落进生成空档,观察窗没兜住)
+  - `本轮不催` = 0          → 未完成(没造出生成 / 没等到扫)
 
 用法:
   uv run scripts/watchdog-probe.py
@@ -55,13 +65,31 @@ CDP = f"http://127.0.0.1:{PORT}"
 SITE_PREFIX = "https://chat.deepseek.com/"
 SILENCE_MS = 1000
 WAIT_SECS = 40
+#: 生成相采样间隔(秒):1s 一拍才看得清"停止/发送"之间那 2~3s 的空档,
+#: 3s 一拍会把空档拍没,判不出催办是不是正落在空档里.
+SAMPLE_SECS = 1.0
+#: 对表提前量(秒):把投递摆到"下一次扫"之前这么多秒 -- 扫早于静默到点是白扫,
+#: 扫晚于生成结束就只剩催办落空.扫的相位是固定死的(真机实测两轮都落在 40s,
+#: 而生成只 20s 出头,干等只能得出"没扫到生成相"),所以要读闹钟对表,别赌相位.
+SWEEP_LEAD_S = 18.0
+#: 看门狗搭的那趟探活闹钟的周期(`background.ts` 里写死 30s,是 alarms 的下限),
+#: 对表读不到时算"下下一次扫"用.
+ALARM_PERIOD_S = 30.0
+#: 探活闹钟名,与 `background.ts` 的 HEALTH_ALARM_NAME 保持一致.
+ALARM_EXPR = (
+    "(async()=>{const all=await chrome.alarms.getAll();"
+    "const h=all.find((x)=>x.name==='relay-health');"
+    "return h ? h.scheduledTime : 0;})()"
+)
 
 #: 生成相那条腿(`--generating`)的窗口:开写要等 pace 的 3~5s,窗口短于它就会
 #: 在开写前到点抢先催;又必须短于健康闹钟的 30s 周期,否则等不到扫.
 GENERATE_SILENCE_MS = 10_000
 
-#: 长任务正文(同 `page-action.py stop-test` 的默认消息):写几十秒,盖得住一次扫描.
-GENERATE_TEXT = "请写一篇 3000 字的散文,主题是海边的灯塔,分段,慢慢写,一定要写满."
+#: 长任务正文:生成要**盖得住投递后那次扫**(对表留 18s,见 SWEEP_LEAD_S),
+#: 留薄了就白等 -- 3000 字那档实测只写 17~24s,撞上开写延迟就没余量了.
+#: 比 `page-action.py stop-test` 的默认消息更长,原因就在这,别顺手改短.
+GENERATE_TEXT = "请写一篇 8000 字的散文,主题是海边的灯塔,分段,慢慢写,一定要写满."
 
 #: 造动静 + 造生成的那条 chain 信封:本地工具 `send.page` 两步走动作流,
 #: 发完即回确认,页面随即进入生成相;它经 `fenceround` 的 `watchdog` 效果
@@ -180,6 +208,23 @@ class Recorder:
             self._record(json.loads(raw))
 
 
+async def wait_for_sweep(sw: Recorder) -> float:
+    """读探活闹钟的下次响铃时刻,算出投递前该先睡多久;读不到(0 / 已过期)回 0.
+
+    算法:投递摆在 `下次响铃 - SWEEP_LEAD_S`;差得太近(不到 2s)就再等一个周期.
+    返回秒数,由调用方 `pump` 睡 -- 睡觉期间照样录 console.
+    """
+    res = await sw.call(ALARM_EXPR, timeout=8.0)
+    value = res.get("result", {}).get("result", {}).get("value") if res else 0
+    now = time.time() * 1000
+    if not isinstance(value, (int, float)) or value <= now:
+        return 0.0
+    send_at = value - SWEEP_LEAD_S * 1000
+    if send_at <= now + 2_000:
+        send_at += ALARM_PERIOD_S * 1000
+    return max(0.0, (send_at - now) / 1000)
+
+
 async def main(generating: bool) -> int:
     sw_url = ws_url_of("service_worker", lambda u: "background.js" in u)
     site_url = ws_url_of("page", lambda u: u.startswith(SITE_PREFIX))
@@ -196,6 +241,19 @@ async def main(generating: bool) -> int:
         print(f"[watchdog-probe] SW evaluate 基线: {value!r} (期望 'warmup')", flush=True)
 
         silence = GENERATE_SILENCE_MS if generating else SILENCE_MS
+        if generating:
+            # 对表先把窗口停长:睡的这一段里上一轮的静默尾巴还记着账,窗口短的话
+            # 这期间的一次扫就会抢着催,白留一条催办.睡够了再拧短,投递,
+            # 让那次扫正落在生成相里(见 SWEEP_LEAD_S).
+            await sw.call("chrome.storage.local.set({'ds-/watchdog':{'silenceMs':900000}})")
+            lead = await wait_for_sweep(sw)
+            if lead > 0:
+                print(
+                    f"[watchdog-probe] 对表:先睡 {lead:.0f}s,"
+                    f"让下一次扫落在投递后 {SWEEP_LEAD_S:.0f}s 处",
+                    flush=True,
+                )
+                await sw.pump(lead)
         await sw.call(f"chrome.storage.local.set({{'ds-/watchdog':{{'silenceMs':{silence}}}}})")
         await site.call(GENERATE_EXPR if generating else ACTIVITY_EXPR)
         # 从这一刻起的 console 才算这一轮的证据(enable 瞬间的整批回放是历史,见 realtime_lines).
@@ -207,13 +265,13 @@ async def main(generating: bool) -> int:
             flush=True,
         )
         # 静默窗口内别乱打 SW:走 `call()` 是安全的(它等自己回包时顺路记 console,
-        # 见文件头).默认腿只 pump;生成相那条腿每 3s 采一次圆键读数,留成时间线 --
+        # 见文件头).默认腿只 pump;生成相那条腿每 SAMPLE_SECS 采一次圆键读数,留成时间线 --
         # "扫的那一刻页面在不在生成"要拿当时的读数说话,不能只看最后谁对谁错.
         samples: list[tuple[float, str]] = []
         if generating:
             deadline = time.monotonic() + WAIT_SECS
             while time.monotonic() < deadline:
-                await sw.pump(3.0)
+                await sw.pump(SAMPLE_SECS)
                 phase = await sw.call(PHASE_EXPR, timeout=8.0)
                 got = phase.get("result", {}).get("result", {}).get("value")
                 samples.append((time.time() * 1000, str(got)))
@@ -253,21 +311,28 @@ async def main(generating: bool) -> int:
     for line in hits:
         print(f"  {line}")
     if generating:
-        print("  时间线(相对投 send.page 那一刻,采样=圆键读数):")
-        marks: list[tuple[float, str]] = [
-            (armed_at, "投 send.page"),
-            *((ts, f"圆键 {text}") for ts, text in samples),
-            *((ts, text) for ts, text in sw.events if ts >= armed_at and "看门狗" in text),
-        ]
+        # 时间线只打相变:1s 一拍打全量是噪音,相变才说得出空档从哪到哪.
+        prev = None
+        marks: list[tuple[float, str]] = [(armed_at, "投 send.page")]
+        for ts, text in samples:
+            phase = "stop" if '"stop"' in text else ("send" if '"send"' in text else text)
+            if phase != prev:
+                marks.append((ts, f"圆键→{phase}"))
+                prev = phase
+        marks.extend((ts, text) for ts, text in sw.events if ts >= armed_at and "看门狗" in text)
         for ts, text in sorted(marks):
             print(f"    +{(ts - armed_at) / 1000:6.1f}s {text}")
-        if skipped >= 1 and nudges == 0:
-            print("结论: 生成相判读生效(临催读到停止相,顺延窗口不插嘴,#104)")
+        # 催办前 5s 内还读到过停止相 = 正往生成里插消息(观察窗没兜住这一档).
+        stop_ts = [ts for ts, text in samples if '"stop"' in text]
+        nudge_ts = [ts for ts, text in sw.events if ts >= armed_at and "催办已发" in text]
+        bleeding = [n for n in nudge_ts if any(n - 5_000 <= s <= n for s in stop_ts)]
+        if skipped >= 1 and not bleeding:
+            print("结论: 生成相判读生效(扫到生成就顺延窗口不插嘴,没往生成里插催办,#104)")
             return 0
-        if nudges >= 1:
-            print("结论: 未完成(生成相里仍发了催办,或开写前被抢先催)")
+        if bleeding:
+            print(f"结论: 未完成({len(bleeding)} 次催办前 5s 内还在生成,观察窗没兜住)")
             return 2
-        print("结论: 未完成(没造出动静 / 没等到扫,控制台无判定行)")
+        print("结论: 未完成(没扫到生成相,控制台无本轮不催行)")
         return 2
     if any("催办已发" in line for line in hits):
         print("结论: 看门狗催办完成(speak 闸开着,写+发两步都过)")

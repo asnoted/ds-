@@ -166,3 +166,24 @@ export function watchdogSeenActivity(state: WatchdogState, now: number): Watchdo
 export function watchdogSeenOutput(state: WatchdogState, now: number): WatchdogState {
   return { ...state, lastActivityAt: now };
 }
+
+/** 临催前观察窗的形状:几拍采样,拍与拍之间隔多久(`observedOutput`). */
+const OUTPUT_WATCH_PASSES = 3;
+const OUTPUT_WATCH_GAP_MS = 2_000;
+
+/**
+ * 临催前看够再发(#104 真机复跑实测):生成相不是稳态--页面在流式输出里会从
+ * "停止"相抖回"发送"相,空档实测有 2~3s,单次采样正好落在空档,就会往跑着的
+ * 会话里插一条催办.几拍里只要有一页读到"停止"相就当它还在生成;
+ * 读不出来(键认不出 / 回话形状不对)不算--看不见不等于它在说话.
+ */
+export async function observedOutput(
+  read: () => Promise<boolean>,
+  sleep: (ms: number) => Promise<void>,
+): Promise<boolean> {
+  for (let pass = 0; pass < OUTPUT_WATCH_PASSES; pass += 1) {
+    if (pass > 0) await sleep(OUTPUT_WATCH_GAP_MS);
+    if (await read()) return true;
+  }
+  return false;
+}

@@ -88,6 +88,7 @@ import {
   WATCHDOG_CONFIG_STORAGE_KEY,
   readWatchdogConfig,
   watchdogDecision,
+  observedOutput,
   watchdogSeenActivity,
   watchdogSeenOutput,
   type WatchdogState,
@@ -430,9 +431,10 @@ export default defineBackground(() => {
    * 催办前的那道判读(#104):页面正在生成(圆键在"停止"相)就先别插嘴.
    * `button.get` 是只读动作,不进 speak 闸;读不出来(键认不出 / 标签页
    * 答不上)按"没观测到输出"处理,催办照旧走--看不见不等于它在说话.
+   * 单拍不够:生成相会在停止/发送两相之间抖,`observedOutput` 连看几拍再定.
    */
-  async function pageIsGenerating(tabId: number, context: ActionContext): Promise<boolean> {
-    const outcome = await runAction(
+  function pageIsGenerating(tabId: number, context: ActionContext): Promise<boolean> {
+    return runAction(
       {
         type: "action",
         id: nextMessageId("watchdog"),
@@ -441,8 +443,12 @@ export default defineBackground(() => {
         target: String(tabId),
       },
       context,
-    );
-    return outcome.ok && isGenerating(outcome.result);
+    ).then((outcome) => outcome.ok && isGenerating(outcome.result));
+  }
+
+  /** 观察窗的拍间隔计时(只在临催这条路用,等的就是拍与拍之间那一段). */
+  function nap(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -484,8 +490,9 @@ export default defineBackground(() => {
           console.log("[ds-] 看门狗:导航回去没成", error);
         }
       } else if (act.kind === "nudge") {
+        const tabId = tab.id;
         const context = await actionContext();
-        if (await pageIsGenerating(tab.id, context)) {
+        if (await observedOutput(() => pageIsGenerating(tabId, context), nap)) {
           // 顺延窗口,但计数与停手原样带过:输出多半是催办惹来的回复,
           // 连计数一起清就成了催办喂活自己(#104).
           watches.set(tab.id, watchdogSeenOutput(next, now));
