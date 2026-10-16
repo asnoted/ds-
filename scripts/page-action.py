@@ -52,6 +52,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import os
 import random
 import sys
@@ -85,9 +86,32 @@ TARGET_NULL_ACTIONS = frozenset(
     }
 )
 
-#: 默认动手前的随机等待区间(秒).用户 2026-10-04 拍板:"注意速率"--别把站点当
-#: 自己家机器连打,隔开一段,每次长度还不一样.
-PACE_DEFAULT = (8.0, 20.0)
+#: 唯一限速(ADR-0029):动手前的等待与扩展的发送限速是**同一条**--Beta(2,4),
+#: 3~15s,峰在 6s.规格住在共享 fixture 里,TS 与 Python 共读,漂移会被两边的测试抓住;
+#: `--pace MIN,MAX` 只剩人工排障的口子,默认路径永远走这一条.
+SEND_PACE_SPEC_FILE = REPO / "protocol" / "fixtures" / "send-pace.json"
+
+
+def load_send_pace_spec() -> dict:
+    return json.loads(SEND_PACE_SPEC_FILE.read_text(encoding="utf-8"))
+
+
+def draw_window_interval(spec: dict, rng=None) -> float:
+    """抽一个间隔(毫秒):sampleSize 个均匀数里第 sampleRank 小的那个,映射进 [minMs, maxMs].
+
+    与 `src/lib/outbound.ts` 的 drawWindowInterval 同一个算法(次序统计量采样,天然有界);
+    非有限的随机数按 0 处理,两半同语义.
+    """
+    if rng is None:
+        rng = random.random
+    draws = []
+    for _ in range(spec["sampleSize"]):
+        raw = rng()
+        draws.append(min(max(raw, 0.0), 1.0) if math.isfinite(raw) else 0.0)
+    draws.sort()
+    ratio = draws[spec["sampleRank"] - 1]
+    return spec["minMs"] + ratio * (spec["maxMs"] - spec["minMs"])
+
 
 #: 页面控件存证(ADR-0018):真机按钮原件.CI 对拍管"存证 ↔ 回归用例",这里管"站点 ↔ 存证".
 EVIDENCE_FILE = REPO / "protocol" / "evidence" / "controls.json"
@@ -96,12 +120,12 @@ EVIDENCE_FILE = REPO / "protocol" / "evidence" / "controls.json"
 def pace(spec: str | None, *, no_pace: bool = False) -> None:
     """动手前随机等一下(默认开,`--no-pace` 关,`--pace MIN,MAX` 自定义).
 
+    默认与扩展的发送限速**同一条**(唯一限速,ADR-0029):Beta(2,4),3~15s,峰在 6s.
     为什么固化进工具而不是每次手敲:这条纪律靠记性一定会漏,而漏了就是连打站点.
     随机而非固定时长,免得打出机器人的节奏.打印等待时长,方便复盘时对齐时间线.
     """
     if no_pace:
         return
-    low, high = PACE_DEFAULT
     if spec:
         parts = spec.split(",")
         try:
@@ -110,10 +134,12 @@ def pace(spec: str | None, *, no_pace: bool = False) -> None:
         except (ValueError, IndexError):
             print(f'[page-action] --pace 要"MIN,MAX"两个数:{spec}', file=sys.stderr)
             raise SystemExit(2) from None
-    low, high = min(low, high), max(low, high)
-    if high <= 0:
-        return
-    delay = random.uniform(low, high)
+        low, high = min(low, high), max(low, high)
+        if high <= 0:
+            return
+        delay = random.uniform(low, high)
+    else:
+        delay = draw_window_interval(load_send_pace_spec()) / 1000.0
     print(f"[page-action] 等 {delay:.1f}s 再动手(限速)", file=sys.stderr)
     time.sleep(delay)
 
@@ -914,7 +940,7 @@ def main() -> None:
         "--pace",
         default=None,
         metavar="MIN,MAX",
-        help="动手前随机等 MIN..MAX 秒(默认 8..20;给 0 关闭;例:--pace 3,6)",
+        help="动手前随机等 MIN..MAX 秒(默认唯一限速 Beta(2,4) 3~15s;给 0 关闭;例:--pace 3,6)",
     )
     parser.add_argument("--no-pace", action="store_true", help="别等,立刻动手(默认是等的)")
     parser.add_argument(

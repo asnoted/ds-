@@ -18,7 +18,7 @@ const random0 = () => 0;
 const random1 = () => 1;
 
 describe("发送限速的间隔与出站窗口同区间(#61)", () => {
-  it("抽出来的间隔落在 3~5 秒(沿用 outbound 的两个常量)", () => {
+  it("抽出来的间隔落在 3~15 秒(沿用 outbound 的常量,峰在 6 秒)", () => {
     const low = noteSend(newSendPace(), 0, random0);
     const high = noteSend(newSendPace(), 0, random1);
     expect(low.intervalMs).toBe(WINDOW_MIN_MS);

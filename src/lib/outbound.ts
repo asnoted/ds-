@@ -1,10 +1,16 @@
 /**
- * 出站窗口的计时逻辑(ADR-0002):窗口之间随机等 3~5 秒,到点才放行一次.
+ * 出站窗口的计时逻辑(ADR-0002 管开窗节奏,间隔分布由 ADR-0029 修订):
+ * 窗口之间抽 3~15 秒的 Beta(2,4) 间隔--6 秒处概率最大,3 与 15 两端密度趋于零.
  * clock 与 random 全部注入,函数本身不碰时间也不碰随机源.
  */
 
 export const WINDOW_MIN_MS = 3000;
-export const WINDOW_MAX_MS = 5000;
+export const WINDOW_MODE_MS = 6000;
+export const WINDOW_MAX_MS = 15000;
+
+/** 采样底数:Beta(2,4) = 5 个均匀数里第 2 小的那个(见 drawWindowInterval). */
+const WINDOW_SAMPLE_SIZE = 5;
+const WINDOW_SAMPLE_RANK = 2;
 
 export type OutboundWindow = {
   /** 上一次开窗时刻;null 表示还没开过窗. */
@@ -23,10 +29,22 @@ export function newOutboundWindow(): OutboundWindow {
   return { openedAt: null, intervalMs: 0 };
 }
 
-/** 抽下一次开窗间隔:random() ∈ [0, 1] → 3000~5000 毫秒. */
+/**
+ * 抽下一次开窗间隔:3~15 秒,6 秒处概率最大,两端(3 与 15)密度趋于零.
+ *
+ * 分布是 Beta(2,4)(ADR-0029):众数 (2-1)/(2+4-2)=1/4,落回区间正是
+ * 3 + 12×1/4 = 6 秒.采样不靠截断也不靠拒绝--**5 个均匀数里第 2 小的那个**
+ * 恰好服从 Beta(2,4)(第 k 个次序统计量 ~ Beta(k, n+1-k);k=2, n=5),
+ * 于是天然有界,越界与非有限的随机数仍夹进 [0,1] 后照常参与排序.
+ */
 export function drawWindowInterval(random: () => number): number {
-  const raw = random();
-  const ratio = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0;
+  const draws: number[] = [];
+  for (let index = 0; index < WINDOW_SAMPLE_SIZE; index += 1) {
+    const raw = random();
+    draws.push(Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0);
+  }
+  draws.sort((left, right) => left - right);
+  const ratio = draws[WINDOW_SAMPLE_RANK - 1] ?? 0;
   return Math.round(WINDOW_MIN_MS + ratio * (WINDOW_MAX_MS - WINDOW_MIN_MS));
 }
 

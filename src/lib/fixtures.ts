@@ -74,6 +74,22 @@ export type ReadFixtureFile = FixtureFile<ReadFootnoteCase> & {
   readonly readPageBudget: number;
 };
 
+/** 唯一限速的固定随机源用例(`send-pace.json`):抽样比率 u → 期望间隔. */
+export type SendPaceCase = {
+  readonly name: string;
+  readonly u: number;
+  readonly expectedMs: number;
+};
+
+/** 唯一限速的间隔规格(`send-pace.json`):全仓一条(ADR-0029),TS 与 Python 共读. */
+export type SendPaceFixtureFile = FixtureFile<SendPaceCase> & {
+  readonly minMs: number;
+  readonly modeMs: number;
+  readonly maxMs: number;
+  readonly sampleSize: number;
+  readonly sampleRank: number;
+};
+
 const MODULES = import.meta.glob<FixtureFile<unknown>>("../../protocol/fixtures/*.json", {
   eager: true,
   import: "default",

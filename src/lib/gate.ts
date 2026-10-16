@@ -38,7 +38,8 @@ export function newGate(): Gate {
 
 /**
  * 进队列.第一次有内容等窗口时,把"上一次开窗"记成此刻并抽一个间隔:
- * 首条回灌同样等一个 3~5 秒的窗口,出站节奏从第一条起就落在 ADR-0002 的区间里.
+ * 首条回灌同样等一个 3~15 秒(峰在 6 秒;ADR-0029 修订了 ADR-0002 的区间)的窗口,
+ * 出站节奏从第一条起就落在修订后的区间里.
  */
 export function enqueue(gate: Gate, message: string, now: number, random: () => number): Gate {
   const queue = [...gate.queue, message];

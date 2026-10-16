@@ -1,0 +1,16 @@
+{
+  "description": "唯一限速的间隔规格(ADR-0029):Beta(2,4) 落在 [minMs, maxMs],众数 modeMs;采样 = sampleSize 个均匀数里第 sampleRank 小的那个(常数源 u 下恒等于 u).扩展的发送限速/出站窗口与探针的动手节流(page-action)共用这一份,改这里就全仓一起改.",
+  "minMs": 3000,
+  "modeMs": 6000,
+  "maxMs": 15000,
+  "sampleSize": 5,
+  "sampleRank": 2,
+  "cases": [
+    { "name": "随机数 0 落在最小间隔", "u": 0.0, "expectedMs": 3000 },
+    { "name": "抽样比率 1/4 落在众数 6 秒", "u": 0.25, "expectedMs": 6000 },
+    { "name": "常数源 1/2 线性映射到区间中点", "u": 0.5, "expectedMs": 9000 },
+    { "name": "随机数 1 落在最大间隔", "u": 1.0, "expectedMs": 15000 },
+    { "name": "越界的负数夹进最小间隔", "u": -1.0, "expectedMs": 3000 },
+    { "name": "越界的正数夹进最大间隔", "u": 2.0, "expectedMs": 15000 }
+  ]
+}

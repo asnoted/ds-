@@ -9,7 +9,14 @@ from conftest import load_fixture, load_fixture_filenames
 
 from dsb import work
 
-EXPECTED_FILES = ["action.json", "config.json", "fence.json", "read.json", "reply.json"]
+EXPECTED_FILES = [
+    "action.json",
+    "config.json",
+    "fence.json",
+    "read.json",
+    "reply.json",
+    "send-pace.json",
+]
 REPLY_ANCHOR = "agent:"
 
 
@@ -64,6 +71,18 @@ def test_case_names_are_unique_within_each_file() -> None:
         names = [case["name"] for case in raw_cases(filename)]
         assert all(isinstance(name, str) and name for name in names)
         assert len(set(names)) == len(names), filename
+
+
+def test_send_pace_spec_is_coherent() -> None:
+    """唯一限速的规格自洽:众数在区间 (rank-1)/(size-1) 处,case 的期望间隔就是线性映射."""
+    spec = load_fixture("send-pace.json")
+    mode_ratio = (spec["sampleRank"] - 1) / (spec["sampleSize"] - 1)
+    assert spec["minMs"] + mode_ratio * (spec["maxMs"] - spec["minMs"]) == spec["modeMs"]
+    for case in raw_cases("send-pace.json"):
+        ratio = min(max(case["u"], 0.0), 1.0)
+        assert spec["minMs"] + ratio * (spec["maxMs"] - spec["minMs"]) == case["expectedMs"], case[
+            "name"
+        ]
 
 
 def test_fence_cases_are_coherent() -> None:

@@ -16,7 +16,14 @@ import { MAX_RESULT_CHARS } from "./continuation";
 import { protocolInstructions, READ_FOOTNOTE_TEMPLATES, READ_PAGE_LINES } from "./instructions";
 import { isKnownFailureKind, REPLY_ANCHOR } from "./reply";
 
-const EXPECTED_FILES = ["action.json", "config.json", "fence.json", "read.json", "reply.json"];
+const EXPECTED_FILES = [
+  "action.json",
+  "config.json",
+  "fence.json",
+  "read.json",
+  "reply.json",
+  "send-pace.json",
+];
 
 /** 配置只有一种解析分支:认端口 / 会话号那套已随问答后端废掉(ADR-0011). */
 const KNOWN_CONFIG_KINDS = ["value"];
@@ -50,7 +57,7 @@ function rawPayload(value: unknown): Record<string, unknown> {
 }
 
 describe("共享 fixture 完整性", () => {
-  it("四个 fixture 都在,且两半按同一份清单读", () => {
+  it("全部 fixture 都在,且两半按同一份清单读", () => {
     expect(FIXTURE_FILENAMES).toEqual(EXPECTED_FILES);
   });
 

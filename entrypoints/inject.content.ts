@@ -95,7 +95,7 @@ export default defineContentScript({
     let catalog: readonly ToolInfo[] | null = null;
 
     /**
-     * 发送限速(#61):自动续聊这一路的发送也归同一条 3~5 秒的线,与隔离世界那三条
+     * 发送限速(#61):自动续聊这一路的发送也归同一条 3~15 秒的线,与隔离世界那三条
      * (`send.enter` / 圆键 / `message.retry`)**合成一条**--靠 `send-note` 通报并时刻,
      * 不迁状态,不写 DOM 属性.
      */

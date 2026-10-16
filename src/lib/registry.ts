@@ -70,7 +70,7 @@ export type ActionRow = {
    * 新增写动作要显式记进来.
    */
   readonly backoff: boolean;
-  /** 发送限速(ADR-0022):与上一次发送之间要隔 3~5 秒的原语. */
+  /** 发送限速(ADR-0022 的线,ADR-0029 的分布):与上一次发送之间要隔 3~15 秒的原语. */
   readonly paced: boolean;
 };
 
@@ -399,5 +399,5 @@ export const SPEAK_GATED_ACTIONS: ReadonlySet<string> = actionNamesWhere((row) =
 /** 退避闸下的动作:会改变页面状态的那些(写动作 + 开启新对话);读不受管. */
 export const BACKOFF_GATED_ACTIONS: ReadonlySet<string> = actionNamesWhere((row) => row.backoff);
 
-/** 发送限速的原语(ADR-0022):三次发送之间要合成一条 3~5 秒线的那些. */
+/** 发送限速的原语(ADR-0022 的线,ADR-0029 的分布):三次发送之间要合成一条 3~15 秒线的那些. */
 export const SEND_PRIMITIVES: ReadonlySet<string> = actionNamesWhere((row) => row.paced);
