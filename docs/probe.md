@@ -15,6 +15,7 @@
 | `storage get\|set\|remove`    | 读写扩展 storage                                                           |
 | `capture` / `ax`              | 全量证据:HTML / CSS / 资源 / 行快照 / 可访问性树(`--codes` 另存站点脚本)   |
 | `visible-capture`             | 验扩展能否抓可见标签页(`--out` 落盘成 JPEG;现场帧的权限/体积判据,ADR-0030) |
+| `continue-click`              | 点站点自己的"继续生成"并验 `/chat/continue` 真发出去(真鼠标事件;票 #105)   |
 | `toggles-off`                 | 测试环境关掉深度思考与智能搜索(`--debug` 会顺带跑)                         |
 | `evidence`                    | 存证对账:留档按钮原件 vs 站点当前(ADR-0018,只读,不进 `pnpm quality`)       |
 
@@ -95,6 +96,10 @@ uv run scripts/page-action.py --no-pace js 'String(window.fetch).includes("nativ
 - `--no-pace` / `--pace` 抓瞬态时用(生成中,思考期那种几秒的窗口),**必须连读**,
   否则限速下根本抓不到.放错位置 argparse 会拒绝,报错自己会说该放哪.
   `list` 只读本地目标清单,不等.
+- **动作要发真事件**:`continue-click` 走 CDP `Input.dispatchMouseEvent`(按下 + 抬起),
+  页面收到的是与用户手点一样的东西(手势判定,`onClick` 都照常走);`js` 仍**只读**,
+  不许拿它去点控件或改状态.判据用**两个观测点**:出站请求 URL(CDP `Network` 域)与
+  页面行为(按钮消失 / 圆键进生成相);`Network` 域漏抓过,一边没有不当成"没发生".
 - **动手等待默认走唯一限速**(Beta(2,4),3~15s,峰在 6s;ADR-0029):探针与扩展的
   发送限速共用同一份规格(`protocol/fixtures/send-pace.json`),`--pace` 只是
   人工排障的口子,`--no-pace` 只准用于只读抓瞬态.

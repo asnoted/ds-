@@ -193,6 +193,31 @@ def capture_visible_js(quality: int) -> str:
     )
 
 
+#: 站点自己的"继续生成"按钮(#105):助手消息停在 INCOMPLETE 相,不在生成中,且是叶子时,
+#: 它长在最后一条消息底部(`/api/v0/chat/continue` 的入口).这里只**认**它,不点.
+CONTINUE_LOCATE_JS = """(() => {
+  const hit = Array.from(document.querySelectorAll('[role="button"]')).find(
+    (e) => (e.textContent || "").trim() === "继续生成" && e.getClientRects().length > 0,
+  );
+  if (!hit) return JSON.stringify({ found: false });
+  const r = hit.getBoundingClientRect();
+  const x = Math.round(r.left + r.width / 2);
+  const y = Math.round(r.top + r.height / 2);
+  return JSON.stringify({
+    found: true,
+    x,
+    y,
+    inView: y >= 0 && y <= innerHeight - 1 && x >= 0 && x <= innerWidth - 1,
+    viewport: { w: innerWidth, h: innerHeight,
+      cx: Math.round(innerWidth / 2), cy: Math.round(innerHeight / 2) },
+    cls: String(hit.className),
+    rect: { w: Math.round(r.width), h: Math.round(r.height) },
+  });
+})()"""
+
+#: 点下去发没发出去,另一个观测点是**行为**:按钮消失,圆键进生成相(与 `read` 同一判据).
+
+
 def extension_id() -> str:
     """未打包扩展的 id:取扩展目录绝对路径 SHA-256 前 16 字节,每半字节映到 a~p."""
     digest = hashlib.sha256(str(EXT_DIR).encode()).hexdigest()[:32]
@@ -598,6 +623,148 @@ def visible_capture(out_path: str, quality: int) -> int:
         result["bytes"] = len(payload)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok") else 1
+
+
+async def collect_requests(
+    ws_url: str, actions: list[tuple[str, dict]], seconds: float
+) -> list[str]:
+    """一条连接上发一串 CDP 命令,同时把期间的出站请求 URL 收下来.
+
+    `Network` 域在真机上**漏抓过**(见 `docs/probe.md` 的判据纪律),所以它只是一个观测点:
+    它说有就是有;它说没有,不能据此说"没发",还得看行为读数.
+    """
+    urls: list[str] = []
+    async with websockets.connect(ws_url, max_size=None) as ws:
+        await ws.send(json.dumps({"id": 1, "method": "Network.enable", "params": {}}))
+        while True:
+            message = json.loads(await ws.recv())
+            if message.get("id") == 1:
+                break
+        for index, (method, params) in enumerate(actions, start=2):
+            await ws.send(json.dumps({"id": index, "method": method, "params": params}))
+        deadline = time.monotonic() + seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+            except TimeoutError:
+                break
+            message = json.loads(raw)
+            if message.get("method") != "Network.requestWillBeSent":
+                continue
+            url = str((message.get("params") or {}).get("request", {}).get("url", ""))
+            if url and url not in urls:
+                urls.append(url)
+    return urls
+
+
+def continue_click(wait_seconds: float) -> int:
+    """点站点自己的'继续生成'(#105),验 `/api/v0/chat/continue` 真被发出去.
+
+    两处都和用户手点一样:**真鼠标事件**(CDP `Input.dispatchMouseEvent`,不是 DOM
+    `.click()`),以及把它滚进视口的**真滚轮**.判据用**两个观测点**:出站请求 URL
+    (`Network` 域)与页面行为(按钮消失 / 圆键进生成相).一边有一边没有,就照实报不一致,
+    不当成"没发生"(docs/probe.md 的判据纪律).
+    """
+    tab = ensure_site_tab()
+    ws = tab["webSocketDebuggerUrl"]
+    asyncio.run(call_cdp(ws, "Page.bringToFront"))
+    located = parse_outcome(unwrap(run(ws, CONTINUE_LOCATE_JS)))
+    if located.get("found") is not True:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": '没找到"继续生成":那条消息不在 INCOMPLETE 相(见票 #105 的触发面)',
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 1
+    # 按钮常长得比屏幕低(最后一条消息尾部).滚也要用真事件(滚轮),滚到它进视口再点.
+    viewport = located.get("viewport") or {}
+    wheeled = 0
+    while located.get("inView") is not True and wheeled < 12:
+        asyncio.run(
+            call_cdp(
+                ws,
+                "Input.dispatchMouseEvent",
+                {
+                    "type": "mouseWheel",
+                    "x": int(viewport.get("cx", 400)),
+                    "y": int(viewport.get("cy", 400)),
+                    "deltaX": 0,
+                    "deltaY": 800,
+                },
+            )
+        )
+        time.sleep(0.4)
+        located = parse_outcome(unwrap(run(ws, CONTINUE_LOCATE_JS)))
+        wheeled += 1
+    if located.get("found") is not True or located.get("inView") is not True:
+        print(
+            json.dumps(
+                {"ok": False, "error": "按钮没能滚进视口,没点", "wheeled": wheeled},
+                ensure_ascii=False,
+            )
+        )
+        return 1
+    before = read_state()
+    x, y = int(located["x"]), int(located["y"])
+    urls = asyncio.run(
+        collect_requests(
+            ws,
+            [
+                ("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y}),
+                (
+                    "Input.dispatchMouseEvent",
+                    {
+                        "type": "mousePressed",
+                        "x": x,
+                        "y": y,
+                        "button": "left",
+                        "buttons": 1,
+                        "clickCount": 1,
+                    },
+                ),
+                (
+                    "Input.dispatchMouseEvent",
+                    {
+                        "type": "mouseReleased",
+                        "x": x,
+                        "y": y,
+                        "button": "left",
+                        "buttons": 0,
+                        "clickCount": 1,
+                    },
+                ),
+            ],
+            wait_seconds,
+        )
+    )
+    after = read_state()
+    again = parse_outcome(unwrap(run(ws, CONTINUE_LOCATE_JS)))
+    continued = [url for url in urls if "/chat/continue" in url]
+    generating = (after.get("stopDetect") or {}).get("isStop") is True
+    button_gone = again.get("found") is not True
+    went_out = bool(continued) or (button_gone and generating)
+    result: dict = {
+        "ok": went_out,
+        "clicked": {"x": x, "y": y, "cls": located["cls"]},
+        "wheeled": wheeled,
+        "requests": [url.split("?")[0] for url in urls],
+        "continueRequests": [url.split("?")[0] for url in continued],
+        "buttonGoneAfterClick": button_gone,
+        "generatingAfterClick": generating,
+        "circleBefore": (before.get("stopDetect") or {}).get("isStop"),
+        "circleAfter": (after.get("stopDetect") or {}).get("isStop"),
+    }
+    if not continued and went_out:
+        result["note"] = "网络那个观测点没看到 /chat/continue,但行为侧已进生成相(Network 域漏抓)"
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if went_out else 1
 
 
 def capture(out_dir: str, want_codes: bool) -> None:
@@ -1050,6 +1217,11 @@ def main() -> None:
     )
     shot.add_argument("--out", default="", help="把这一帧写到该路径(JPEG;默认不落盘)")
     shot.add_argument("--quality", type=int, default=60, help="JPEG 质量 0-100,默认 60")
+    cont = sub.add_parser(
+        "continue-click",
+        help='点站点自己的"继续生成"并验 /chat/continue 真发出去(真鼠标事件;票 #105)',
+    )
+    cont.add_argument("--wait", type=float, default=8.0, help="点完等多少秒再读资源时序,默认 8")
     capture_parser = sub.add_parser(
         "capture", help="抓全量证据:完整 HTML / 同源 CSS / 资源清单 / 行快照 / 无障碍树"
     )
@@ -1077,6 +1249,9 @@ def main() -> None:
 
     if args.command == "visible-capture":
         raise SystemExit(visible_capture(args.out, args.quality))
+
+    if args.command == "continue-click":
+        raise SystemExit(continue_click(args.wait))
 
     if args.command == "focus":
         # DeepSeek 标签页必须留在**前台**:后台标签页被浏览器节流,虚拟列表不挂行,
