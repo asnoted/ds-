@@ -625,6 +625,44 @@ def visible_capture(out_path: str, quality: int) -> int:
     return 0 if result.get("ok") else 1
 
 
+async def reload_and_wait(ws_url: str, timeout: float = 10.0) -> bool:
+    """重载这一页, 等 `Page.loadEventFired` 到了才回(拿事件当准, 不等固定秒数)."""
+    async with websockets.connect(ws_url, max_size=None) as ws:
+        await ws.send(json.dumps({"id": 1, "method": "Page.enable"}))
+        while True:
+            if json.loads(await asyncio.wait_for(ws.recv(), timeout=timeout)).get("id") == 1:
+                break
+        await ws.send(json.dumps({"id": 2, "method": "Page.reload", "params": {}}))
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+            except TimeoutError:
+                return False
+            if json.loads(raw).get("method") == "Page.loadEventFired":
+                return True
+
+
+def ext_js(expression: str, *, reload_page: bool = False) -> int:
+    """在**扩展页上下文**里跑一段只读 JS(`chrome.*` 只在这一层有).
+
+    `--reload` 先把这一页重载再跑: 选项页那种**照 storage 渲染**的页, 不重载读到的
+    是上一轮的 DOM -- 那是判据自污染里最像"验过了"的一种. 页面自己要等的部分(比如
+    storage 读要等 load 之后才回来)在**表达式里**等: 表达式回的 promise 会被等到有值,
+    工具不猜该睡几秒.
+    """
+    ext = ensure_extension_page()
+    ws_url = ext["webSocketDebuggerUrl"]
+    if reload_page and not asyncio.run(reload_and_wait(ws_url)):
+        print("[page-action] 扩展页重载没等到 loadEventFired", file=sys.stderr)
+        raise SystemExit(5)
+    print(json.dumps(unwrap(run(ws_url, expression)), ensure_ascii=False, indent=2))
+    return 0
+
+
 async def collect_requests(
     ws_url: str, actions: list[tuple[str, dict]], seconds: float
 ) -> list[str]:
@@ -1186,6 +1224,17 @@ def main() -> None:
     sub.add_parser("read", help="读 DeepSeek 页面状态")
     js = sub.add_parser("js", help="在 DeepSeek 页面上下文里跑一段只读 JS,打印结果")
     js.add_argument("expression", help="要 evaluate 的 JS 表达式(建议用 IIFE 返回字符串)")
+    ext_js_parser = sub.add_parser(
+        "ext-js", help="在扩展页(options)上下文里跑一段只读 JS;--reload 先重载这一页"
+    )
+    ext_js_parser.add_argument(
+        "expression", help="要 evaluate 的 JS 表达式(建议用 IIFE 返回字符串)"
+    )
+    ext_js_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="先重载扩展页再跑:读照 storage 渲染的 DOM 必须先来一下,否则读到上一轮",
+    )
     stop_test = sub.add_parser("stop-test", help="端到端验 button.click:起生成→等停止键→点→等复位")
     stop_test.add_argument(
         "--text",
@@ -1318,6 +1367,9 @@ def main() -> None:
             )
         )
         return
+
+    if args.command == "ext-js":
+        raise SystemExit(ext_js(args.expression, reload_page=args.reload))
 
     if args.command == "stop-test":
         report: dict = {}
