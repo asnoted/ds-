@@ -116,6 +116,12 @@ CONTINUATION_MARKER = "agent:\n继续"
 #: 等"自动续的那一轮也发出去"的秒数上限:工具结果从进队列到发出去要过唯一限速(最长 15 秒).
 SEND_PAGE_CONTINUE_WAIT = 20.0
 
+#: 打字前先盯写作框空多久.扩展的自动续聊是**先写短标记,再待限速,最后按发送**--
+#: 那段待限速就是它压在写作框里的窗口(最长 15 秒);探针这时候打字会把它顶掉,
+#: 它出站那一刻认不回自己的标记,就记一笔 `key-mismatch` 失败痕(真机上撞过一次).
+#: 这一等也是给**人**让路:写作框里有你正在打的字,探针就不碰.
+SEND_PAGE_IDLE_WATCH = 6.0
+
 #: `target: null` 的动作:由 background 的 `runAction` 就地执行(内容脚本名册里没有
 #: 它们),所以发法不同--`runtime.sendMessage` 直送 background.名单与文件头那句
 #: 知识,注册表里 `target` 恒为 null 的行逐字对应(`registry.test.ts` 守卫对拍).
@@ -910,6 +916,57 @@ def clear_composer() -> None:
     send_action("composer.clear", {})
 
 
+def composer_stayed_empty(seconds: float) -> str:
+    """盯写作框几秒:一直空着回 `""`,中途被写进过什么就回那段字.
+
+    打字前先来一下,防的是**和扩展自己的续聊撞车**:它把工具结果的短标记写进写作框,
+    待一段限速,再按发送;探针这时打字会把它顶掉,它出站那一刻认不回自己的标记,
+    就记一笔 `key-mismatch` 失败痕--探针的错,账本上却像产品故障.顺带也让人先打字:
+    写作框里有字(你的草稿或它的标记),探针都往后退.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        text = composer_text().strip()
+        if text:
+            return text
+        if time.monotonic() >= deadline:
+            return ""
+        time.sleep(0.2)
+
+
+def ledger_stamps(stored: dict, key: str) -> tuple:
+    """某个账本里各笔的 `at` 序列(新到旧).
+
+    只比 `at` 序列,**不比条数**:两个账本都是**成环**的(失败痕保 20 笔 / 现场帧保 5 笔,
+    满了挤掉最老那笔),条数不变而内容换了. 第一版就栽在这里:真机上一笔新痕被漏成了
+    "账本没多". 恢复时刻(`recoveredAt`)是原地补记的,不进这个序列,免得"由红转绿"
+    被当成账本动了.
+    """
+    return tuple(
+        row["at"] for row in stored_list(stored, key) if isinstance(row, dict) and "at" in row
+    )
+
+
+def ledger_clean(before: dict, after: dict) -> tuple[bool, str]:
+    """这轮探针往账本里多留了没有(失败痕 / 现场帧).纯函数,拿 pytest 对拍.
+
+    探针的活动本身会引出续聊;打字撞上扩展那一步就会造出一笔痕--**账本干净这一轮才
+    算数**:多出来的那笔判据读不出是谁的错,但它多半意味着"扩展那一步的发送被算到了
+    `send.page` 头上",那一轮的两步归属就不成立了(真机上踩过一次,见 ADR-0023).
+    """
+    moved = [
+        name
+        for name, key in (("失败痕", FAILURE_LOG_KEY), ("现场帧", FAILURE_FRAME_KEY))
+        if ledger_stamps(after, key) != ledger_stamps(before, key)
+    ]
+    if not moved:
+        return True, "账本没动:失败痕与现场帧还是跑之前那几笔"
+    return False, (
+        f"这轮账本动了( {','.join(moved)} )--多半是探针打字撞上了扩展的续聊,"
+        "这一轮不算数(多出来那笔的归属读不出来)"
+    )
+
+
 def conversation() -> list:
     """读对话里认得出的行(`messages.list`,只读).
 
@@ -1006,6 +1063,9 @@ def send_page(question: str, *, allow_send: bool) -> int:
     判据一律把 `SEND_PAGE_WAIT` 等满:探针分不出"还没发"与"不会发",半路收手就把
     "观测漏了"读成了"闸拦下了".发出去的那条还会带回一条工具结果,闸开着时它自动续
     一轮--探针等它落地(`continued`)才收手,机器留成安静态.
+
+    最后还看**账本**:这一步多留了一笔失败痕/现场帧就不算绿--打字撞上扩展那次续聊
+    会造出这种痕,而那种情形下"两条腿"的归属本来就分不出来.
     """
     site = ensure_site_tab()
     stores = read_probe_stores()
@@ -1021,11 +1081,14 @@ def send_page(question: str, *, allow_send: bool) -> int:
         return blocked_report(report, "闸开着:这一条会真发进当前对话;认了再加 --send")
     # 对话行是虚拟列表:站点标签页不在前台就一间都不挂(#54),判据会假红.
     asyncio.run(call_cdp(site["webSocketDebuggerUrl"], "Page.bringToFront"))
-    before = composer_text()
-    report["composerBefore"] = before
-    if before.strip():
+    # 打字前先让一段:写作框里有字(你的草稿,或扩展续聊压着的那条短标记)就不碰.
+    watched = composer_stayed_empty(SEND_PAGE_IDLE_WATCH)
+    report["composerBefore"] = watched
+    if watched:
         return blocked_report(
-            report, "写作框里有字:第一步会覆盖它(ADR-0023 那条取舍),探针不动别人的草稿"
+            report,
+            f"写作框里有字({watched[:24]!r}):可能是你的草稿,也可能是扩展正要把上一轮"
+            "工具结果发出去--第一步会覆盖它(ADR-0023 那条取舍),探针不动",
         )
     call = json.dumps(
         {"tool": "send.page", "arguments": {"question": question}}, ensure_ascii=False
@@ -1078,8 +1141,17 @@ def send_page(question: str, *, allow_send: bool) -> int:
             "这一条是真发出去的:对话里留着它当证据,探针不代你删."
             "工具结果随后自动续的那一轮要等它落地(`continued`);续完模型那一句可能还在写"
         )
+    after = read_probe_stores()
+    report["failuresBefore"] = len(stored_list(stores, FAILURE_LOG_KEY))
+    report["failuresAfter"] = len(stored_list(after, FAILURE_LOG_KEY))
+    report["framesBefore"] = len(stored_list(stores, FAILURE_FRAME_KEY))
+    report["framesAfter"] = len(stored_list(after, FAILURE_FRAME_KEY))
+    clean, clean_why = ledger_clean(stores, after)
+    report["ledgerClean"] = clean
+    report["ledgerNote"] = clean_why
+    report["ok"] = ok and clean
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if ok else 1
+    return 0 if report["ok"] else 1
 
 
 async def reload_and_wait(ws_url: str, timeout: float = 10.0) -> bool:
