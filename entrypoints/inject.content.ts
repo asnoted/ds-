@@ -16,6 +16,7 @@ import {
 } from "../src/lib/channel";
 import { CONTINUATION_MARKER } from "../src/lib/continuation";
 import { type ContinuationFailure } from "../src/lib/continuationfail";
+import { claimResult, expectResult, newFenceCalls, type FenceCalls } from "../src/lib/fencecalls";
 import { enqueue, newGate, nextOpenAt, release, type Gate } from "../src/lib/gate";
 import {
   mergeSendPace,
@@ -87,6 +88,9 @@ export default defineContentScript({
     /** 唯一出站口:回灌内容在这里排队,出站窗口到点才放行. */
     let gate: Gate = newGate();
     let flushTimer: number | null = null;
+
+    /** 排出去还没等到答复的围栏轮 id:只认自己那一轮的 `result`(见 `fencecalls.ts`). */
+    let fenceCalls: FenceCalls = newFenceCalls();
 
     /** 网页排了 ask 围栏问人(#26):挂着等"对话继续"来清. */
     let pendingAsk = false;
@@ -308,6 +312,7 @@ export default defineContentScript({
       if (calls.length > 0) {
         const id = nextMessageId("send");
         console.log(`[ds-] 认出 ${calls.length} 块 send 围栏(${id}),交给中继`);
+        fenceCalls = expectResult(fenceCalls, id);
         window.postMessage(callMessage(id, calls), "*");
         pendingAsk = false;
         return;
@@ -437,6 +442,14 @@ export default defineContentScript({
       const chain = parseChainMessage(event.data);
       if (chain?.kind === "result") {
         // 中继给了 status: ok 的载荷才排进队列;单来回,不重试,无兜底.
+        // 还得是**自己排出去那一轮**的答复:探针用同一条链驱动本地工具,它的答复信封
+        // 与围栏轮的一样,认错就会凭空多发一条 `agent:继续`(#108).
+        const claimed = claimResult(fenceCalls, chain.id);
+        fenceCalls = claimed.calls;
+        if (!claimed.accepted) {
+          console.log(`[ds-] 收到一条不是我们那轮的 result(${chain.id}),丢掉`);
+          return;
+        }
         dispatch({ type: "result", payload: chain.payload });
         return;
       }
