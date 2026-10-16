@@ -1,6 +1,11 @@
 import { browser } from "wxt/browser";
 
 import {
+  FAILURE_FRAME_STORAGE_KEY,
+  frameForHead,
+  readFailureFrames,
+} from "../../src/lib/failureframe";
+import {
   describeLastFailure,
   readFailureLog,
   FAILURE_LOG_STORAGE_KEY,
@@ -39,5 +44,28 @@ if (lastFailure !== null) {
     .catch(() => {
       // 读不到就当没出过事,不摆一句错的话.
       lastFailure.textContent = "";
+    });
+}
+
+/**
+ * 现场帧(#106):只在帧与最前面那笔记录**配对得上**时摆出来.
+ *
+ * 配不上就不显示--宁可没有,不能把上一段故障的帧张冠李戴挂到这一条下面.
+ */
+const lastFailureFrame = document.querySelector<HTMLImageElement>("#last-failure-frame");
+if (lastFailureFrame !== null) {
+  void browser.storage.local
+    .get([FAILURE_LOG_STORAGE_KEY, FAILURE_FRAME_STORAGE_KEY])
+    .then((stored) => {
+      const frame = frameForHead(
+        readFailureFrames(stored[FAILURE_FRAME_STORAGE_KEY]),
+        readFailureLog(stored[FAILURE_LOG_STORAGE_KEY]),
+      );
+      if (frame === null) return;
+      lastFailureFrame.src = frame.dataUrl;
+      lastFailureFrame.hidden = false;
+    })
+    .catch(() => {
+      // 帧读不到就当没拍,不摆一张错的.
     });
 }

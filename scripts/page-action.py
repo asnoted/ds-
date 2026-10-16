@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import hashlib
 import json
 import math
@@ -167,6 +168,29 @@ READ_EXPR = """(() => {
     alert: alert ? alert.textContent.slice(0, 120) : null,
   });
 })()"""
+
+
+def capture_visible_js(quality: int) -> str:
+    """抓可见标签页的表达式,在**扩展页上下文**里跑.
+
+    与扩展自己在 background 里抓是**同一个权限检查**:只验扩展拿不拿得到这一帧,
+    一条都不动扩展的权限(#106).
+    """
+    return (
+        "(async () => {"
+        "  const tabs = await chrome.tabs.query({});"
+        f"  const t = tabs.find((x) => x.url && x.url.startsWith({json.dumps(SITE_MATCH)}));"
+        '  if (!t) return JSON.stringify({ ok: false, error: "no-site-tab" });'
+        '  if (!t.active) return JSON.stringify({ ok: false, error: "site-tab-not-active" });'
+        "  try {"
+        "    const dataUrl = await chrome.tabs.captureVisibleTab(t.windowId,"
+        f" {{ format: 'jpeg', quality: {quality} }});"
+        "    return JSON.stringify({ ok: true, url: t.url, chars: dataUrl.length, dataUrl });"
+        "  } catch (e) {"
+        "    return JSON.stringify({ ok: false, error: String((e && e.message) || e) });"
+        "  }"
+        "})()"
+    )
 
 
 def extension_id() -> str:
@@ -546,6 +570,34 @@ async def script_sources(ws_url: str, match: str) -> list[tuple[str, str]]:
             result = message.get("result") or {}
             sources.append((url, str(result.get("scriptSource", ""))))
         return sources
+
+
+def visible_capture(out_path: str, quality: int) -> int:
+    """验扩展抓可见标签页:打得开回帧的字数,打不开回它的原话.
+
+    先把站点标签页置前台(`captureVisibleTab` 抓的是**窗口的活动标签页**),再从扩展页
+    上下文发一次.`--out` 落盘成 JPEG,方便直接眼看现场(#106).
+    """
+    tab = ensure_site_tab()
+    asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
+    ext = ensure_extension_page()
+    raw = unwrap(run(ext["webSocketDebuggerUrl"], capture_visible_js(quality), timeout=75.0))
+    try:
+        result = json.loads(raw) if isinstance(raw, str) else {"ok": False, "error": str(raw)}
+    except json.JSONDecodeError:
+        result = {"ok": False, "error": f"回包解不开:{raw!r}"}
+    if not isinstance(result, dict):
+        result = {"ok": False, "error": str(result)}
+    data_url = result.pop("dataUrl", "")
+    if result.get("ok") and out_path and isinstance(data_url, str) and "," in data_url:
+        payload = base64.b64decode(data_url.split(",", 1)[1])
+        path = Path(out_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        result["out"] = str(path)
+        result["bytes"] = len(payload)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result.get("ok") else 1
 
 
 def capture(out_dir: str, want_codes: bool) -> None:
@@ -993,6 +1045,11 @@ def main() -> None:
     ax.add_argument("--grep", default="", help="只打印 role/name/value 命中该串的节点")
     ax.add_argument("--max", type=int, default=80, help="最多打印多少行,默认 80")
     ax.add_argument("--all", action="store_true", help="连 ignored 的节点也打印")
+    shot = sub.add_parser(
+        "visible-capture", help="验扩展能否抓可见标签页(现场帧的权限/体积探针,#106)"
+    )
+    shot.add_argument("--out", default="", help="把这一帧写到该路径(JPEG;默认不落盘)")
+    shot.add_argument("--quality", type=int, default=60, help="JPEG 质量 0-100,默认 60")
     capture_parser = sub.add_parser(
         "capture", help="抓全量证据:完整 HTML / 同源 CSS / 资源清单 / 行快照 / 无障碍树"
     )
@@ -1015,6 +1072,9 @@ def main() -> None:
         for target in targets():
             print(f"{target.get('type'):<16} {target.get('url', '')[:100]}")
         return
+
+    if args.command == "visible-capture":
+        raise SystemExit(visible_capture(args.out, args.quality))
 
     if args.command == "focus":
         # DeepSeek 标签页必须留在**前台**:后台标签页被浏览器节流,虚拟列表不挂行,

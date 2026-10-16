@@ -20,7 +20,7 @@ import { BACKOFF_GATED_ACTIONS, SPEAK_GATED_ACTIONS, TOGGLE_ACTIONS } from "./re
 // 三道闸名单从注册表派生(#99):归类写在 `registry.ts` 的行上,这里只消费.
 export { BACKOFF_GATED_ACTIONS, SPEAK_GATED_ACTIONS, TOGGLE_ACTIONS } from "./registry";
 
-/** 权限钉死的那个站点:标签页只认它(manifest 的 host_permissions 同一个域). */
+/** 认标签页只认这个站点;host_permissions 已因抓帧放到 `<all_urls>`(ADR-0030). */
 export const DEEPSEEK_HOST = "chat.deepseek.com";
 
 /**

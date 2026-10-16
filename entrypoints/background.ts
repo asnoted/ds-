@@ -38,6 +38,15 @@ import {
   type FailureWhere,
 } from "../src/lib/failurelog";
 import {
+  FAILURE_FRAME_BUDGET_CHARS,
+  FAILURE_FRAME_STORAGE_KEY,
+  captureFailureFrame,
+  pruneFailureFrames,
+  readFailureFrames,
+  rememberFailureFrame,
+  type FailureFrame,
+} from "../src/lib/failureframe";
+import {
   createFenceRound,
   type FenceRoundEffect,
   type FenceRoundPhase,
@@ -154,6 +163,11 @@ export default defineBackground(() => {
    */
   let failureLog: FailureRecord[] = [];
   /**
+   * 失败帧(#106):发送类失败当场抓的那一帧,按 `at` 与留痕配对,新的在最前.
+   * 与留痕同一条过期纪律:配不上记录的帧清掉(见 `pruneFailureFrames`).
+   */
+  let failureFrames: FailureFrame[] = [];
+  /**
    * 网页挂着"等人回"的分表(#26):页面会话 id → 问题.启动时从
    * `storage.local` 载入--挂着的"等人回"可能等几小时,只放内存的话,
    * service worker 一收走就没人知道网页在等谁.
@@ -161,6 +175,8 @@ export default defineBackground(() => {
   let pendingAsks: PendingAsks = {};
   /** 往 storage 写留痕的串行队列:探活每 30s 失败一次,并发的读改写会互相踩. */
   let persistQueue: Promise<unknown> = Promise.resolve();
+  /** 往 storage 写帧的串行队列:抓帧是异步回写,与留痕那份各排各的. */
+  let persistFramesQueue: Promise<unknown> = Promise.resolve();
   /** 往 storage 写"等人回"分表的串行队列:并发上报的读改写会互相踩. */
   let persistAsksQueue: Promise<unknown> = Promise.resolve();
   /**
@@ -174,6 +190,12 @@ export default defineBackground(() => {
     persistQueue = persistQueue
       .then(() => browser.storage.local.set({ [FAILURE_LOG_STORAGE_KEY]: failureLog }))
       .catch(() => undefined); // 留痕写不进去不该把图标也拖死
+  }
+
+  function persistFailureFrames(): void {
+    persistFramesQueue = persistFramesQueue
+      .then(() => browser.storage.local.set({ [FAILURE_FRAME_STORAGE_KEY]: failureFrames }))
+      .catch(() => undefined); // 帧写不进去不该把图标也拖死
   }
 
   function persistPendingAsks(): void {
@@ -206,12 +228,80 @@ export default defineBackground(() => {
   /**
    * 记一笔故障.同一环节同一原因,且上一笔还没恢复的**不重复记**--那只是同一次
    * 故障在延续(探活每 30s 会再失败一次),留下的是故障开始的时刻.
+   *
+   * 真落了新记录就回那一刻的时刻(`at`),没落回 null:抓帧那边要靠它认"这一笔是新的",
+   * 同一次红的延续不重复拍(省帧,也省那一瞬的可见闪烁).
    */
-  function recordFailure(where: FailureWhere, cause: string): void {
-    const next = rememberFailure(failureLog, { at: Date.now(), where, cause });
-    if (next === failureLog) return;
+  function recordFailure(where: FailureWhere, cause: string): number | null {
+    const at = Date.now();
+    const next = rememberFailure(failureLog, { at, where, cause });
+    if (next === failureLog) return null;
     failureLog = next;
     persistFailureLog();
+    return at;
+  }
+
+  /**
+   * 把整屏 JPEG 压进预算:先按质量压,还大就逐步降采样(整屏 JPEG 常在几十上百 KB).
+   *
+   * 用的是 `OffscreenCanvas`(MV3 service worker 里没有 DOM canvas,但 canvas 这套 API
+   * 在 worker 里以 OffscreenCanvas 的形式在).压不进预算就回压剩的那个--丢不丢由
+   * `captureFailureFrame` 按预算判.
+   */
+  async function shrinkFrame(dataUrl: string, budgetChars: number): Promise<string> {
+    const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    let scale = 1;
+    let quality = 0.6;
+    let last = dataUrl;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const canvas = new OffscreenCanvas(
+        Math.max(1, Math.round(bitmap.width * scale)),
+        Math.max(1, Math.round(bitmap.height * scale)),
+      );
+      const ctx = canvas.getContext("2d");
+      if (ctx === null) break;
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await canvas.convertToBlob({ type: "image/jpeg", quality });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      last = `data:image/jpeg;base64,${btoa(binary)}`;
+      if (last.length <= budgetChars) return last;
+      scale *= 0.7;
+      quality = Math.max(0.3, quality - 0.1);
+    }
+    return last;
+  }
+
+  /**
+   * 抓一帧存进留痕(#106):发送类失败当场的那一屏.
+   *
+   * 只在**报上来的那个标签页此刻就是前台活动标签页**时抓:窗口活动页是别的页时
+   * `captureVisibleTab` 拍的是别人(可能是任意站点),那既拍错了对象,又抓了不相干的内容.
+   * 后台页不抢前台,留纯文字;整条 fire-and-forget,失败静默走掉(红线:抓帧绝不影响
+   * 原失败路径).
+   */
+  async function captureFailureFrameFor(
+    tab: { id?: number; windowId?: number } | undefined,
+    at: number,
+  ): Promise<void> {
+    const tabId = tab?.id;
+    const windowId = tab?.windowId;
+    if (tabId === undefined || windowId === undefined) return;
+    const frame = await captureFailureFrame(at, {
+      capture: async () => {
+        const target = await browser.tabs.get(tabId);
+        if (target.active !== true) throw new Error("报上来的标签页不在前台");
+        const [active] = await browser.tabs.query({ windowId, active: true });
+        if (active?.id !== tabId) throw new Error("活动标签页已经换人");
+        return await browser.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 70 });
+      },
+      shrink: (dataUrl) => shrinkFrame(dataUrl, FAILURE_FRAME_BUDGET_CHARS),
+      budgetChars: FAILURE_FRAME_BUDGET_CHARS,
+    });
+    if (frame === null) return;
+    failureFrames = pruneFailureFrames(rememberFailureFrame(failureFrames, frame), failureLog);
+    persistFailureFrames();
   }
 
   /**
@@ -775,10 +865,15 @@ export default defineBackground(() => {
       TOGGLE_STORAGE_KEY,
       FAILURE_LOG_STORAGE_KEY,
       ASKS_STORAGE_KEY,
+      FAILURE_FRAME_STORAGE_KEY,
     ]);
     const enabled = readToggle(stored[TOGGLE_STORAGE_KEY]);
     failureLog = readFailureLog(stored[FAILURE_LOG_STORAGE_KEY]); // 留痕先上手,标题才拼得出历史
     pendingAsks = readPendingAsks(stored[ASKS_STORAGE_KEY]); // 等人回先上手,角标与悬停才拼得出
+    // 帧跟着留痕走:载入时就按当下的册子过一遍,孤儿帧(记录已滚出)当场清掉并落盘.
+    const loadedFrames = readFailureFrames(stored[FAILURE_FRAME_STORAGE_KEY]);
+    failureFrames = pruneFailureFrames(loadedFrames, failureLog);
+    if (failureFrames !== loadedFrames) persistFailureFrames();
     await syncHealthAlarm(enabled); // 排班先跟着开关走,图标再跟着探测结果走
     if (!enabled) {
       state = "off";
@@ -883,7 +978,10 @@ export default defineBackground(() => {
     const continuationFail = parseContinuationFailReport(message);
     if (continuationFail !== null) {
       console.log(`[ds-] 页面报续聊失败:${continuationFail.cause}`);
-      recordFailure("continuation", continuationFail.cause);
+      const reportedAt = recordFailure("continuation", continuationFail.cause);
+      // 只在**真的落了新记录**时抓一帧(#106):同一段红着的延续不重复拍.
+      // fire-and-forget:抓帧那一路自己吞掉所有失败,原失败路径不等它,也不看它.
+      if (reportedAt !== null) void captureFailureFrameFor(sender.tab, reportedAt);
       return undefined;
     }
     // 账号处境上报(#2):记下最新值并上屏,悬停才说得出"禁言至何时".

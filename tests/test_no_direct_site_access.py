@@ -8,6 +8,10 @@
 测试文件也被豁免(它们要凭空造站点地址).真正兜底的是 `permissions` 那一行:不给
 cookies / webRequest / debugger,浏览器层面就拿不到那些能力.想扩权先改 wxt.config.ts,
 改完第 1 条必红.
+
+**host_permissions 有一处认过的例外**:抓帧要 `<all_urls>`(ADR-0030,#106).所以这一条
+从"站点 + 回环"改成"只准这一条",并且补一条把**注入范围**钉住--扩的是 host 权限,
+内容脚本仍只进 `chat.deepseek.com`,那才是"不替用户逛别的站"的实际边界.
 """
 
 from __future__ import annotations
@@ -84,16 +88,24 @@ def test_the_manifest_does_not_ask_for_a_way_into_the_site_behind_its_back() -> 
     assert _manifest_array("permissions", text) == ["storage", "alarms"]
 
 
-def test_host_permissions_are_the_site_and_this_machine_only() -> None:
-    """站点只许一个精确条目,其余全是指向本机中继的回环地址."""
+def test_host_permissions_are_all_urls_and_nothing_else() -> None:
+    """`<all_urls>` 是抓帧那一处的例外(ADR-0030),且**只准这一条**.
+
+    站点域与中继那几条回环地址已被它盖住;再多出任何一条都是没交代过的扩权.
+    """
     entries = _manifest_array(
         "host_permissions", (ROOT / "wxt.config.ts").read_text(encoding="utf-8")
     )
-    site = [entry for entry in entries if "deepseek" in entry]
-    assert site == ["https://chat.deepseek.com/*"], site
-    rest = [entry for entry in entries if entry not in site]
-    assert rest, "中继的回环地址一条都没了"
-    assert all(entry.startswith(("http://127.0.0.1", "http://localhost")) for entry in rest), rest
+    assert entries == ["<all_urls>"], entries
+
+
+def test_content_scripts_stay_pinned_to_the_site() -> None:
+    """扩的是 host 权限,不是注入范围:内容脚本仍只进站点(ADR-0030 的边界)."""
+    for name in ("entrypoints/content.ts", "entrypoints/inject.content.ts"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        matches = re.search(r"matches:\s*\[(.*?)\]", text, re.S)
+        assert matches is not None, name
+        assert re.findall(r'"([^"]+)"', matches.group(1)) == ["https://chat.deepseek.com/*"], name
 
 
 def test_the_site_address_only_lives_in_a_handful_of_known_places() -> None:
