@@ -11,8 +11,8 @@
 | `focus`                       | 把 DeepSeek 标签页置到前台(读页面列表前先来一下;`--ext` 反向:把扩展页置前台,让站点退后台) |
 | `read`                        | 读页面状态(含圆键的图标判定)                                                              |
 | `send <动作> [--params json]` | 给 DeepSeek 标签页发一件页面动作                                                          |
-| `js <表达式>`                 | 页面上下文里跑只读 JS                                                                     |
-| `ext-js <表达式>`             | 扩展页(options)上下文里跑只读 JS(`--reload` 先重载这一页再读)                             |
+| `js <表达式>`                 | 页面上下文里跑只读 JS(`--times N --every S` 连读,时间线只打相变)                          |
+| `ext-js <表达式>`             | 扩展页(options)上下文里跑只读 JS(`--reload` 先重载这一页再读;连读同 `js`)                 |
 | `sse`                         | 录一轮 SSE,并按 `finish_reason` 判拒收                                                    |
 | `stop-test`                   | 端到端:起生成 → 等停止键 → 点 → 等复位                                                    |
 | `storage get\|set\|remove`    | 读写扩展 storage                                                                          |
@@ -93,11 +93,17 @@ uv run scripts/page-action.py --no-pace js 'String(window.fetch).includes("nativ
   `messages.*` 与按位置点控件会读成空.探针开扩展入口页走后台
   (`open_tab(..., background=True)`).
 - 看到"对话区 0 行"先查 `document.visibilityState`,别先怀疑动作.
+- **`hidden` 分两种,别混**:标签页被换掉(虚拟列表不挂行,读出来是空)与**窗口被
+  别的窗口盖住**(活动标签页没变,`visibilityState` 照样报 `hidden` -- 实测过一次).
+  后者不是探针读不到东西,据此去"修选择器"是修错地方.哪一种是它,用
+  `ext-js '(async () => (await chrome.tabs.query({active: true}))[0].url)()'` 看活动页
+  是不是站点(是 = 遮挡,不是 = 换人了).
 - **开了新会话后要读列表,先 `uv run scripts/page-action.py --no-pace focus`**
   (`Page.bringToFront`).新会话在后台时虚拟列表压根不挂行,`messages.*` 恒空;
   而**开着旧会话读得动**极具迷惑性.
 - `--no-pace` / `--pace` 抓瞬态时用(生成中,思考期那种几秒的窗口),**必须连读**,
-  否则限速下根本抓不到.放错位置 argparse 会拒绝,报错自己会说该放哪.
+  否则限速下根本抓不到.连读走 `js --times N --every S`(一条连接读完,时间线只打相变),
+  别用 shell 循环:那是一拍一个进程加一次握手.放错位置 argparse 会拒绝,报错自己会说该放哪.
   `list` 只读本地目标清单,不等.
 - **动作要发真事件**:`continue-click` 走 CDP `Input.dispatchMouseEvent`(按下 + 抬起),
   页面收到的是与用户手点一样的东西(手势判定,`onClick` 都照常走);`js` 仍**只读**,

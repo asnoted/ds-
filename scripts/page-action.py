@@ -405,6 +405,73 @@ def run(ws_url: str, expression: str, timeout: float = 60.0) -> object:
         raise SystemExit(4) from error
 
 
+async def sample(
+    ws_url: str, expression: str, times: int, every: float, timeout: float = 60.0
+) -> list[tuple[float, object]]:
+    """一次连接里连读同一表达式 `times` 拍,两拍之间隔 `every` 秒;回(距开拍秒, 读数).
+
+    为什么不开 N 次连接:抓瞬态(生成中,思考期那种几秒窗口)要"必须连读",以前靠 shell
+    循环 -- 一拍一个进程加一次握手,55 拍就是 55 次;这里一条连上读完,拍与拍之间的
+    间隔也才是真的.
+    """
+    start = time.monotonic()
+    samples: list[tuple[float, object]] = []
+    async with websockets.connect(ws_url, max_size=None) as ws:
+        for index in range(times):
+            await ws.send(
+                json.dumps(
+                    {
+                        "id": index + 1,
+                        "method": "Runtime.evaluate",
+                        "params": {
+                            "expression": expression,
+                            "awaitPromise": True,
+                            "returnByValue": True,
+                        },
+                    }
+                )
+            )
+            while True:
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+                except TimeoutError as error:
+                    raise TimeoutError(
+                        f"CDP Runtime.evaluate 等回包超过 {timeout:.0f}s(第 {index + 1} 拍)"
+                        "(对端没答:扩展没醒 / 页面正忙 / 动作在途)"
+                    ) from error
+                message = json.loads(raw)
+                if message.get("id") == index + 1:
+                    samples.append((time.monotonic() - start, unwrap(message)))
+                    break
+            if index + 1 < times:
+                await asyncio.sleep(every)
+    return samples
+
+
+def read_timeline(ws_url: str, expression: str, times: int, every: float) -> int:
+    """连读 `times` 拍,时间线**只打相变**:1s 一拍打全量是噪音,相变才说得出窗口从哪到哪.
+
+    与 `watchdog-probe.py` 的时间线同一口径(它那边的教训就是"打全量看不出空档").
+    """
+    try:
+        samples = asyncio.run(sample(ws_url, expression, times, every))
+    except TimeoutError as error:
+        print(f"[page-action] {error}", file=sys.stderr)
+        return 4
+    print(f"[page-action] 连读 {times} 拍,每 {every:g}s 一拍", flush=True)
+    previous: str | None = None
+    changes = 0
+    for offset, value in samples:
+        text = json.dumps(value, ensure_ascii=False)
+        if text == previous:
+            continue
+        previous = text
+        changes += 1
+        print(f"    +{offset:6.1f}s {text}", flush=True)
+    print(f"[page-action] 共 {len(samples)} 拍,相变 {changes} 次")
+    return 0
+
+
 async def call_cdp(ws_url: str, method: str, params: dict | None = None) -> object:
     """发一条 CDP 命令,取它的回包(不带 id 的事件直接跳过)."""
     async with websockets.connect(ws_url, max_size=None) as ws:
@@ -646,19 +713,25 @@ async def reload_and_wait(ws_url: str, timeout: float = 10.0) -> bool:
                 return True
 
 
-def ext_js(expression: str, *, reload_page: bool = False) -> int:
+def ext_js(
+    expression: str, *, reload_page: bool = False, times: int = 1, every: float = 1.0
+) -> int:
     """在**扩展页上下文**里跑一段只读 JS(`chrome.*` 只在这一层有).
 
     `--reload` 先把这一页重载再跑: 选项页那种**照 storage 渲染**的页, 不重载读到的
     是上一轮的 DOM -- 那是判据自污染里最像"验过了"的一种. 页面自己要等的部分(比如
     storage 读要等 load 之后才回来)在**表达式里**等: 表达式回的 promise 会被等到有值,
     工具不猜该睡几秒.
+
+    `--times` 连读(与 `js` 同一口径): 重载后连读, 正好看得到异步渲染**什么时候**落.
     """
     ext = ensure_extension_page()
     ws_url = ext["webSocketDebuggerUrl"]
     if reload_page and not asyncio.run(reload_and_wait(ws_url)):
         print("[page-action] 扩展页重载没等到 loadEventFired", file=sys.stderr)
         raise SystemExit(5)
+    if times > 1:
+        return read_timeline(ws_url, expression, times, every)
     print(json.dumps(unwrap(run(ws_url, expression)), ensure_ascii=False, indent=2))
     return 0
 
@@ -1229,6 +1302,8 @@ def main() -> None:
     sub.add_parser("read", help="读 DeepSeek 页面状态")
     js = sub.add_parser("js", help="在 DeepSeek 页面上下文里跑一段只读 JS,打印结果")
     js.add_argument("expression", help="要 evaluate 的 JS 表达式(建议用 IIFE 返回字符串)")
+    js.add_argument("--times", type=int, default=1, help="连读几拍(默认 1 = 读一次);多拍只打相变")
+    js.add_argument("--every", type=float, default=1.0, help="连读时两拍之间隔几秒(默认 1)")
     ext_js_parser = sub.add_parser(
         "ext-js", help="在扩展页(options)上下文里跑一段只读 JS;--reload 先重载这一页"
     )
@@ -1239,6 +1314,12 @@ def main() -> None:
         "--reload",
         action="store_true",
         help="先重载扩展页再跑:读照 storage 渲染的 DOM 必须先来一下,否则读到上一轮",
+    )
+    ext_js_parser.add_argument(
+        "--times", type=int, default=1, help="连读几拍(默认 1 = 读一次);多拍只打相变"
+    )
+    ext_js_parser.add_argument(
+        "--every", type=float, default=1.0, help="连读时两拍之间隔几秒(默认 1)"
     )
     stop_test = sub.add_parser("stop-test", help="端到端验 button.click:起生成→等停止键→点→等复位")
     stop_test.add_argument(
@@ -1289,6 +1370,9 @@ def main() -> None:
 
     if args.attempts < 1:
         parser.error("--attempts 至少是 1(1 = 不重发)")
+
+    if args.command in ("js", "ext-js") and (args.times < 1 or args.every <= 0):
+        parser.error("--times 至少是 1(1 = 只读一次),--every 要是正数")
 
     require_cdp()
 
@@ -1366,17 +1450,21 @@ def main() -> None:
 
     if args.command == "js":
         tab = ensure_site_tab()
-        print(
-            json.dumps(
-                unwrap(run(tab["webSocketDebuggerUrl"], args.expression)),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        ws_url = tab["webSocketDebuggerUrl"]
+        if args.times > 1:
+            raise SystemExit(read_timeline(ws_url, args.expression, args.times, args.every))
+        print(json.dumps(unwrap(run(ws_url, args.expression)), ensure_ascii=False, indent=2))
         return
 
     if args.command == "ext-js":
-        raise SystemExit(ext_js(args.expression, reload_page=args.reload))
+        raise SystemExit(
+            ext_js(
+                args.expression,
+                reload_page=args.reload,
+                times=args.times,
+                every=args.every,
+            )
+        )
 
     if args.command == "stop-test":
         report: dict = {}
