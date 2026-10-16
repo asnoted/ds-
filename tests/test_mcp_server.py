@@ -22,7 +22,7 @@ from dsb.mcp import (
 )
 from dsb.said import SaidLog
 from dsb.server import ERROR_PAYLOAD, build_tools, make_server, route
-from dsb.work import work_tools
+from dsb.work import WORK_READ_LINE_LIMIT, WORK_READ_MAX_LINES, work_tools
 
 
 def _echo(arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -327,3 +327,47 @@ def test_a_work_tool_out_of_root_returns_a_failed_payload(tmp_path: Path) -> Non
     )
     assert result["isError"] is True
     assert result["content"][0]["text"].startswith("out-of-root")
+
+
+# ---- ADR-0026 那两个数:单独实测(上面那两条用例只验机制,数被 monkeypatch 掉了) ----
+
+
+def test_read_page_limit_is_the_shipped_two_thousand(tmp_path: Path) -> None:
+    """``--limit`` 的上限就是 **2000 行**:要 9999 行,回**恰好** 2000 行并给 ``offset=2001``.
+
+    2400 行空行:一页放得下(空行的每行开销比 :data:`WORK_READ_BYTES` 除 2000 小得多),
+    所以这里卡住的只能是那个行数上限,不是字节预算. 顺带这解释了真机上从没见过它:
+    真实内容一个 200 行的默认页就几 KB,轮到字节预算先咬,2000 行差不多只在全是短行时到得了.
+    """
+    service = McpService(work_tools(tmp_path))
+    (tmp_path / "many.txt").write_text("\n".join([""] * 2_400), encoding="utf-8")
+    result = result_of(
+        call(
+            service,
+            1,
+            "tools/call",
+            {"name": "read", "arguments": {"path": "many.txt", "limit": 9_999}},
+        )
+    )
+    page = result["content"][0]["text"]
+    rows = [line for line in page.split("\n") if line[:1].isdigit()]
+    assert WORK_READ_MAX_LINES == 2_000
+    assert len(rows) == 2_000
+    assert "第 1-2000 行 / 共 2399 行" in page
+    assert page.endswith(",接着读:offset=2001)")
+
+
+def test_read_line_cap_is_the_shipped_five_hundred(tmp_path: Path) -> None:
+    """单行上限就是 **500 字**,而且**只标不砍**:501 字标出来,500 字一字不动.
+
+    静默截断会让模型以为那就是整行(ADR-0026 的取舍),所以边界两侧都要钉住.
+    """
+    service = McpService(work_tools(tmp_path))
+    (tmp_path / "long.txt").write_text("a" * 501 + "\n" + "b" * 500, encoding="utf-8")
+    result = result_of(
+        call(service, 1, "tools/call", {"name": "read", "arguments": {"path": "long.txt"}})
+    )
+    rows = result["content"][0]["text"].split("\n")
+    assert WORK_READ_LINE_LIMIT == 500
+    assert rows[0] == "1: " + "a" * 500 + "...(本行超 500 字)"
+    assert rows[1] == "2: " + "b" * 500
