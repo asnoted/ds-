@@ -839,16 +839,17 @@ def frame_fail() -> int:
     if not report["toggleOn"]:
         return blocked_report(report, "总开关关着:内容脚本没挂,上报这条路不走--先开开关再来")
     head = log_before[0] if log_before else None
-    if isinstance(head, dict) and head.get("recoveredAt") is None:
-        if head.get("cause") != FRAME_FAIL_CAUSE:
-            # 真红着:再报一笔不会新起一条(`rememberFailure` 的口径),判据作废.
-            return blocked_report(report, "最前面那笔失败还没恢复:这次上报不会新起一条,判据作废")
-        # 上一次跑剩的(中途被打断):撤掉它,按原样重来.
+    if isinstance(head, dict) and head.get("cause") == FRAME_FAIL_CAUSE:
+        # 上一次跑剩的(判据没撤掉,或中途被打断):撤掉它,按原样重来. 它也带着
+        # 探针自己的名号,撤它不会碰真痕.
         log_before = log_before[1:]
         report["failuresBefore"] = len(log_before)
         report["healed"] = True
         write_failure_log(log_before)
         reload_background_state()
+    elif isinstance(head, dict) and head.get("recoveredAt") is None:
+        # 真红着:再报一笔不会新起一条(`rememberFailure` 的口径),判据作废.
+        return blocked_report(report, "最前面那笔失败还没恢复:这次上报不会新起一条,判据作废")
     asyncio.run(call_cdp(ext["webSocketDebuggerUrl"], "Page.bringToFront"))
     active = unwrap(
         run(
@@ -886,9 +887,8 @@ def frame_fail() -> int:
     report["framesAfter"] = len(frames_after)
     # 探针造的那笔痕验完就撤:它带着"还没恢复"会一直挂在选项页的"上次故障"上(真探活
     # 只在由红转绿那一下补恢复时刻),而它本来只是一次验证.只在"我们的那笔在最前,
-    # 总数正好 +1"时撤:中间落过真痕就原样留着,别拿它盖掉.
-    ours = isinstance(top, dict) and top.get("cause") == FRAME_FAIL_CAUSE
-    sole_new = ours and len(log_after) == len(log_before) + 1
+    # 其余各笔与跑之前逐笔相同"时撤:中间落过真痕就原样留着,别拿它盖掉.
+    sole_new = sole_new_trace(log_before, log_after, FRAME_FAIL_CAUSE)
     if sole_new:
         write_failure_log(log_before)
     # 撤了还不够:background 手里那份要重读一遍 storage,否则它压着的那笔"还没恢复"
@@ -935,16 +935,19 @@ def composer_stayed_empty(seconds: float) -> str:
 
 
 def ledger_stamps(stored: dict, key: str) -> tuple:
-    """某个账本里各笔的 `at` 序列(新到旧).
+    """某个账本里各笔的 `at` 序列(新到旧)."""
+    return stamps(stored_list(stored, key))
+
+
+def stamps(rows: list) -> tuple:
+    """记录堆里各笔的 `at` 序列(新到旧).
 
     只比 `at` 序列,**不比条数**:两个账本都是**成环**的(失败痕保 20 笔 / 现场帧保 5 笔,
     满了挤掉最老那笔),条数不变而内容换了. 第一版就栽在这里:真机上一笔新痕被漏成了
     "账本没多". 恢复时刻(`recoveredAt`)是原地补记的,不进这个序列,免得"由红转绿"
     被当成账本动了.
     """
-    return tuple(
-        row["at"] for row in stored_list(stored, key) if isinstance(row, dict) and "at" in row
-    )
+    return tuple(row["at"] for row in rows if isinstance(row, dict) and "at" in row)
 
 
 def ledger_clean(before: dict, after: dict) -> tuple[bool, str]:
@@ -965,6 +968,20 @@ def ledger_clean(before: dict, after: dict) -> tuple[bool, str]:
         f"这轮账本动了( {','.join(moved)} )--多半是探针打字撞上了扩展的续聊,"
         "这一轮不算数(多出来那笔的归属读不出来)"
     )
+
+
+def sole_new_trace(before: list, after: list, cause: str) -> bool:
+    """我们那笔新痕是不是账本上**唯一**的新东西(是,撤它才安全).纯函数,拿 pytest 对拍.
+
+    账本成环(保 20 笔):满着的时候新痕会把最老那笔挤掉,条数根本没变. `frame-fail`
+    第一版就看条数"+1",于是真机上永远撤不掉自己那笔(`restored: false`,还在选项页
+    挂着"上次故障"). 这里的判据是:最前面那笔是我们的,且**其余各笔与跑之前逐笔相同**.
+    """
+    top = after[0] if after else None
+    if not (isinstance(top, dict) and top.get("cause") == cause):
+        return False
+    after_rest = stamps(after)[1:]
+    return after_rest == stamps(before)[: len(after_rest)]
 
 
 def conversation() -> list:

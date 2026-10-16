@@ -99,3 +99,20 @@ def test_ledger_clean_wants_the_same_at_sequence() -> None:
     assert not page_action.ledger_clean(before, framed)[0]
     # 键缺了当空(与各读取器同一条口径):两边都缺就是"没动".
     assert page_action.ledger_clean({}, {})[0]
+
+
+def test_sole_new_trace_survives_a_full_ring() -> None:
+    """环满员时新笔挤掉最老那笔:比条数会永远判"不是只有我们这一笔"."""
+    page_action = load_page_action()
+    before = [{"at": 3, "cause": "别的"}, {"at": 2, "cause": "别的"}, {"at": 1, "cause": "别的"}]
+    ours = [{"at": 4, "cause": "探针造的"}, {"at": 3, "cause": "别的"}, {"at": 2, "cause": "别的"}]
+    assert page_action.sole_new_trace(before, ours, "探针造的")
+    # 我们那笔上头又落了真痕:撤哪笔都搅乱来历,不动.
+    mixed = [
+        {"at": 5, "cause": "别的"},
+        {"at": 4, "cause": "探针造的"},
+        {"at": 3, "cause": "别的"},
+    ]
+    assert not page_action.sole_new_trace(before, mixed, "探针造的")
+    # 最前面不是我们的:别撤别人的.
+    assert not page_action.sole_new_trace(before, before, "探针造的")

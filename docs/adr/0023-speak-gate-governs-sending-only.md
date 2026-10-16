@@ -212,6 +212,10 @@ agent 不代勾也不代关,所以这一趟只能等人.
       "ledgerClean": true, "ok": true,
       "verdict": "问题以用户消息进了对话:composer.type 与 send.enter 两步都跑到了" }
 
+**再一趟**(问 `read` 读 `docs/probe.md` 第一行)同样干净:`landed` / `sawDraft` /
+`composerAfter: ""` / `continued` 照旧,`failures 19 → 19`,`frames 2 → 2`,
+`ledgerClean: true`. 两趟连着,判据可重复.
+
 **探针因此改了两处**:
 
 1. **打字前先盯 6 秒写作框**(`SEND_PAGE_IDLE_WATCH`): 扩展的续聊是"先写短标记,待一段
