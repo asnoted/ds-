@@ -73,6 +73,26 @@ SITE_MATCH = os.environ.get("DSB_SITE_MATCH", "https://chat.deepseek.com/")
 #: 站点上的动作信封(与 `src/lib/channel.ts` 的 `ACTION_MESSAGE_TYPE` 同一份).
 ACTION_MESSAGE_TYPE = "ds-/action"
 
+#: 页面世界 → 内容脚本的 chain 信封标记(与 `src/lib/channel.ts` 的 `CHAIN_MESSAGE_SOURCE` 同一份).
+CHAIN_MESSAGE_SOURCE = "ds-/chain"
+
+#: 失败痕与现场帧那两个键(与 `src/lib/failurelog.ts` / `failureframe.ts` 同一份).
+FAILURE_LOG_KEY = "ds-/failures"
+FAILURE_FRAME_KEY = "ds-/failure-frames"
+
+#: 负路探针投的那条失败由因:与真痕同形,一眼看得出是探针造的(#106).
+FRAME_FAIL_CAUSE = "探针造的失败:验抓帧负路(#106)"
+
+#: 负路探针等那笔痕落地的时间上限:痕是 background 收到上报后当场落的,几秒足够.
+FRAME_FAIL_WAIT = 5.0
+
+#: 总开关键(与 `src/lib/toggle.ts` 的 `TOGGLE_STORAGE_KEY` 同一份):background 只在这个
+#: 键变时把它手里那份留痕/帧从 storage 重读一遍,所以探针拿它当"重读一次"的扳手.
+TOGGLE_KEY = "toggle"
+
+#: 总开关关一下再开之后,等两边各自就位(background 重读留痕,content script 重挂名册).
+BACKGROUND_SETTLE = 1.2
+
 #: `target: null` 的动作:由 background 的 `runAction` 就地执行(内容脚本名册里没有
 #: 它们),所以发法不同--`runtime.sendMessage` 直送 background.名单与文件头那句
 #: 知识,注册表里 `target` 恒为 null 的行逐字对应(`registry.test.ts` 守卫对拍).
@@ -690,6 +710,160 @@ def visible_capture(out_path: str, quality: int) -> int:
         result["bytes"] = len(payload)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok") else 1
+
+
+def stored_list(stored: object, key: str) -> list:
+    """`storage.get` 回包里某个键 → 数组;不是数组就当空(与各读取器同一条口径)."""
+    if not isinstance(stored, dict):
+        return []
+    value = stored.get(key)
+    return value if isinstance(value, list) else []
+
+
+def read_probe_stores() -> dict:
+    """读探针要看的三个键(失败痕 / 现场帧 / 总开关),回 `result.stored` 那层."""
+    raw = storage_op(
+        "get",
+        json.dumps([FAILURE_LOG_KEY, FAILURE_FRAME_KEY, TOGGLE_KEY]),
+        "{}",
+        attempts=3,
+        pace_spec=None,
+        no_pace=True,
+    )
+    result = parse_outcome(raw).get("result")
+    stored = result.get("stored") if isinstance(result, dict) else None
+    return stored if isinstance(stored, dict) else {}
+
+
+def write_failure_log(log: list) -> None:
+    """把留痕原样写回(撤掉探针造的那一笔 / 上一次跑剩的那一笔)."""
+    storage_op(
+        "set",
+        "{}",
+        json.dumps({FAILURE_LOG_KEY: log}, ensure_ascii=False),
+        attempts=3,
+        pace_spec=None,
+        no_pace=True,
+    )
+
+
+def reload_background_state() -> None:
+    """让 background 把它手里那份留痕/帧从 storage 重新读一遍(它只在总开关变时读).
+
+    总开关关一下再开:探针"造完再开回来"的老做法(watchdog-probe 同一手).少了这一步,
+    background 内存里还压着一笔"还没恢复",新痕按 `rememberFailure` 的口径就落不下来--
+    判据会假红,而错的是探针.副作用是 content script 重挂一遍,看门狗重新武装.
+    """
+    for on in (False, True):
+        storage_op(
+            "set",
+            "{}",
+            json.dumps({TOGGLE_KEY: on}),
+            attempts=3,
+            pace_spec=None,
+            no_pace=True,
+        )
+    time.sleep(BACKGROUND_SETTLE)
+
+
+def blocked_report(report: dict, why: str) -> int:
+    """判据立不住时的出口(退 4:这一轮不算数,与 `sse` 同一条口径)."""
+    print(json.dumps({**report, "blocked": why}, ensure_ascii=False, indent=2))
+    return 4
+
+
+def frame_fail() -> int:
+    """验抓帧失败的负路(#106):站点退后台时报一笔失败--**失败痕照落,帧不新增**.
+
+    走产品自己那条路:页面世界投一条 `continuation-fail`(注 chain 信封那条,见文件头),
+    background 照 `recordFailure` 落痕,随即 fire-and-forget 去抓帧;那一抓会被
+    "报上来的标签页此刻不在前台"挡下(ADR-0030 决定 2),留纯文字因由,失败痕照旧.
+    所以**必须**先把扩展页置前台(站点退后台):少了这一步,验的是正路,判据会假绿.
+
+    探针造的那笔痕跑完撤掉,并让 background 重读一遍 storage;两件事都做完,这台机器
+    才算回到原样,判据也才是可重复的.
+    """
+    site = ensure_site_tab()
+    ext = ensure_extension_page()
+    before = read_probe_stores()
+    log_before = stored_list(before, FAILURE_LOG_KEY)
+    frames_before = stored_list(before, FAILURE_FRAME_KEY)
+    report: dict = {
+        "toggleOn": before.get(TOGGLE_KEY) is True,
+        "failuresBefore": len(log_before),
+        "framesBefore": len(frames_before),
+    }
+    if not report["toggleOn"]:
+        return blocked_report(report, "总开关关着:内容脚本没挂,上报这条路不走--先开开关再来")
+    head = log_before[0] if log_before else None
+    if isinstance(head, dict) and head.get("recoveredAt") is None:
+        if head.get("cause") != FRAME_FAIL_CAUSE:
+            # 真红着:再报一笔不会新起一条(`rememberFailure` 的口径),判据作废.
+            return blocked_report(report, "最前面那笔失败还没恢复:这次上报不会新起一条,判据作废")
+        # 上一次跑剩的(中途被打断):撤掉它,按原样重来.
+        log_before = log_before[1:]
+        report["failuresBefore"] = len(log_before)
+        report["healed"] = True
+        write_failure_log(log_before)
+        reload_background_state()
+    asyncio.run(call_cdp(ext["webSocketDebuggerUrl"], "Page.bringToFront"))
+    active = unwrap(
+        run(
+            ext["webSocketDebuggerUrl"],
+            "(async () => (await chrome.tabs.query({active: true}))[0]?.url ?? '')()",
+        )
+    )
+    report["activeWhileReporting"] = active
+    if isinstance(active, str) and active.startswith(SITE_MATCH):
+        return blocked_report(report, "站点标签页还在前台:抓帧那一步不会失败,不往下走")
+    envelope = {
+        "source": CHAIN_MESSAGE_SOURCE,
+        "kind": "continuation-fail",
+        "id": f"probe-frame-fail-{int(time.time() * 1000)}",
+        "cause": FRAME_FAIL_CAUSE,
+    }
+    report["injected"] = unwrap(
+        run(
+            site["webSocketDebuggerUrl"],
+            f"window.postMessage({json.dumps(envelope, ensure_ascii=False)},'*'),'sent'",
+        )
+    )
+    deadline = time.monotonic() + FRAME_FAIL_WAIT
+    after = before
+    while time.monotonic() < deadline:
+        after = read_probe_stores()
+        log_now = stored_list(after, FAILURE_LOG_KEY)
+        top_now = log_now[0] if log_now else None
+        if isinstance(top_now, dict) and top_now.get("cause") == FRAME_FAIL_CAUSE:
+            break
+        time.sleep(0.3)
+    log_after = stored_list(after, FAILURE_LOG_KEY)
+    frames_after = stored_list(after, FAILURE_FRAME_KEY)
+    top = log_after[0] if log_after else None
+    report["recorded"] = (
+        isinstance(top, dict)
+        and top.get("cause") == FRAME_FAIL_CAUSE
+        and top.get("where") == "continuation"
+    )
+    report["framesAfter"] = len(frames_after)
+    # 探针造的那笔痕验完就撤:它带着"还没恢复"会一直挂在选项页的"上次故障"上(真探活
+    # 只在由红转绿那一下补恢复时刻),而它本来只是一次验证.只在"我们的那笔在最前,
+    # 总数正好 +1"时撤:中间落过真痕就原样留着,别拿它盖掉.
+    ours = isinstance(top, dict) and top.get("cause") == FRAME_FAIL_CAUSE
+    sole_new = ours and len(log_after) == len(log_before) + 1
+    if sole_new:
+        write_failure_log(log_before)
+    # 撤了还不够:background 手里那份要重读一遍 storage,否则它压着的那笔"还没恢复"
+    # 会让**下一笔**真痕落不下来--那就不再是可重复的探针了.
+    reload_background_state()
+    report["restored"] = sole_new
+    report["failuresAfter"] = len(stored_list(read_probe_stores(), FAILURE_LOG_KEY))
+    # 还原:站点标签页回前台--别的探针动作与抓帧正路都靠它.
+    asyncio.run(call_cdp(site["webSocketDebuggerUrl"], "Page.bringToFront"))
+    report["ok"] = bool(report["recorded"]) and len(frames_after) == len(frames_before)
+    report["note"] = "抓帧失败不留单独的印(ADR-0030):判据只有两条--痕照落,帧数没变"
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["ok"] else 1
 
 
 async def reload_and_wait(ws_url: str, timeout: float = 10.0) -> bool:
@@ -1352,6 +1526,13 @@ def main() -> None:
     )
     shot.add_argument("--out", default="", help="把这一帧写到该路径(JPEG;默认不落盘)")
     shot.add_argument("--quality", type=int, default=60, help="JPEG 质量 0-100,默认 60")
+    sub.add_parser(
+        "frame-fail",
+        help=(
+            "验抓帧失败的负路:站点退后台时投一笔失败,失败痕照落,帧不新增"
+            "(#106;跑完扳一次总开关对齐内存,别在续聊途中跑)"
+        ),
+    )
     cont = sub.add_parser(
         "continue-click",
         help='点站点自己的"继续生成"并验 /chat/continue 真发出去(真鼠标事件;票 #105)',
@@ -1387,6 +1568,9 @@ def main() -> None:
 
     if args.command == "visible-capture":
         raise SystemExit(visible_capture(args.out, args.quality))
+
+    if args.command == "frame-fail":
+        raise SystemExit(frame_fail())
 
     if args.command == "continue-click":
         raise SystemExit(continue_click(args.wait))

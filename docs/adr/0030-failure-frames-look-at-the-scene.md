@@ -70,8 +70,43 @@
   本地,有界(5 帧 + 单帧预算),随记录过期,**没有任何出站路径**.要上传或以别的方式
   外发,那是另一次决策.
 - **真机口径**:`uv run scripts/page-action.py visible-capture` 验"抓不抓得到";
+  `uv run scripts/page-action.py frame-fail` 验"抓不到时**不影响原失败路径**"(把站点退后台,
+  投一笔失败:痕照落,帧数没变;决定 6 那条红线);
   `storage get --keys '["ds-/failure-frames"]'` 验帧落没落,多大.
 - **抓帧失败不留印**:它不进失败痕,也不进图标--失败痕记的是**故障**,不是**抓帧这件事**
   有没有成.排查抓帧本身要看 background 控制台.
 - **帧的读取器与失败痕同一条纪律**:`storage.local` 是外部输入,长得不对的一条条丢掉,
   不猜也不补.
+
+## 真机验证(2026-10-17):抓帧失败那条负路
+
+`uv run scripts/page-action.py frame-fail` 连着两趟都回 `ok: true`:
+
+```json
+{
+  "toggleOn": true,
+  "failuresBefore": 19,
+  "framesBefore": 0,
+  "activeWhileReporting": "chrome-extension://.../options.html",
+  "injected": "sent",
+  "recorded": true,
+  "framesAfter": 0,
+  "restored": true,
+  "failuresAfter": 19,
+  "ok": true
+}
+```
+
+- **痕照落**:19 到 20(最前面那笔 `{where:"continuation", cause:"探针造的失败:验抓帧负路(#106)"}`),
+  而 `activeWhileReporting` 是选项页--站点标签页当时**不在前台**,抓帧那一步走不通.
+- **帧没多**:仍是 0.抓帧失败对原失败路径一个字没影响(决定 6 那条红线的真机证据).
+- **跑完原样**:探针造的那笔痕撤掉(它只是一次验证;留在册子里会一直挂在选项页的
+  "上次故障"上--真探活只在由红转绿那一下补恢复时刻),`failuresAfter` 回到 19.
+  两趟连着都绿,说明这道判据可重复.
+
+**顺手记一个坑**:background 手里那份留痕是**内存副本**,只在总开关键变时才从
+`storage.local` 重读(`syncFromStorage`).所以"直接往 storage 写一笔假痕"这种做法,
+改的只是 storage,内存那份没动;而 `rememberFailure` 的口径是"最前面那笔还没恢复就
+不新起一条",于是**下一笔真痕再也落不下来**,探针会一直报 `recorded: false`,而错的
+是探针.`frame-fail` 因此跑完扳一下总开关(关,再开)让两边对齐--这一步住在探针里,
+不写进产品:产品手里那份本来就该跟着开关走.
