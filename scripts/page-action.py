@@ -1209,7 +1209,12 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="列 CDP 目标")
-    sub.add_parser("focus", help="把 DeepSeek 标签页置到前台(读页面列表前必须先来一下)")
+    focus = sub.add_parser("focus", help="把 DeepSeek 标签页置到前台(读页面列表前必须先来一下)")
+    focus.add_argument(
+        "--ext",
+        action="store_true",
+        help="改把扩展页置前台:验'报上来的标签页不在前台就不抓帧'这类负路要它",
+    )
     sse = sub.add_parser(
         "sse",
         help=('录一轮 SSE 并按 finish_reason 判拒收(判"服务端收没收"的可靠路)'),
@@ -1307,9 +1312,11 @@ def main() -> None:
         # `messages.*` 与按位置点控件会读成空(AGENTS.md 记着 2026-10-07 踩过).
         # 探针自己开别的目标(选项页等)就会把它挤到后台,所以这是个**动作**而不是
         # 一次性脚本--任何要读页面列表的探针动作前都得先来一下.
-        tab = ensure_site_tab()
-        asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
-        print(json.dumps({"ok": True, "focused": tab.get("url", "")}, ensure_ascii=False))
+        # `--ext` 是反向用法:把扩展页置前台,让站点标签页**退到后台**,验"报上来的
+        # 标签页不在前台就不抓帧"这类只有后台相才触发得出的负路(#106).
+        target = ensure_extension_page() if args.ext else ensure_site_tab()
+        asyncio.run(call_cdp(target["webSocketDebuggerUrl"], "Page.bringToFront"))
+        print(json.dumps({"ok": True, "focused": target.get("url", "")}, ensure_ascii=False))
         return
 
     if args.command == "sse":
