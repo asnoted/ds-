@@ -19,6 +19,7 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 GATEWAY = ROOT / "dsb" / "gateway.py"
+WORK = ROOT / "dsb" / "work.py"
 RELAY = ROOT / "src" / "lib" / "relay.ts"
 ROUNDS = ROOT / "src" / "lib" / "rounds.ts"
 CONTINUATION = ROOT / "src" / "lib" / "continuation.ts"
@@ -52,6 +53,13 @@ ROWS = (
         "MAX_RESULT_CHARS",
         lambda n: f"{n // 1024}K 字",
         Placement("MAX_RESULT_CHARS"),
+    ),
+    Row(
+        "工作工具一条结果",
+        WORK,
+        "WORK_RESULT_CHARS",
+        lambda n: f"{n} 字",
+        Placement("WORK_RESULT_CHARS"),
     ),
     Row(
         "单服务工具",

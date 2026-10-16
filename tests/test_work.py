@@ -20,6 +20,9 @@ from dsb.work import (
     ERROR_NOT_FOUND,
     ERROR_OUT_OF_ROOT,
     ERROR_PROTECTED,
+    WORK_READ_BYTES,
+    WORK_READ_LINE_LIMIT,
+    WORK_RESULT_CHARS,
     WORK_ROOT_ENV_KEY,
     WorkError,
     edit_text,
@@ -128,6 +131,16 @@ def test_list_dir_refuses_out_of_root(tmp_path: Path) -> None:
     with pytest.raises(WorkError) as exc:
         list_dir(root, "..")
     assert code_of(exc) == ERROR_OUT_OF_ROOT
+
+
+def test_list_dir_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """件数上限每维都不超时,整条仍可能很大:总量闸按整行砍,并在末行说怎么续."""
+    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 40)
+    for index in range(20):
+        (tmp_path / f"{index:05d}").write_text("x", encoding="utf-8")
+    rows = list_dir(tmp_path).splitlines()
+    assert rows[:6] == [f"{index:05d}" for index in range(6)]
+    assert rows[-1] == "...(整条超 40 字,已截断:给了前 6 行 / 共 20 行;换个更小的目录再列)"
 
 
 # ---- read_text ----
@@ -245,6 +258,18 @@ def test_read_always_yields_a_page_even_when_the_budget_is_tiny(
         read_text(tmp_path, "f.txt")
         == "1: abcdef\n(字节预算截断,第 1-1 行 / 共 2 行,接着读:offset=2)"
     )
+
+
+def test_read_page_stays_within_the_same_budget_as_one_result(tmp_path: Path) -> None:
+    """read 的总量闸就是页预算:最多超出一行(预算小到放不下时那一行仍然给)加一句脚注."""
+    (tmp_path / "long.txt").write_text("\n".join("y" * 500 for _ in range(400)), encoding="utf-8")
+    page = read_text(tmp_path, "long.txt", 1, 400)
+    assert len(page) <= WORK_READ_BYTES + WORK_READ_LINE_LIMIT + 200
+
+
+def test_the_result_cap_is_one_read_page() -> None:
+    """一条结果 = 一页:两个数同源(ADR-0027 的补记),改一个没改另一个就红."""
+    assert WORK_RESULT_CHARS == WORK_READ_BYTES
 
 
 def test_read_missing_is_not_found(tmp_path: Path) -> None:
@@ -427,6 +452,17 @@ def test_grep_stops_at_the_hit_limit(tmp_path: Path, monkeypatch: pytest.MonkeyP
     lines = grep_tree(tmp_path, "x").splitlines()
     assert lines[0] == "f.txt:1: x"
     assert "已截断" in lines[-1]
+
+
+def test_grep_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """命中数与单行长度都没超,整条仍可能很大(200 x 500 字):总量闸按整行砍."""
+    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 40)
+    (tmp_path / "f.txt").write_text("\n".join(f"x{index}" for index in range(20)), encoding="utf-8")
+    rows = grep_tree(tmp_path, "x").splitlines()
+    assert rows[:3] == ["f.txt:1: x0", "f.txt:2: x1", "f.txt:3: x2"]
+    assert (
+        rows[-1] == "...(整条超 40 字,已截断:给了前 3 行 / 共 20 行;收窄模式,或指定 path 分几次搜)"
+    )
 
 
 def test_grep_bad_regex_is_bad_regex(tmp_path: Path) -> None:

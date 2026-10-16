@@ -49,6 +49,14 @@ WORK_LINE_LIMIT = 500
 WORK_FILE_LIMIT = 1_000_000
 #: 探二进制时看的前缀长度:首块里出现 ``\x00`` 就当二进制,跳过.
 WORK_BINARY_PROBE = 8_192
+#: **整条结果**的最后一道闸(ADR-0027 记着的那个缺口):上面那些数各管一维(页行数 /
+#: 页字节 / 单行 / 件数 / 命中数),没有谁管"一整条有多大"--500 个长名字的目录项、
+#: 200 条各 500 字的命中,每一维都没超限,合起来能把十几万字灌进内存、storage 与对话.
+#: 列与搜的出口过同一道(照 pi 的 ``truncateHead`` 口径):超了只砍在行边界上(半行
+#: 比没有更坏),末行留一句"接着怎么办",而不是网关那句"已截断:原文 N 字"--模型拿着
+#: 那句什么都做不了.与 ``read`` 的一页预算同数:一条结果 = 一页(那边归
+#: :data:`WORK_READ_BYTES` 管,页预算就是它的总量闸).
+WORK_RESULT_CHARS = 16_000
 
 #: 工具载荷码册子(与 gateway 的三码,mcp.py 的 JSON-RPC 码分属三套,不混).
 ERROR_OUT_OF_ROOT = "out-of-root"
@@ -217,6 +225,31 @@ def _relative_to_root(root: Path, path: Path) -> str:
         return str(path)
 
 
+def cap_result(text: str, hint: str) -> str:
+    """整条结果的闸:超 :data:`WORK_RESULT_CHARS` 字就按整行砍,末行说清接着怎么办.
+
+    ``hint`` 是砍掉之后该走的那一步(换个更小的目录 / 收窄模式),由调用方给--闸只
+    知道"太大了",不知道"怎么变小".砍在行边界上:半行比没有更坏(模型会把半行当成
+    一整行,与 :func:`render_page` 标单行的理由同一条).
+    """
+    if len(text) <= WORK_RESULT_CHARS:
+        return text
+    rows = text.splitlines()
+    kept: list[str] = []
+    used = 0
+    for row in rows:
+        cost = len(row) + 1
+        if used + cost > WORK_RESULT_CHARS:
+            break
+        used += cost
+        kept.append(row)
+    dropped = (
+        f"...(整条超 {WORK_RESULT_CHARS} 字,已截断:给了前 {len(kept)} 行 / 共 {len(rows)} 行;"
+        f"{hint})"
+    )
+    return "\n".join([*kept, dropped])
+
+
 def list_dir(root: Path, raw: str = ".") -> str:
     """``ls``:直接子项,目录带尾 ``/``,按名排序;超 :data:`WORK_LIST_LIMIT` 截断."""
     _require_root(root)
@@ -234,7 +267,8 @@ def list_dir(root: Path, raw: str = ".") -> str:
     ]
     if len(entries) > WORK_LIST_LIMIT:
         lines.append(f"...(已截断,共 {len(entries)} 项)")
-    return "\n".join(lines) if lines else "(空)"
+    listing = "\n".join(lines) if lines else "(空)"
+    return cap_result(listing, "换个更小的目录再列")
 
 
 def splitlines(content: str) -> list[str]:
@@ -447,7 +481,8 @@ def grep_tree(root: Path, pattern: str, raw: str = ".") -> str:
             break
     if truncated:
         hits.append(f"...(命中数达上限 {WORK_GREP_LIMIT},已截断)")
-    return "\n".join(hits) if hits else "(无命中)"
+    found = "\n".join(hits) if hits else "(无命中)"
+    return cap_result(found, "收窄模式,或指定 path 分几次搜")
 
 
 def _wrap(action: Callable[[], str]) -> tuple[Payload, bool]:
