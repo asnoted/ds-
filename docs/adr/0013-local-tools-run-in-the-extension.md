@@ -10,8 +10,9 @@ issue #23 要的"组合功能:往页面发一个问题 → 等页面模型排围
 那条路在当前架构下走不通.
 
 **决定**:组合住**扩展侧**.扩展持一小张**本地工具名册**(`src/lib/localtools.ts`):
-网页模型在围栏里排 `send.page` 时,background 认出后**就地执行**(`composer.type` →
-`send.enter` → `wait.fence` → `wait.reply`,全走 `runAction` 三道闸),**不把这一条
+网页模型在围栏里排 `send.page` 时,background 认出后**就地执行**(~~`composer.type` →
+`send.enter` → `wait.fence` → `wait.reply`~~ **后两步 2026-10-05 已删,现在是前两步**,
+见下面"代价与边界"那条补记;全走 `runAction` 三道闸),**不把这一条
 转发 dsb**;结果按回灌口径回页面.dsb 保持被动,零改动(守 ADR-0011).
 
 ## 为什么不是 dsb 侧
