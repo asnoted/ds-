@@ -13,7 +13,7 @@
 | `sse`                         | 录一轮 SSE,并按 `finish_reason` 判拒收                                     |
 | `stop-test`                   | 端到端:起生成 → 等停止键 → 点 → 等复位                                     |
 | `storage get\|set\|remove`    | 读写扩展 storage                                                           |
-| `capture` / `ax`              | 截图 / 可访问性树                                                          |
+| `capture` / `ax`              | 全量证据:HTML / CSS / 资源 / 行快照 / 可访问性树(`--codes` 另存站点脚本)   |
 | `visible-capture`             | 验扩展能否抓可见标签页(`--out` 落盘成 JPEG;现场帧的权限/体积判据,ADR-0030) |
 | `toggles-off`                 | 测试环境关掉深度思考与智能搜索(`--debug` 会顺带跑)                         |
 | `evidence`                    | 存证对账:留档按钮原件 vs 站点当前(ADR-0018,只读,不进 `pnpm quality`)       |

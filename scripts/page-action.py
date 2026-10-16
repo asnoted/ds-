@@ -1055,7 +1055,9 @@ def main() -> None:
     )
     capture_parser.add_argument("--out", default="", help="输出目录(默认 captures/<时间戳>/)")
     capture_parser.add_argument(
-        "--codes", action="store_true", help="另把同源 <script src> 正文下载到 codes/"
+        "--codes",
+        action="store_true",
+        help="另把站点脚本正文下载到 codes/(走 CDP Debugger,含跨源 CDN 上的 bundle)",
     )
     args = parser.parse_args()
 
