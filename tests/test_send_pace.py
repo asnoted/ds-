@@ -6,36 +6,12 @@
 
 from __future__ import annotations
 
-import importlib.util
 import random
-import sys
-import types
-from pathlib import Path
-from types import ModuleType
 from typing import Any
 
-from conftest import load_fixture
+from conftest import load_fixture, load_page_action
 
-PAGE_ACTION = Path(__file__).resolve().parents[1] / "scripts" / "page-action.py"
 SPEC: dict[str, Any] = load_fixture("send-pace.json")
-
-
-def load_page_action() -> ModuleType:
-    """加载被对拍的抽样纯函数.
-
-    page-action 的重活(CDP/websockets)不在对拍范围;测试环境没装 websockets 时
-    垫一个空模块,只保证 import 不炸,不提供任何行为.
-    """
-    if "websockets" not in sys.modules:
-        try:
-            import websockets  # noqa: F401
-        except ModuleNotFoundError:
-            sys.modules["websockets"] = types.ModuleType("websockets")
-    spec = importlib.util.spec_from_file_location("page_action_under_test", PAGE_ACTION)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def test_spec_numbers_pinned() -> None:

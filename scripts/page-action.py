@@ -90,8 +90,31 @@ FRAME_FAIL_WAIT = 5.0
 #: 键变时把它手里那份留痕/帧从 storage 重读一遍,所以探针拿它当"重读一次"的扳手.
 TOGGLE_KEY = "toggle"
 
+#: "代你发言"闸(与 `src/lib/registry.ts` 的三道闸同一份真源).探针**只读**它:
+#: 闸只能人勾,agent 不代勾也不代关--哪条腿跑得动由当前这把闸决定.
+SPEAK_KEY = "speak"
+
 #: 总开关关一下再开之后,等两边各自就位(background 重读留痕,content script 重挂名册).
 BACKGROUND_SETTLE = 1.2
+
+#: 本地工具 `send.page` 的探针问题(ADR-0013):一眼看得出是探针发的.判据按**整条**比,
+#: 所以正文后面挂一个每次跑都不一样的号--不挂的话,重跑时上一轮那条会冒充这一轮.
+SEND_PAGE_QUESTION = "真机探针:收到就只回两个字--收到"
+
+#: 投完链信封,等"问题进对话"的秒数上限:第一步 `composer.type` 是当场写,第二步
+#: `send.enter` 还要过扩展自己那条唯一限速(ADR-0029,最长 15 秒)才发得出去.
+SEND_PAGE_WAIT = 45.0
+
+#: 站点把发出那条消息搬进对话列表有先后:紧跟判据读到的写作框还带着上一拍的残影,
+#: 报告里那个数要等落了地再读一次(判据只用"进没进对话",不靠这个读).
+SEND_PAGE_SETTLE = 1.0
+
+#: 续聊那条短标记(与 `src/lib/continuation.ts` 的 `CONTINUATION_MARKER` 同一份):
+#: `send.page` 的载荷按回灌口径回页面,闸开着时工具结果就顺这条标记自动续一轮.
+CONTINUATION_MARKER = "agent:\n继续"
+
+#: 等"自动续的那一轮也发出去"的秒数上限:工具结果从进队列到发出去要过唯一限速(最长 15 秒).
+SEND_PAGE_CONTINUE_WAIT = 20.0
 
 #: `target: null` 的动作:由 background 的 `runAction` 就地执行(内容脚本名册里没有
 #: 它们),所以发法不同--`runtime.sendMessage` 直送 background.名单与文件头那句
@@ -721,10 +744,14 @@ def stored_list(stored: object, key: str) -> list:
 
 
 def read_probe_stores() -> dict:
-    """读探针要看的三个键(失败痕 / 现场帧 / 总开关),回 `result.stored` 那层."""
+    """读探针要看的几个键(失败痕 / 现场帧 / 总开关 / 发言闸),回 `result.stored` 那层.
+
+    **发言闸要在这一份里**:`send-page` 哪条腿跑得动由它决定;少读一个键,
+    `stores.get("speak") is True` 会静默变成"闸关着",拿真话当假话(踩过).
+    """
     raw = storage_op(
         "get",
-        json.dumps([FAILURE_LOG_KEY, FAILURE_FRAME_KEY, TOGGLE_KEY]),
+        json.dumps([FAILURE_LOG_KEY, FAILURE_FRAME_KEY, TOGGLE_KEY, SPEAK_KEY]),
         "{}",
         attempts=3,
         pace_spec=None,
@@ -770,6 +797,16 @@ def blocked_report(report: dict, why: str) -> int:
     """判据立不住时的出口(退 4:这一轮不算数,与 `sse` 同一条口径)."""
     print(json.dumps({**report, "blocked": why}, ensure_ascii=False, indent=2))
     return 4
+
+
+def post_chain(envelope: dict, tab: dict) -> object:
+    """把一条 chain 信封投进页面世界(页面世界 ↔ 内容脚本那条路,注法见文件头)."""
+    return unwrap(
+        run(
+            tab["webSocketDebuggerUrl"],
+            f"window.postMessage({json.dumps(envelope, ensure_ascii=False)},'*'),'sent'",
+        )
+    )
 
 
 def frame_fail() -> int:
@@ -822,12 +859,7 @@ def frame_fail() -> int:
         "id": f"probe-frame-fail-{int(time.time() * 1000)}",
         "cause": FRAME_FAIL_CAUSE,
     }
-    report["injected"] = unwrap(
-        run(
-            site["webSocketDebuggerUrl"],
-            f"window.postMessage({json.dumps(envelope, ensure_ascii=False)},'*'),'sent'",
-        )
-    )
+    report["injected"] = post_chain(envelope, site)
     deadline = time.monotonic() + FRAME_FAIL_WAIT
     after = before
     while time.monotonic() < deadline:
@@ -864,6 +896,190 @@ def frame_fail() -> int:
     report["note"] = "抓帧失败不留单独的印(ADR-0030):判据只有两条--痕照落,帧数没变"
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["ok"] else 1
+
+
+def composer_text() -> str:
+    """读写作框现值(`composer.read`,只读动作:不走三道闸也不等限速)."""
+    result = parse_outcome(send_action("composer.read", {})).get("result")
+    text = result.get("text") if isinstance(result, dict) else None
+    return text if isinstance(text, str) else ""
+
+
+def clear_composer() -> None:
+    """把写作框清空(`composer.clear`,只清不发送).探针只拿它收拾自己留下的草稿."""
+    send_action("composer.clear", {})
+
+
+def conversation() -> list:
+    """读对话里认得出的行(`messages.list`,只读).
+
+    空对话真是一行没有(#54 的早退口径),而**读漏**也长这样--所以判据只在"找到了那条
+    问题"时算数:找不到只说不算数,不当成"闸把它拦下了"的反证.
+    """
+    result = parse_outcome(send_action("messages.list", {})).get("result")
+    rows = result.get("messages") if isinstance(result, dict) else None
+    return rows if isinstance(rows, list) else []
+
+
+def send_page_question(tag: int) -> str:
+    """探针问题:固定正文 + 这个 tag(判据按整条比,号变了才分得清新旧)."""
+    return f"{SEND_PAGE_QUESTION}(#{tag})"
+
+
+def landed_question(rows: list, question: str) -> bool:
+    """对话里有没有**整条**等于这条问题的行(判据只认整条,别认"看到过某个词")."""
+    body = question.strip()
+    return any(
+        isinstance(row, dict) and isinstance(row.get("text"), str) and row["text"].strip() == body
+        for row in rows
+    )
+
+
+def wait_continuation() -> bool:
+    """等工具结果顺 回灌 那条路自动续的那一轮(短标记进对话).
+
+    `send.page` 回的是"发完即回确认",那条载荷按回灌口径回页面;闸开着时它进队列,
+    武装,发出去(ADR-0014 / ADR-0023).**等它落地再收手**,机器才是安静的--
+    别的探针最怕跑到一半撞上续聊(`frame-fail` 的文件头就写着别在续聊途中跑).
+
+    只看最后三行:上一趟跑剩的同名标记不许冒充这一趟.等不到不当故障--这一条只说明
+    "探针自己走干净了",两步的判据不看它.
+    """
+    deadline = time.monotonic() + SEND_PAGE_CONTINUE_WAIT
+    while time.monotonic() < deadline:
+        rows = conversation()
+        if any(
+            isinstance(row, dict)
+            and row.get("role") == "user"
+            and str(row.get("text", "")).strip() == CONTINUATION_MARKER
+            for row in rows[-3:]
+        ):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def send_page_verdict(
+    *, speak: bool, question: str, landed: bool, composer: str
+) -> tuple[bool, str]:
+    """`send.page` 两步的判据(纯函数,拿 pytest 对拍,不碰 CDP).
+
+    - **闸开着**:两步都该成--那条问题原样出现在对话里(第一步写进写作框,第二步发出去).
+    - **闸关着**:第一步成,第二步被 `runAction` 拦下--问题**留在写作框**里当草稿,
+      对话里没有(ADR-0023 的产品口径:等你自己按发送).
+    - 两头各有一条反证:闸关着却进了对话 = 闸没拦住发送(ADR-0023 的红线);
+      闸开着却查无此问题 = 两步里有一处没成.
+    """
+    body = question.strip()
+    in_conversation = landed
+    drafted = composer.strip() == body and body != ""
+    if in_conversation and not speak:
+        return (
+            False,
+            "闸关着,问题却进了对话:发送步没被拦下(ADR-0023 那条红线)."
+            "要么 live 那份闸没跟上 storage,要么它真没拦住--两种都得查",
+        )
+    if in_conversation:
+        return True, "问题以用户消息进了对话:composer.type 与 send.enter 两步都跑到了"
+    if drafted:
+        return True, "问题落在写作框里当草稿,对话里没有:发送步被闸拦下了(等你按发送)"
+    if speak:
+        return False, "闸开着,对话里却没有那条问题:两步里有一处没成"
+    return False, f"闸关着,写作框里也不是那条问题:{composer!r}"
+
+
+def send_page(question: str, *, allow_send: bool) -> int:
+    """验本地工具 `send.page` 的两步(ADR-0013):`composer.type` → `send.enter`,全走三道闸.
+
+    本地工具在 `ACTION_ROSTER` 之外,唯一触发法是往页面里投一条 chain `call` 信封
+    (文件头第 2 条);**走的仍是产品那条路**,所以闸照拦--这正是要验的:
+
+    - **闸开着**(`speak: true`):两步都该成,问题原样进对话.真发一条,所以要 `--send` 认下.
+    - **闸关着**:第一步成,第二步回 `disabled`,问题留在写作框里当草稿.
+
+    闸是真人的(agent 不代勾也不代关),所以哪条腿跑得动由**当前**那把闸决定:
+    闸开着没给 `--send` 就打 `blocked` 退 4,别拿真话当假话.
+
+    写作框里已经有字就不打:第一步会把人家的草稿覆盖掉(ADR-0023 如实写明的取舍),
+    探针不替人做那个决定.闸关着那条腿验完把探针自己那笔草稿清掉(写作框回到空).
+
+    判据一律把 `SEND_PAGE_WAIT` 等满:探针分不出"还没发"与"不会发",半路收手就把
+    "观测漏了"读成了"闸拦下了".发出去的那条还会带回一条工具结果,闸开着时它自动续
+    一轮--探针等它落地(`continued`)才收手,机器留成安静态.
+    """
+    site = ensure_site_tab()
+    stores = read_probe_stores()
+    speak = stores.get(SPEAK_KEY) is True
+    report: dict = {
+        "toggleOn": stores.get(TOGGLE_KEY) is True,
+        "speak": speak,
+        "question": question,
+    }
+    if not report["toggleOn"]:
+        return blocked_report(report, "总开关关着:内容脚本没挂,围栏这条路不走--先开开关再来")
+    if speak and not allow_send:
+        return blocked_report(report, "闸开着:这一条会真发进当前对话;认了再加 --send")
+    # 对话行是虚拟列表:站点标签页不在前台就一间都不挂(#54),判据会假红.
+    asyncio.run(call_cdp(site["webSocketDebuggerUrl"], "Page.bringToFront"))
+    before = composer_text()
+    report["composerBefore"] = before
+    if before.strip():
+        return blocked_report(
+            report, "写作框里有字:第一步会覆盖它(ADR-0023 那条取舍),探针不动别人的草稿"
+        )
+    call = json.dumps(
+        {"tool": "send.page", "arguments": {"question": question}}, ensure_ascii=False
+    )
+    report["injected"] = post_chain(
+        {
+            "source": CHAIN_MESSAGE_SOURCE,
+            "kind": "call",
+            "id": f"probe-send-page-{int(time.time() * 1000)}",
+            "calls": [call],
+        },
+        site,
+    )
+    deadline = time.monotonic() + SEND_PAGE_WAIT
+    landed = False
+    saw_draft = False
+    rows: list = []
+    # 一律等满:判据分不出"还没发"与"不会发",半路收手就会把"观测漏了"当成"闸拦下了"
+    # (第一次跑就栽在这儿:一条真发出去的问题被当成了草稿).闸关着那条腿因此也等满 45 秒.
+    while True:
+        saw_draft = saw_draft or composer_text().strip() == question.strip()
+        rows = conversation()
+        landed = landed_question(rows, question)
+        if landed or time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
+    time.sleep(SEND_PAGE_SETTLE)
+    composer_after = composer_text()
+    report["landed"] = landed
+    report["sawDraft"] = saw_draft
+    report["composerAfter"] = composer_after
+    report["rowsSeen"] = len(rows)
+    report["tail"] = [
+        {"role": row.get("role"), "text": str(row.get("text", ""))[:40]}
+        for row in rows[-3:]
+        if isinstance(row, dict)
+    ]
+    ok, why = send_page_verdict(
+        speak=speak, question=question, landed=landed, composer=composer_after
+    )
+    report["ok"] = ok
+    report["verdict"] = why
+    if not speak:
+        # 探针那笔草稿只是验证物:清掉,写作框回到交给它时的样子(空).
+        clear_composer()
+        report["composerRestored"] = composer_text().strip() == ""
+    else:
+        report["continued"] = wait_continuation() if landed else False
+        report["note"] = (
+            "这一条是真发出去的:对话里留着它当证据,探针不代你删."
+            "工具结果随后自动续的那一轮要等它落地(`continued`);续完模型那一句可能还在写"
+        )
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if ok else 1
 
 
 async def reload_and_wait(ws_url: str, timeout: float = 10.0) -> bool:
@@ -1533,6 +1749,19 @@ def main() -> None:
             "(#106;跑完扳一次总开关对齐内存,别在续聊途中跑)"
         ),
     )
+    send_page_parser = sub.add_parser(
+        "send-page",
+        help=(
+            "验本地工具 send.page 的两步(composer.type → send.enter,全走三道闸):"
+            "闸开着真发一条(要 --send),闸关着只落草稿(ADR-0013/0023)"
+        ),
+    )
+    send_page_parser.add_argument(
+        "--send", action="store_true", help='闸开着时认下"这一条真发进当前对话"'
+    )
+    send_page_parser.add_argument(
+        "--question", default="", help=f"换成别的问题(默认 {SEND_PAGE_QUESTION}(#<时刻>))"
+    )
     cont = sub.add_parser(
         "continue-click",
         help='点站点自己的"继续生成"并验 /chat/continue 真发出去(真鼠标事件;票 #105)',
@@ -1571,6 +1800,10 @@ def main() -> None:
 
     if args.command == "frame-fail":
         raise SystemExit(frame_fail())
+
+    if args.command == "send-page":
+        question = args.question or send_page_question(int(time.time()))
+        raise SystemExit(send_page(question, allow_send=args.send))
 
     if args.command == "continue-click":
         raise SystemExit(continue_click(args.wait))

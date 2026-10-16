@@ -5,23 +5,24 @@
 
 ## 子命令
 
-| 子命令                        | 干什么                                                                                                      |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `list`                        | 列 CDP 目标(只读本地清单,不等限速)                                                                          |
-| `focus`                       | 把 DeepSeek 标签页置到前台(读页面列表前先来一下;`--ext` 反向:把扩展页置前台,让站点退后台)                   |
-| `read`                        | 读页面状态(含圆键的图标判定)                                                                                |
-| `send <动作> [--params json]` | 给 DeepSeek 标签页发一件页面动作                                                                            |
-| `js <表达式>`                 | 页面上下文里跑只读 JS(`--times N --every S` 连读,时间线只打相变)                                            |
-| `ext-js <表达式>`             | 扩展页(options)上下文里跑只读 JS(`--reload` 先重载这一页再读;连读同 `js`)                                   |
-| `sse`                         | 录一轮 SSE,并按 `finish_reason` 判拒收                                                                      |
-| `stop-test`                   | 端到端:起生成 → 等停止键 → 点 → 等复位                                                                      |
-| `storage get\|set\|remove`    | 读写扩展 storage                                                                                            |
-| `capture` / `ax`              | 全量证据:HTML / CSS / 资源 / 行快照 / 可访问性树(`--codes` 另存站点脚本)                                    |
-| `visible-capture`             | 验扩展能否抓可见标签页(`--out` 落盘成 JPEG;现场帧的权限/体积判据,ADR-0030)                                  |
-| `frame-fail`                  | 验抓帧失败的负路:站点退后台时报一笔失败--失败痕照落,帧不新增;跑完扳一次总开关对齐内存(#106,ADR-0030 决定 6) |
-| `continue-click`              | 点站点自己的"继续生成"并验 `/chat/continue` 真发出去(真鼠标事件;票 #105)                                    |
-| `toggles-off`                 | 测试环境关掉深度思考与智能搜索(`--debug` 会顺带跑)                                                          |
-| `evidence`                    | 存证对账:留档按钮原件 vs 站点当前(ADR-0018,只读,不进 `pnpm quality`)                                        |
+| 子命令                        | 干什么                                                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `list`                        | 列 CDP 目标(只读本地清单,不等限速)                                                                                                 |
+| `focus`                       | 把 DeepSeek 标签页置到前台(读页面列表前先来一下;`--ext` 反向:把扩展页置前台,让站点退后台)                                          |
+| `read`                        | 读页面状态(含圆键的图标判定)                                                                                                       |
+| `send <动作> [--params json]` | 给 DeepSeek 标签页发一件页面动作                                                                                                   |
+| `js <表达式>`                 | 页面上下文里跑只读 JS(`--times N --every S` 连读,时间线只打相变)                                                                   |
+| `ext-js <表达式>`             | 扩展页(options)上下文里跑只读 JS(`--reload` 先重载这一页再读;连读同 `js`)                                                          |
+| `sse`                         | 录一轮 SSE,并按 `finish_reason` 判拒收                                                                                             |
+| `stop-test`                   | 端到端:起生成 → 等停止键 → 点 → 等复位                                                                                             |
+| `storage get\|set\|remove`    | 读写扩展 storage                                                                                                                   |
+| `capture` / `ax`              | 全量证据:HTML / CSS / 资源 / 行快照 / 可访问性树(`--codes` 另存站点脚本)                                                           |
+| `visible-capture`             | 验扩展能否抓可见标签页(`--out` 落盘成 JPEG;现场帧的权限/体积判据,ADR-0030)                                                         |
+| `frame-fail`                  | 验抓帧失败的负路:站点退后台时报一笔失败--失败痕照落,帧不新增;跑完扳一次总开关对齐内存(#106,ADR-0030 决定 6)                        |
+| `send-page`                   | 验本地工具 `send.page` 的两步(`composer.type` → `send.enter`,全走三道闸):闸开着真发一条(要 `--send`),闸关着只落草稿(ADR-0013/0023) |
+| `continue-click`              | 点站点自己的"继续生成"并验 `/chat/continue` 真发出去(真鼠标事件;票 #105)                                                           |
+| `toggles-off`                 | 测试环境关掉深度思考与智能搜索(`--debug` 会顺带跑)                                                                                 |
+| `evidence`                    | 存证对账:留档按钮原件 vs 站点当前(ADR-0018,只读,不进 `pnpm quality`)                                                               |
 
 独立探针脚本(不走 `page-action.py` 的名册路径):
 
@@ -51,13 +52,16 @@
   直送 background;照老路往站点标签页投只会回 `unknown-action` -- **那是路不对,
   不是链子坏了**.
 - **本地工具(`send.page` 等)不在名册里**,只能注入 chain 信封触发,写法见
-  `scripts/page-action.py` 的文件头.
+  `scripts/page-action.py` 的文件头.验 `send.page` 那两步用
+  `uv run scripts/page-action.py send-page`(它就是那条信封,判据在它手里).
 - **人做的有两件**:登录 DeepSeek,以及勾"替人开口".脚本只打印不代劳;没勾闸则写动作回
   `disabled`,属预期,不是故障.
   **跑四条真机回归(完整续聊 / 发一次 / 闸关草稿 / 看门狗)前先对这张单**:
   - [ ] 人已在独立 profile 勾上"替人开口"(`storage get --keys '["speak"]'` 有键且为真)?
         没勾则 `send.page` 投递腿与看门狗催办**必然**回 `disabled` -- 那是闸,不是故障;
         agent 不许自授发言权,标 UNREACHABLE 后照常继续其余场景.
+        "发一次"与"闸关草稿"两条都走 `send-page`:闸开着要 `--send` 认下真发一条,
+        闸关着它自己只验"草稿留下,没进对话".
   - [ ] 看门狗另有一道:触发时机不是探针能直接造的(名册与 `page-action.py` 子命令都没有
         催办入口),但 `scripts/watchdog-probe.py` 走的是 `watchdog.ts` 明写的 `silenceMs`
         storage 旋钮 + **关开关投一条排坏围栏开活**(先关总开关:自动续聊闭嘴,回灌的
