@@ -8,11 +8,27 @@ from __future__ import annotations
 
 from conftest import load_page_action
 
+#: 闸关着那条腿的末行前后对拍:默认"这一行没动".
+TAIL = ("assistant", "上一句")
 
-def verdict(*, speak: bool, landed: bool, composer: str, question: str = "问一下") -> tuple:
+
+def verdict(
+    *,
+    speak: bool,
+    landed: bool,
+    composer: str,
+    question: str = "问一下",
+    tail_before: tuple | None = TAIL,
+    tail_after: tuple | None = TAIL,
+) -> tuple:
     page_action = load_page_action()
     return page_action.send_page_verdict(
-        speak=speak, question=question, landed=landed, composer=composer
+        speak=speak,
+        question=question,
+        landed=landed,
+        composer=composer,
+        tail_before=tail_before,
+        tail_after=tail_after,
     )
 
 
@@ -56,6 +72,29 @@ def test_empty_question_never_counts_as_a_draft() -> None:
     ok, why = verdict(speak=False, landed=False, composer="", question="")
     assert not ok
     assert "不是那条问题" in why
+
+
+def test_gate_closed_without_a_readable_tail_is_not_green() -> None:
+    """末行读不出来就判不了--"对话里没有"不能当证据(`list` 读漏了也长这样)."""
+    ok, why = verdict(speak=False, landed=False, composer="问一下", tail_before=None)
+    assert not ok
+    assert "判不了" in why
+    ok, why = verdict(speak=False, landed=False, composer="问一下", tail_after=None)
+    assert not ok
+    assert "判不了" in why
+
+
+def test_gate_closed_notices_anything_else_going_out() -> None:
+    """末行动了 = 有东西发出去了:哪怕草稿也在,这一轮别的账也算不清了."""
+    ok, why = verdict(
+        speak=False,
+        landed=False,
+        composer="问一下",
+        tail_before=("assistant", "上一句"),
+        tail_after=("user", "agent:\\n继续"),
+    )
+    assert not ok
+    assert "末行却变了" in why
 
 
 def test_probe_question_carries_its_tag() -> None:

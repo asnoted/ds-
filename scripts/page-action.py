@@ -995,6 +995,30 @@ def conversation() -> list:
     return rows if isinstance(rows, list) else []
 
 
+def last_row() -> tuple[str, str] | None:
+    """对话**末行**的 `(角色, 正文)`(`messages.last`,只读);读不出回 `None`.
+
+    闸关着那条腿要靠它:`messages.list` 是"扫全量",读漏了与真没有同形(真机上见过一次
+    读回 0 行),而末行是一份**正面**读数--前后一对拍,"这一轮有没有东西发出去"就有据了.
+    `messages.last` 自己认不出行会当场报错(#54 立的读动作口径),所以 `None` 只有两种
+    来路:动作报错,或对话真是一行没有(新对话).两种都判不了,不当"没发出去"的证据.
+    """
+    outcome = parse_outcome(send_action("messages.last", {}))
+    if "error" in outcome:
+        return None
+    result = outcome.get("result")
+    rows = result.get("messages") if isinstance(result, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return None
+    row = rows[0]
+    if not isinstance(row, dict):
+        return None
+    role, text = row.get("role"), row.get("text")
+    if not isinstance(role, str) or not isinstance(text, str):
+        return None
+    return role, text
+
+
 def send_page_question(tag: int) -> str:
     """探针问题:固定正文 + 这个 tag(判据按整条比,号变了才分得清新旧)."""
     return f"{SEND_PAGE_QUESTION}(#{tag})"
@@ -1034,15 +1058,25 @@ def wait_continuation() -> bool:
 
 
 def send_page_verdict(
-    *, speak: bool, question: str, landed: bool, composer: str
+    *,
+    speak: bool,
+    question: str,
+    landed: bool,
+    composer: str,
+    tail_before: tuple[str, str] | None = None,
+    tail_after: tuple[str, str] | None = None,
 ) -> tuple[bool, str]:
     """`send.page` 两步的判据(纯函数,拿 pytest 对拍,不碰 CDP).
 
     - **闸开着**:两步都该成--那条问题原样出现在对话里(第一步写进写作框,第二步发出去).
     - **闸关着**:第一步成,第二步被 `runAction` 拦下--问题**留在写作框**里当草稿,
-      对话里没有(ADR-0023 的产品口径:等你自己按发送).
+      对话**末行一动没动**(ADR-0023 的产品口径:等你自己按发送).
     - 两头各有一条反证:闸关着却进了对话 = 闸没拦住发送(ADR-0023 的红线);
       闸开着却查无此问题 = 两步里有一处没成.
+
+    **闸关着那条腿不能靠"对话里没有"**:`messages.list` 读漏了也长这样--真机上见过一次
+    它读回 0 行,而 `[]` 既可能是读漏也可能是真没有(#54 的虚拟列表).所以那条腿看的是
+    **末行前后对拍**("对话没动"是一份正面读数):末行读不出来(`None`)就判不了,不当绿.
     """
     body = question.strip()
     in_conversation = landed
@@ -1055,11 +1089,19 @@ def send_page_verdict(
         )
     if in_conversation:
         return True, "问题以用户消息进了对话:composer.type 与 send.enter 两步都跑到了"
-    if drafted:
-        return True, "问题落在写作框里当草稿,对话里没有:发送步被闸拦下了(等你按发送)"
-    if speak:
-        return False, "闸开着,对话里却没有那条问题:两步里有一处没成"
-    return False, f"闸关着,写作框里也不是那条问题:{composer!r}"
+    if not speak:
+        if tail_before is None or tail_after is None:
+            return False, "对话末行读不出来(读漏与真没有同形):这一轮判不了,不算绿"
+        if tail_after != tail_before:
+            return (
+                False,
+                f"闸关着,对话末行却变了({tail_before[1]!r} → {tail_after[1]!r}):"
+                "有东西发出去了,别的话也算在这轮头上,得查",
+            )
+        if drafted:
+            return True, "问题整条落在写作框里当草稿,对话末行一动没动:发送步被闸拦下了(等你按发送)"
+        return False, f"闸关着,写作框里也不是那条问题,而对话末行也没动:{composer!r}"
+    return False, "闸开着,对话里却没有那条问题:两步里有一处没成"
 
 
 def send_page(question: str, *, allow_send: bool) -> int:
@@ -1080,6 +1122,9 @@ def send_page(question: str, *, allow_send: bool) -> int:
     判据一律把 `SEND_PAGE_WAIT` 等满:探针分不出"还没发"与"不会发",半路收手就把
     "观测漏了"读成了"闸拦下了".发出去的那条还会带回一条工具结果,闸开着时它自动续
     一轮--探针等它落地(`continued`)才收手,机器留成安静态.
+
+    闸关着那条腿不看"对话里没有"(读漏与真没有同形),看的是**对话末行前后对拍**
+    (`messages.last` 各读一次):末行一动没动,才叫"发送步被闸拦下了".
 
     最后还看**账本**:这一步多留了一笔失败痕/现场帧就不算绿--打字撞上扩展那次续聊
     会造出这种痕,而那种情形下"两条腿"的归属本来就分不出来.
@@ -1106,6 +1151,15 @@ def send_page(question: str, *, allow_send: bool) -> int:
             report,
             f"写作框里有字({watched[:24]!r}):可能是你的草稿,也可能是扩展正要把上一轮"
             "工具结果发出去--第一步会覆盖它(ADR-0023 那条取舍),探针不动",
+        )
+    # 闸关着那条腿的判据要看"对话末行有没有动":先记下目前这一行(读不出就判不了).
+    tail_before = None if speak else last_row()
+    report["tailBefore"] = tail_before
+    if not speak and tail_before is None:
+        return blocked_report(
+            report,
+            "对话末行读不出来(`messages.last` 报错,或对话真是一行没有):"
+            "闸关着那条腿靠它前后对拍,读不出就不算数",
         )
     call = json.dumps(
         {"tool": "send.page", "arguments": {"question": question}}, ensure_ascii=False
@@ -1134,9 +1188,17 @@ def send_page(question: str, *, allow_send: bool) -> int:
         time.sleep(0.5)
     time.sleep(SEND_PAGE_SETTLE)
     composer_after = composer_text()
+    if not speak:
+        # 探针那笔草稿只是验证物:清掉,写作框回到交给它时的样子(空).**先收拾再下判据**--
+        # 末行读不出来也不能把那笔草稿丢在人家的写作框里.
+        clear_composer()
+        report["composerRestored"] = composer_text().strip() == ""
+    # 末行再读一眼:闸关着那条腿靠"这一行没动"下判据(读漏与真没有同形,见判据那段).
+    tail_after = None if speak else last_row()
     report["landed"] = landed
     report["sawDraft"] = saw_draft
     report["composerAfter"] = composer_after
+    report["tailAfter"] = tail_after
     report["rowsSeen"] = len(rows)
     report["tail"] = [
         {"role": row.get("role"), "text": str(row.get("text", ""))[:40]}
@@ -1144,15 +1206,16 @@ def send_page(question: str, *, allow_send: bool) -> int:
         if isinstance(row, dict)
     ]
     ok, why = send_page_verdict(
-        speak=speak, question=question, landed=landed, composer=composer_after
+        speak=speak,
+        question=question,
+        landed=landed,
+        composer=composer_after,
+        tail_before=tail_before,
+        tail_after=tail_after,
     )
     report["ok"] = ok
     report["verdict"] = why
-    if not speak:
-        # 探针那笔草稿只是验证物:清掉,写作框回到交给它时的样子(空).
-        clear_composer()
-        report["composerRestored"] = composer_text().strip() == ""
-    else:
+    if speak:
         report["continued"] = wait_continuation() if landed else False
         report["note"] = (
             "这一条是真发出去的:对话里留着它当证据,探针不代你删."
