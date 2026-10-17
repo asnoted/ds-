@@ -87,12 +87,13 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
   const localBusy = new Set<number>();
 
   /**
-   * **本地工具的截获点**--`local-tools` 的 requirement 与 ADR-0007 都按这个名字指着这里
+   * **本地工具的截获点**--`local-tools` 的 requirement(已退役的 spec, 去处见 ADR-0001 决定 6)
+   * 与 ADR-0007 都按这个名字指着这里
    * (#50:这段以前内联在一轮处置的循环体里,于是两份文档指的是一个不存在的函数:
    * 遵守的人找不到地方,将来谁建个同名函数那条 requirement 就"满足"了而截获在别处;
    * #101 把处置抽进本 module 时,名字与位置原样保住).
    *
-   * 位置照 spec 的话办:`parseToolCall` **之后**,打网关 **之前**先查 `findLocalTool`,
+   * 位置按当初的契约办:`parseToolCall` **之后**,打网关 **之前**先查 `findLocalTool`,
    * 命中就地跑(`runLocal`,一次 fetch 都不打),未命中交 `callRelay` 打网关.
    * 普通工具路径一字不改.
    */

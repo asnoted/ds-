@@ -195,7 +195,7 @@ export function newChat(_frame: ActionFrame): Record<string, never> {
 }
 
 /**
- * 侧栏开关(真机契约见 git 历史里已退役的 frontend spec"侧栏开关",ADR-0001).**两态是同一个控件**:图标 `path` 不变,只是位置从
+ * 侧栏开关(真机契约见 git 历史里已退役的 frontend spec"侧栏开关",去处见 ADR-0001 决定 6).**两态是同一个控件**:图标 `path` 不变,只是位置从
  * "展开:2 颗里第 2"变成"收起:3 颗里第 1".顶栏图标键没有任何语义属性(无字,无 aria,无 title),
  * 身份只靠位置--所以用结构不变量把"点错"变成"停下":
  *

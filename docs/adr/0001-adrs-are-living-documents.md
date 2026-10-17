@@ -40,7 +40,11 @@
    重新生成, `--check` 接在 `pnpm quality:ci` 里. 手改索引会判红.
 6. **文档布局**: 根目录只许 `AGENTS.md` / `README.md` / `GLOSSARY.md`, 别的文档一律进
    `docs/`. 技能流程用 Matt 那套(`.agents/skills/`, 版本记在 `skills-lock.json`);
-   `docs/agents/*.md` 记 issue 追踪, 分诊标签, 领域文档的规则.
+   `docs/agents/*.md` 记 issue 追踪, 分诊标签, 领域文档的规则. **没有 spec 目录**:
+   `openspec/` 那套(2026-10-04 到 10-07)整体退役 -- 没有工具校验的 spec 必然过时, 而过时的
+   契约比没有契约更误导; "必须怎样"改由 `GLOSSARY.md`, ADR, 测试, `protocol/fixtures/action.json`
+   与 `protocol/evidence/controls.json` 承载. 所以代码注释里"见某 spec"都是**历史指向**
+   (原文在 git 里), 去处看这一条.
 7. **词汇表管词**: 输出提到领域概念时用 `GLOSSARY.md` 里的词, 不要漂到同义词.
 
 ## Considered Options

@@ -450,7 +450,8 @@ describe("那个圆键:button.get / button.click", () => {
   });
 
   it("button.get:图标认不出回 unknown -- 成功返回,不抛", () => {
-    // 换一条既非箭头也非方块的 path(站点换图标 / 思考期环形都是这种,见 site-dom)
+    // 换一条既非箭头也非方块的 path(站点换图标 / 思考期环形都是这种; 契约见已退役的
+    // site-dom spec, 去处见 ADR-0001 决定 6)
     document.body.innerHTML = STOP_BUTTON_HTML.replace("M2 4.88", "M9 9.99");
     stubBox(circle());
 

@@ -194,8 +194,8 @@ export function nextFrame(): Promise<void> {
  * 这一层的直接子元素里有 `<pre>` 吗--**代码块外框**的判据.
  *
  * 真机上代码块外框里除了 `<pre>` 正文,还有表头(语言标签)与复制/下载按钮,都是**同级兄弟**
- * (结构见 `site-dom-anchors.md`"围栏在 DOM 里的样子").所以"这一层直接挂着 `<pre>`"
- * 就等于"这一层是代码块外框"--外框里除了 `<pre>` 一律不算正文.
+ * (结构见已退役的 `site-dom-anchors.md`"围栏在 DOM 里的样子", 去处见 ADR-0001 决定 6).
+ * 所以"这一层直接挂着 `<pre>`"就等于"这一层是代码块外框"--外框里除了 `<pre>` 一律不算正文.
  */
 function hasDirectPre(element: Element): boolean {
   const children = element.children;
@@ -280,8 +280,8 @@ export const domProbe: StyleProbe = {
 
 /**
  * 判角色用的阈值.数字是 2026-10-04 真机量的(那批 DOM 已随Trellis 迁移删除,证据
- * 散在下面这段注释与 `site-dom` 的"角色三层解析"里):用户气泡 22px 圆,头像 30px 圆
- * → `border-radius` 100px.
+ * 散在下面这段注释与 `site-dom` 的"角色三层解析"里--spec 已退役,去处见 ADR-0001 决定 6):
+ * 用户气泡 22px 圆,头像 30px 圆 → `border-radius` 100px.
  */
 const AVATAR_RADIUS_PX = 100; // 头像圆:30px 圆 → border-radius 100px
 const BUBBLE_RADIUS_PX = 16; // 气泡 22px;助手内容块 12px(薄边界,取下界留余量)
@@ -410,7 +410,7 @@ function firstRow(list: Element): Element | null {
  * 倒推正好认了它.
  *
  * 三条判据**按序取首个命中**,都是语义 / 结构锚,**不碰几何**(宽窄,`position` 会随窗口变,
- * 且 spec 明写几何不当主判据):
+ * 且当初的 spec 明写几何不当主判据--spec 已退役,去处见 ADR-0001 决定 6):
  *
  * 1. **装着写作框的那一条**--真机 2026-10-05:写作框 `_871cbca` 是主列表的后代,sticky 在底部,
  *    而主区 0 行的那一刻**只有它**认得出对话("你往哪写,哪就是对话").也不依赖行挂没挂.
