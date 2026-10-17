@@ -15,6 +15,7 @@ from dsb.work import (
     ERROR_BAD_REGEX,
     ERROR_EDIT_NO_MATCH,
     ERROR_EDIT_NOT_UNIQUE,
+    ERROR_HINT,
     ERROR_IO_FAILED,
     ERROR_NOT_A_DIRECTORY,
     ERROR_NOT_A_FILE,
@@ -515,6 +516,36 @@ def test_a_capped_result_still_gives_one_line_when_the_budget_is_tiny(
     """预算小到连末句都放不下时**仍然给一行**:与 `read` 那条'宁可超预算也给那一行'同一条."""
     monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 10)
     assert cap_result("\n".join(["aaaa"] * 3), "换个更小的目录再列").splitlines()[0] == "aaaa"
+
+
+def test_a_single_overlong_line_is_cut_inside_the_line() -> None:
+    """第一行自己就超预算时在行内砍:整行照给等于没闸(那一行就能几十万字).
+
+    失败回执正是这一种:``detail`` 里回显的是模型自己写进来的模式串或路径.
+    """
+    capped = cap_result("x" * (WORK_RESULT_CHARS * 2), "换个更小的目录再列")
+    assert len(capped.encode("utf-16-le")) // 2 <= WORK_RESULT_CHARS
+    assert capped.startswith("x" * 100)
+    assert "已截断" in capped
+    assert f"原文 {WORK_RESULT_CHARS * 2} 字" in capped
+
+
+def test_a_cut_line_counts_utf16_units() -> None:
+    """行内砍也按扩展那把尺:一整个星平面字占两个单元,砍出来的整条不超预算(ADR-0010)."""
+    capped = cap_result("\U00020000" * WORK_RESULT_CHARS, "把参数改短或改窄再试")
+    assert len(capped.encode("utf-16-le")) // 2 <= WORK_RESULT_CHARS
+    assert "已截断" in capped
+
+
+def test_a_failed_call_with_a_huge_detail_still_fits_the_result_budget(tmp_path: Path) -> None:
+    """失败回执与成功正文过同一道闸:回显的模式串是模型写的,一行能几十万字."""
+    pattern = "(" + "a" * (WORK_RESULT_CHARS * 2)
+    payload, failed = tool_by_name(tmp_path, "grep").handler({"pattern": pattern})
+    assert failed is True
+    body = payload["text"]
+    assert body.startswith(f"{ERROR_BAD_REGEX}(正则")
+    assert len(body.encode("utf-16-le")) // 2 <= WORK_RESULT_CHARS
+    assert ERROR_HINT in body
 
 
 def test_grep_bad_regex_is_bad_regex(tmp_path: Path) -> None:

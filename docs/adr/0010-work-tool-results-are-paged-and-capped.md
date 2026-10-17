@@ -88,6 +88,11 @@
     -- 纯 CJK 与 ASCII 下两个数相等, 所以从没露过; 正文里出现星平面字(emoji 之类)时同一个
     串在扩展侧量出来更大, 第 19 条在那里破口. 同一个串两边必须量出同一个数, 这条有 fixture
     钉着: `protocol/fixtures/result-units.json`, TS 与 pytest 各自量一遍(谁也不引用谁).
+21. **失败回执与成功正文过同一道闸**: `_wrap` / `_bad_path` 拼出来的 `code(detail)` 也走
+    `cap_result`(hint 是"把参数改短或改窄再试"). `detail` 里回显的是模型自己写进来的串
+    (模式 / 路径), 一行就能几十万字 -- 不过闸那一趟底下只剩 JSON-RPC 的
+    `MAX_BODY_BYTES = 256 * 1024` 兜着. 于是 `cap_result` 的契约是**任何正文进来, 出门的
+    那一整条都不超额度**: 行边界砍不下整行时(第一行自己就超)在行内砍, 末句说清被砍在哪.
 
 ## Considered Options
 
@@ -152,9 +157,9 @@
 ## 判据(怎么自己复现)
 
 ```sh
-# 翻页 / 单行标注 / 整条闸 / 末句留位
+# 翻页 / 单行标注 / 整条闸 / 末句留位 / 两边的"字"同一把尺 / 失败回执也过闸
 uv run pytest tests/test_work.py tests/test_mcp_server.py -q \
-  -k 'caps_the_whole_result or one_result or one_read_page or leaves_room_for_its_last_line'
+  -k 'whole_result or one_result or one_read_page or last_line or overlong_line or utf16 or huge_detail or astral'
 
 # 墙钟: 闸跟着走(纯函数层 + 工具载荷层)
 uv run pytest tests/test_work.py -q -k 'backtracking or blows_up'
@@ -162,20 +167,13 @@ uv run pytest tests/test_work.py -q -k 'backtracking or blows_up'
 # 不误伤: 本仓上最慢的那档(实测 3.5s)照常出命中
 uv run scripts/measure-result-forms.py grep --pattern 'ERROR_' --json
 
-# 量法(两条闸都看 len(...) 与末行)
+# 量法(两条闸都看 _units(...) 与末行)
 #   render_page(["x" * 100] * 400, 1, 200)  /  cap_result(...)
 ```
 
 三档实测(每轮多少字), 那个真 bug(脚注总数多算一行), 单行标注与翻页脚注到模型手里的真机
 读数, 见 `docs/evidence/read-pages.md`; `ls` / `grep` 那两个十万字的坏数字与修法见
 `docs/evidence/work-result-caps.md`.
-
-## 已知洞
-
-- **错误串不过闸**: `bad-regex(...)` / `pattern-too-slow(...)` / `out-of-root(...)` 这些回执
-  由 `_wrap` / `_bad_path` 直接拼出来, 不走 `cap_result`; 底下只有 JSON-RPC 那一层的
-  `MAX_BODY_BYTES = 256 * 1024`(`dsb/server.py`)兜着. 而模式串是模型写进来的, 可以很长 --
-  这条路有界, 但界在 256K 那一级, 不是 16,000.
 
 ## 未验证项
 

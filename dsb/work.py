@@ -85,6 +85,10 @@ ERROR_BAD_REGEX = "bad-regex"
 ERROR_PATTERN_TOO_SLOW = "pattern-too-slow"
 ERROR_IO_FAILED = "io-failed"
 
+#: 失败回执被 :func:`cap_result` 砍掉之后给模型的那一步:``detail`` 是参数回显, 变小 =
+#: 把参数改短(与 ``ls`` / ``grep`` 各自的 hint 同一条口径).
+ERROR_HINT = "把参数改短或改窄再试"
+
 #: 只写不读的护栏:``<root>/.git`` 之下(含 ``.git`` 本身,worktree 里 ``.git`` 是文件也算).
 #: #89 起它是 :data:`dsb.permissions.DEFAULT_RULES` 里 ``edit`` 那份表的一条规则
 #: (``.git`` / ``.git/*`` deny),这里只留字面量给遍历时裁目录用.
@@ -254,14 +258,17 @@ def _units(text: str) -> int:
 
 
 def cap_result(text: str, hint: str) -> str:
-    """整条结果的闸:超 :data:`WORK_RESULT_CHARS` 字就按整行砍,末行说清接着怎么办.
+    """整条结果的闸:超 :data:`WORK_RESULT_CHARS` 字就砍,末行说清接着怎么办.
 
-    **整条(连末句)不超过 :data:`WORK_RESULT_CHARS`**--末句不算进去就会越过扩展那道
-    同数的闸,被截掉的正是"怎么续"那句(ADR-0010).
+    **任何正文进来,出门的那一整条(连末句)都 <=** :data:`WORK_RESULT_CHARS`--末句不算
+    进去就会越过扩展那道同数的闸,被截掉的正是"怎么续"那句(ADR-0010).
+
+    砍的次序:尽量砍在行边界上(半行比没有更坏--模型会把半行当成一整行,与
+    :func:`render_page` 标单行的理由同一条);**第一行自己就超预算**时在行内砍--失败回执
+    就是这一种:``detail`` 里回显的往往是模型自己写进来的模式串或路径,一行能几十万字.
 
     ``hint`` 是砍掉之后该走的那一步(换个更小的目录 / 收窄模式),由调用方给--闸只
-    知道"太大了",不知道"怎么变小".砍在行边界上:半行比没有更坏(模型会把半行当成
-    一整行,与 :func:`render_page` 标单行的理由同一条).
+    知道"太大了",不知道"怎么变小".
     """
     if _units(text) <= WORK_RESULT_CHARS:
         return text
@@ -273,11 +280,39 @@ def cap_result(text: str, hint: str) -> str:
     used = 0
     for row in rows:
         cost = _units(row) + 1
-        if kept and used + cost + room > WORK_RESULT_CHARS:
+        if used + cost + room > WORK_RESULT_CHARS:
             break
         used += cost
         kept.append(row)
+    if not kept:
+        return _cut_first_row(rows[0], hint)
     return "\n".join([*kept, _result_note(len(kept), len(rows), hint)])
+
+
+def _cut_first_row(row: str, hint: str) -> str:
+    """第一行一整个放不下:在行内砍,末句说清这一行被砍在哪(ADR-0010).
+
+    末句里**不带**"给了前 N 字"--那会让末句长度依赖砍到哪,于是要循环;``原文 N 字``
+    就够了,模型自己数得出来.预算小到连末句都放不下时**只给这一行**:说一句"已截断"而
+    其实没砍,比不说更坏.
+    """
+    note = f"\n...(这一行超 {WORK_RESULT_CHARS} 字,已截断:原文 {_units(row)} 字;{hint})"
+    if _units(note) >= WORK_RESULT_CHARS:
+        return row
+    return _cut_units(row, WORK_RESULT_CHARS - _units(note)) + note
+
+
+def _cut_units(text: str, budget: int) -> str:
+    """取开头一段,长度不超过 ``budget`` 个 UTF-16 单元(与 :func:`_units` 同一把尺).
+
+    星平面字在扩展侧占两个单元,所以按码点取 ``budget`` 个字之后要把多出来的单元退掉.
+    """
+    cut = text[:budget]
+    drop = _units(cut) - budget
+    while drop > 0 and cut:
+        drop -= 2 if ord(cut[-1]) > 0xFFFF else 1
+        cut = cut[:-1]
+    return cut
 
 
 def _result_note(kept: int, total: int, hint: str) -> str:
@@ -567,16 +602,21 @@ def _grep_scan(root: Path, pattern: str, raw: str) -> str:
 
 
 def _wrap(action: Callable[[], str]) -> tuple[Payload, bool]:
-    """纯函数 → 处理器载荷:``WorkError`` 折成 ``code(detail)`` 的失败正文."""
+    """纯函数 → 处理器载荷:``WorkError`` 折成 ``code(detail)`` 的失败正文.
+
+    成功与失败走**同一道**闸(:func:`cap_result`):失败串不过闸的话,底下只剩 JSON-RPC
+    那一层的 ``MAX_BODY_BYTES = 256 * 1024`` 兜着,而 ``detail`` 里回显的串是模型写进来的,
+    可以很长(ADR-0010).
+    """
     try:
         return {"text": action()}, False
     except WorkError as error:
         body = error.code if error.detail is None else f"{error.code}({error.detail})"
-        return {"text": body}, True
+        return {"text": cap_result(body, ERROR_HINT)}, True
 
 
 def _bad_path(detail: str) -> tuple[Payload, bool]:
-    return {"text": f"{ERROR_BAD_PATH}({detail})"}, True
+    return {"text": cap_result(f"{ERROR_BAD_PATH}({detail})", ERROR_HINT)}, True
 
 
 def work_tools(root: Path) -> list[Tool]:
