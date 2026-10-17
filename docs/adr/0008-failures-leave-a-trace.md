@@ -24,10 +24,15 @@
 3. **同一次故障只记一笔**: 最前面那条还没恢复时, 不管这次是哪个环节哪个原因都视为同一段红着
    的时间在延续 -- 否则探活每 30s, 轮询每 3s 各失败一次, 几秒就能把配额刷满, 真正要看的
    前因后果全被冲掉. 留下的是故障**开始**的时刻. 配额 `FAILURE_LOG_CAP = 20`.
-4. **事件名固定, 两张册子**: 中继 `bad-request` / `mcp-broke` / `tool-fail` / `tool-slow` /
-   `server-down` / `tool-clash` / `config-broke` / `server-start-broke`; 扩展的**环节**
-   `health`(周期探活) / `call`(工具调用) / `watchdog`(看门狗停手) / `rounds`(8 轮到顶) /
-   `continuation`(续聊那一跳). 增删要两张册子一起动.
+4. **事件名固定, 两张册子**: 中继侧记失败与慢的那几条 -- `bad-request`(请求不合形) /
+   `mcp-broke`(服务层漏接) / `tool-broke`(处理器自己抛) / `tool-fail` / `tool-slow` /
+   `tool-clash`(自家工具与外部撞名) / `server-down` / `server-start-broke`(第三方起不来) /
+   `config-broke`(配置读不动); 另有**三条不是故障**: `ping`(扩展探活, 喂 `env-up.sh`
+   "扩展最后探活"那条判据) / `tools-capped`(一张表里装不下的工具被砍, 见 ADR-0003) /
+   `result-capped`(结果超预算被砍, 见 ADR-0003). 扩展侧是**环节**: `health`(周期探活) /
+   `call`(工具调用) / `watchdog`(看门狗停手) / `rounds`(8 轮到顶) / `continuation`(续聊那一
+   跳). 增删要**三处**一起动: 这张表, `tests/test_log.py` 里那份册子(它对着调用点核), 以及
+   调用点.
 5. **悬停只在绿着时摆历史**: 当前红着时第一句就是原因, 重复一遍只是噪音.
 6. **续聊失败要能说清断在哪一步**: 环节 `continuation`, 每个失败点一条稳定的原因短句
    (`src/lib/continuationfail.ts`) -- 尤其"没找到输入框""输入框写不进去""Enter 与发送键都没

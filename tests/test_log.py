@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator, Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,6 +18,50 @@ import pytest
 from dsb.log import SLOW_MS, log_event
 from dsb.mcp import MCP_PATH, McpService, Tool
 from dsb.server import make_server
+
+ROOT = Path(__file__).resolve().parents[1]
+
+#: 中继侧事件名的册子(ADR-0008 决定 4 那张表). 加 / 删事件要三处一起动: 这张表, 那张表,
+#: 以及调用点.
+EVENT_NAMES = frozenset(
+    {
+        "bad-request",
+        "config-broke",
+        "mcp-broke",
+        "ping",
+        "result-capped",
+        "server-down",
+        "server-start-broke",
+        "tool-broke",
+        "tool-clash",
+        "tool-fail",
+        "tool-slow",
+        "tools-capped",
+    }
+)
+
+
+def logged_event_names(source: str) -> set[str]:
+    """抽出 `log_event(...)` **第一个实参**里的事件名(三元里的两条都算).
+
+    只看第一个实参: 后面的字段里也可能有字符串(`missing="command"`), 那些不是事件名.
+    """
+    found: set[str] = set()
+    for match in re.finditer(r"log_event\(", source):
+        depth, at = 1, match.end()
+        while at < len(source):
+            char = source[at]
+            if char == "," and depth == 1:
+                break
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            at += 1
+        found |= set(re.findall(r'"([a-z][a-z-]*)"', source[match.end() : at]))
+    return found
 
 
 def _echo(arguments: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -92,6 +138,15 @@ def call_tool(base: str, name: str, arguments: dict[str, Any] | None = None) -> 
             return response.status, json.loads(response.read())
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read())
+
+
+def test_the_event_names_are_the_catalogued_ones() -> None:
+    """打错一个字, 事后那条 `grep` 就再也捞不到这行 -- 所以调用点的事件名对着册子核."""
+    used: set[str] = set()
+    for path in sorted((ROOT / "dsb").glob("*.py")):
+        used |= logged_event_names(path.read_text(encoding="utf-8"))
+    assert used <= EVENT_NAMES, f"册子外的事件名: {sorted(used - EVENT_NAMES)}"
+    assert used >= EVENT_NAMES, f"册子里已经没人用的: {sorted(EVENT_NAMES - used)}"
 
 
 def test_body_text_cannot_be_logged_because_it_is_not_in_the_signature() -> None:
