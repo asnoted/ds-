@@ -2,10 +2,11 @@
 
 - **Status**: accepted
 - **Date**: 2026-10-17
-  扩展往页面发的每一条**自动续聊**消息都要过同一个出站口(`src/lib/gate.ts`), 窗口开启时
-  一次性发出. 所有"替用户把消息发出去"的原语之间必隔一个 **Beta(2,4) 的 3~15 秒随机间隔**
-  (峰在 6 秒, 两端密度趋于零): `WINDOW_MIN_MS = 3000`, `WINDOW_MAX_MS = 15000`,
-  `WINDOW_MODE_MS = 6000`(`src/lib/outbound.ts`).
+
+扩展往页面发的每一条**自动续聊**消息都要过同一个出站口(`src/lib/gate.ts`), 窗口开启时
+一次性发出. 所有"替用户把消息发出去"的原语之间必隔一个 **Beta(2,4) 的 3~15 秒随机间隔**
+(峰在 6 秒, 两端密度趋于零): `WINDOW_MIN_MS = 3000`, `WINDOW_MAX_MS = 15000`,
+`WINDOW_MODE_MS = 6000`(`src/lib/outbound.ts`).
 
 依据是 2026-09-26/28 的实测: 一轮 7 次工具执行产生 6 条回灌, **每条间隔都合规**
 (3.8s / 5.0s / 3.7s / 3.4s / 2.3s / 15.4s), 末尾仍然撞上 `finish_reason: rate_limit_reached`,

@@ -2,10 +2,11 @@
 
 - **Status**: accepted
 - **Date**: 2026-10-17
-  dsb 只干一件事: 本机 MCP 网关. JSON-RPC 2.0 从 `POST /mcp` 进来(`initialize` / `ping` /
-  `tools/list` / `tools/call`), 把仓库根 `mcp.json` 配的 MCP servers 启动时 eager 拉起,
-  汇总成一张工具表替扩展转调用(对外名 `<server>_<tool>`, 非字母数字折 `_`); 自家挂在这张表上
-  的是内建工作工具(ADR-0009)与 `said_add` / `said_read`.
+
+dsb 只干一件事: 本机 MCP 网关. JSON-RPC 2.0 从 `POST /mcp` 进来(`initialize` / `ping` /
+`tools/list` / `tools/call`), 把仓库根 `mcp.json` 配的 MCP servers 启动时 eager 拉起,
+汇总成一张工具表替扩展转调用(对外名 `<server>_<tool>`, 非字母数字折 `_`); 自家挂在这张表上
+的是内建工作工具(ADR-0009)与 `said_add` / `said_read`.
 
 **dsb 被动到底**: 不推送, 不轮询, 无会话, 无 SSE, 无状态(每次请求独立), 一条 CORS 头都
 不下发; `DELETE /mcp` 回 205(无会话可收, 不该撞 405), 别的方法回 405, 别的路径回 404,

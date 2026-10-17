@@ -2,9 +2,10 @@
 
 - **Status**: accepted
 - **Date**: 2026-10-17
-  **本仓的上下文预算是单条输入 900,000 token**(`MAX_SAFE_INPUT_TOKENS`,
-  `src/lib/continuation.ts`); 实测到的**硬墙**在 982,000 < 上限 < 982,700 token -- 那差出来的
-  ~82,000 token **就是余量**, 不是待收窄的精度.
+
+**本仓的上下文预算是单条输入 900,000 token**(`MAX_SAFE_INPUT_TOKENS`,
+`src/lib/continuation.ts`); 实测到的**硬墙**在 982,000 < 上限 < 982,700 token -- 那差出来的
+~82,000 token **就是余量**, 不是待收窄的精度.
 
 为什么是 token 不是字: 用 `deepseek-ai/DeepSeek-V3` 的分词器实测, 两种密度完全不同的文本
 落在**同一个** token 区间(收下的最大与拒收的最小都在 [980,000, 983,785] 里): 真实中文小说
