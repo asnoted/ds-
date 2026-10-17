@@ -165,6 +165,17 @@ uv run scripts/measure-result-forms.py grep --pattern 'ERROR_' --json
 读数, 见 `docs/evidence/read-pages.md`; `ls` / `grep` 那两个十万字的坏数字与修法见
 `docs/evidence/work-result-caps.md`.
 
+## 已知洞
+
+- **两边的"字数"不是同一种单位**: dsb 量的是 Python 的 `len()`(码点), 扩展量的是 JS 的
+  `.length`(UTF-16 单元). 纯 CJK 与 ASCII 下两个数相等, 所以决定 19 那条"dsb 交出的每一条
+  结果都原样进对话"成立; 正文里出现星平面字符(emoji 等)时同一个串在扩展侧量出来更大,
+  那条保证在那里不成立.
+- **错误串不过闸**: `bad-regex(...)` / `pattern-too-slow(...)` / `out-of-root(...)` 这些回执
+  由 `_wrap` / `_bad_path` 直接拼出来, 不走 `cap_result`; 底下只有 JSON-RPC 那一层的
+  `MAX_BODY_BYTES = 256 * 1024`(`dsb/server.py`)兜着. 而模式串是模型写进来的, 可以很长 --
+  这条路有界, 但界在 256K 那一级, 不是 16,000.
+
 ## 未验证项
 
 - **`limit = 2000` 那个上限在真实内容上"够不够"**: 一个默认页(200 行)就几 KB, 字节预算先咬,

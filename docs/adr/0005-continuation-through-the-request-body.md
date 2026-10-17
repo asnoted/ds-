@@ -92,6 +92,15 @@ pnpm vitest run src/lib/continuation.test.ts src/lib/armed.test.ts \
 13,492 字原样进对话, 围栏 1 条对 `agent:继续` 恰好 1 条)见 `docs/evidence/continuation.md`;
 原生 `continue` 的两端采样见 `docs/evidence/native-continue.md`.
 
+## 已知洞
+
+- **一轮多块共享一道 16,000, 而且是先拼后截**: 八块的正文拼成一段再量, 所以头一块长的时候,
+  后面几块在模型眼里等于不存在, 而且看不出被吃掉了(截断那句只出现一次). 一块一闸更诚实,
+  但那是行为改动, 本轮只记下来.
+- **截断那句花在额度外**: `truncateResult` 的做法是"截到 `max`, 再追加一句'已截断'", 交出去
+  的因此比 16,000 多一点. dsb 那两处(`render_page` / `cap_result`)在同一轮里已经把这句预留
+  进预算(ADR-0010 决定 17), 扩展这一处没有 -- 于是那边"贴边"的保证在这条路上差一行.
+
 ## 未验证项
 
 - **站点出站的正文是否**逐字**等于我们写进输入框的短标记**: 这是钥匙的**实现前置** --
