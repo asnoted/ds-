@@ -59,6 +59,8 @@ MAX_RESULT_CHARS = 64 * 1024
 MAX_TOOLS_PER_SERVER = 128
 #: 对外的协议版本:与本仓 ``dsb.mcp`` 讲的一致,子进程按它开场.
 PROTOCOL_VERSION = "2025-06-18"
+#: 收摊时给子进程的体面退时间:先断 stdin 让它自己退,过了就杀.
+STOP_GRACE = 3.0
 
 ERROR_NOT_RUNNING = "tool-not-running"
 ERROR_TIMEOUT = "tool-timeout"
@@ -242,8 +244,12 @@ class StdioServer:
             self.stop()
             raise
 
-    def stop(self) -> None:
-        """收摊:断 stdin 让它自己退,给一点时间,仍不走就杀."""
+    def stop(self, grace: float = STOP_GRACE) -> None:
+        """收摊:断 stdin 让它自己退,给 ``grace`` 秒;仍不走就杀.
+
+        ``grace=0`` 是"信道卡住"那条路(:meth:`_request` 过线)用的:它多半没在读 stdin,
+        体面退那几秒白等,还要算在用户头上--断掉就走,让下一次调用起个新的(ADR-0034).
+        """
         proc, self._proc = self._proc, None
         self._fail_all()
         if proc is None:
@@ -251,8 +257,13 @@ class StdioServer:
         with contextlib.suppress(OSError, ValueError):
             if proc.stdin is not None:
                 proc.stdin.close()
+        if grace <= 0:
+            with contextlib.suppress(OSError, ValueError):
+                proc.kill()
+                proc.wait()
+            return
         try:
-            proc.wait(timeout=3)
+            proc.wait(timeout=grace)
         except subprocess.TimeoutExpired:
             proc.kill()
 
@@ -346,6 +357,12 @@ class StdioServer:
         except queue.Empty as exc:
             with self._guard:
                 self._pending.pop(request_id, None)
+            # 过线还没答上来:这个孩子当场断掉,下一次调用起个新的(ADR-0034).留着它,
+            # 后面每一件工具都排在它后面、各自等到自己的超时--它要是永不回头,工具面就
+            # 一直哑着,只能人来重启中继.
+            if self._proc is not None:
+                log_event("server-down", tool=self.name, error=ERROR_TIMEOUT)
+            self.stop(grace=0)
             raise GatewayError(ERROR_TIMEOUT) from exc
         if message is None:
             raise GatewayError(ERROR_NOT_RUNNING)
