@@ -1,7 +1,8 @@
-"""守卫: `docs/adr/` 这份语料的三条不变量 -- 骨架, 引用, 点名的东西.
+"""守卫: `docs/adr/` 这份语料的几条不变量 -- 骨架, 引用, 点名的东西, 判据会不会咬, 来历有
+没有人点.
 
 ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修订/取代". 好处是读一篇就够,
-代价是**三样东西没有编译器管**:
+代价是**好几样东西没有编译器管**:
 
 - **骨架**: 一篇 ADR 少了一个固定节(比如 `## Consequences`), 或者 H1 的编号与文件名对不
   上, 谁都不会红 -- 直到有人按它去复现, 或者按索引点不到那篇.
@@ -19,6 +20,8 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   而筛词没改, 那条命令会**一个用例都不收**而退出码照旧 0(这个夜里真发生过两次:
   `-k token` 收到的是别的用例, `-k blows_up` 那条其实叫 `blew_up`). 核的是**存不存在 /
   收不收得到**, 不是"跑起来对不对"(那要真跑).
+- **来历有没有人点**: `docs/evidence/` 那些一次性实测, ADR 正文里留一句点名才走得过去;
+  一份没人点的文件就是孤儿, 而多出来的文件不会有谁觉得碍事.
 
 `tests/test_coding_standards_refs.py` 是同一类守卫(引用了 `docs/CODING_STANDARDS.md` 的
 节号); 那条既然落在 tests/, 这条也落这里, 于是本地 `pnpm quality` 与 CI 都跑得到.
@@ -437,6 +440,21 @@ def test_the_scanned_docs_are_the_advertised_ones() -> None:
         assert path.name in text, (
             f"{path.name} 进了扫面, ADR-0001 决定 8 却没点名(加一份扫面要两处一起动)"
         )
+
+
+def test_every_evidence_file_is_pointed_at() -> None:
+    """`docs/evidence/` 里每份都得被**某篇 ADR 点名**(ADR-0001 决定 3).
+
+    那些是"一次性的实测"的去处, ADR 正文里留一句点名当指路牌; 没人点的孤儿文件, 读者从语料
+    里根本走不到 -- 等于没写.
+    """
+    adr_text = "\n".join(path.read_text(encoding="utf-8") for path in adr_files())
+    orphans = [
+        path.name
+        for path in sorted((ROOT / "docs" / "evidence").glob("*.md"))
+        if path.name not in adr_text
+    ]
+    assert not orphans, f"这些来历没有哪篇 ADR 点名(在篇里加一句指路): {orphans}"
 
 
 def test_every_judge_path_exists() -> None:

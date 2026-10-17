@@ -77,3 +77,17 @@ def test_the_corpus_numbers_come_from_the_adr_directory() -> None:
         path.stem[:4] for path in (ROOT / "docs" / "adr").glob("*.md") if path.name != "README.md"
     }
     assert numbers == on_disk
+
+
+def test_the_role_table_matches_the_tracker_doc() -> None:
+    """五张角色的**本仓名字**写死在 `docs/agents/triage-labels.md` 那张表的右列, 脚本得跟它一致.
+
+    左列是 Matt 技能的说法, 右列才是本仓的标签; 对不上时脚本会拿一个不存在的标签去查
+    (查不漏也报不出), 而这**不会**让任何东西变红 -- 所以在这儿钉住.
+    """
+    module = load_audit()
+    doc = (ROOT / "docs" / "agents" / "triage-labels.md").read_text(encoding="utf-8")
+    rows = [line.split("|") for line in doc.splitlines() if line.startswith("| `")]
+    in_doc = {cells[2].strip().strip("`") for cells in rows}
+    assert in_doc, "那张表怎么一行都没解析出来?"
+    assert in_doc == set(module.ROLES)
