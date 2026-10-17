@@ -42,7 +42,8 @@ describe("truncateResult", () => {
     expect(out).toContain("已截断");
     expect(out).toContain(`${MAX_RESULT_CHARS + 10} 字`);
     // 正文仍是从头开始的那一段,且没白留一大截额度给末句.
-    expect(text.startsWith(out.split("\n")[0])).toBe(true);
+    const [body = ""] = out.split("\n");
+    expect(text.startsWith(body)).toBe(true);
     expect(out.length).toBeGreaterThan(MAX_RESULT_CHARS - 100);
   });
 
