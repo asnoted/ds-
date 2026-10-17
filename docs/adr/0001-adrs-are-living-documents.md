@@ -32,7 +32,9 @@
 4. **引用要指得到**. 引用 `ADR-NNNN` 就必须有那一篇; 重编号时全仓引用一起改
    (注释, 测试标题, fixture 的 `description`, 探针的 report 字符串都算引用). **有守卫**:
    `tests/test_adr_corpus.py` 扫全仓, 并列写法(`ADR-0007/0006`)里每个号都算, 有一个指不到
-   就红 -- 本篇落地那天是靠人肉 `grep` 扫的, 扫出 6 处悬空.
+   就红 -- 本篇落地那天是靠人肉 `grep` 扫的, 扫出 6 处悬空. 篇内的 `决定 M` 也算引用, 而
+   M 是**下标**: 号还在, 下标搬歪了这条查不出("那一篇里没有第 M 条"查得出, 同一道守卫);
+   并决定 / 删决定时, 篇外那些下标要自己回头改.
 5. **索引 `docs/adr/README.md` 由脚本生成**: `uv run scripts/adrs-index.py`
    重新生成, `--check` 接在 `pnpm quality:ci` 里. 手改索引会判红.
 6. **文档布局**: 根目录只许 `AGENTS.md` / `README.md` / `GLOSSARY.md`, 别的文档一律进
@@ -71,7 +73,7 @@
 
 ```sh
 uv run scripts/adrs-index.py --check      # 索引与正文一致
-pnpm relay:test                           # 骨架与全仓引用(tests/test_adr_corpus.py)
+pnpm relay:test                           # 骨架 / 全仓引用 / 篇内 `决定 M` 下标(tests/test_adr_corpus.py)
 pnpm quality:ci                           # 三道守卫: 中文标点 / 混入文字体系 / ADR 索引
 uv run scripts/audit-issues.py --citations   # 仓外那些票里的旧号(信息级; 要 gh + 网络)
 ```

@@ -136,7 +136,7 @@ uv run scripts/measure-result-forms.py grep --pattern 'ERROR_' --json
 - `cap_result`,行宽 64 / 80 / 100 / 120:各 **16,041 / 16,008 / 16,009 / 16,023 字**.
 
 而**扩展那道闸正好是 16,000**(`src/lib/continuation.ts` 的 `MAX_RESULT_CHARS`,ADR-0010
-第 4 条与它同数),`truncateResult` **从尾巴上截**:截掉的正是**脚注**--`offset` 的唯一来源;
+决定 19 与它同数),`truncateResult` **从尾巴上截**:截掉的正是**脚注**--`offset` 的唯一来源;
 `ls` / `grep` 那边截掉的是"收窄模式 / 换个更小的目录再列"那句.于是
 
 - ADR-0010:"一页 `read` 的结果能原样进对话,不再被腰斩" -- 这几种形状下**不成立**;

@@ -7,7 +7,9 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   上, 谁都不会红 -- 直到有人按它去复现, 或者按索引点不到那篇.
 - **引用**: 全仓引用 `ADR-NNNN` 的地方(注释, 测试标题, fixture 的 `description`, 探针的
   report 字符串)漏改一处, 也没有编译器会红. 2026-10-17 那次重编号(28 篇并 13 篇)就是靠
-  人肉 `grep` 扫的, 扫出 6 处悬空 -- 这两条守卫是那次教训的产物.
+  人肉 `grep` 扫的, 扫出 6 处悬空 -- 这两条守卫是那次教训的产物. 重编号还留了**第二层**:
+  `ADR-NNNN 决定 M` 里的 M 是**篇内下标**, 旧编号下的下标搬过来就指歪了(仓里真有过五处);
+  "号指得到、下标指歪了"这条查不出, 但"那一篇里没有第 M 条"查得出.
 
 `tests/test_coding_standards_refs.py` 是同一类守卫(引用了 `docs/CODING_STANDARDS.md` 的
 节号); 那条既然落在 tests/, 这条也落这里, 于是本地 `pnpm quality` 与 CI 都跑得到.
@@ -16,7 +18,7 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +62,10 @@ HEADING = re.compile(r"^##\s+(.+?)\s*$", re.M)
 #: 引用形态: `ADR-0007`, `ADR 0007`, 以及并列写法 `ADR-0007/0006` -- 后者每个号都算.
 CITE = re.compile(r"ADR[- ]?(\d{3,4}(?:\s*[/,、]\s*\d{3,4})*)")
 CITE_SPLIT = re.compile(r"\s*[/,、]\s*")
+
+#: 篇内引用的形态: `ADR-0008 决定 12` / `ADR-0010 第 19 条`. 下标指歪了(号对、位置不对)这条
+#: 查不出; 查得出的是"那一篇里没有第 M 条" -- 并决定 / 删决定的时候, 篇外那些下标最容易漏.
+DECISION = re.compile(r"ADR-(\d{4})[^0-9\n]{0,12}(?:决定|第)\s*(\d+)\s*条?")
 
 
 def adr_files() -> list[Path]:
@@ -120,6 +126,36 @@ def cite_problems(files: Iterable[Path], known: set[str]) -> list[str]:
     return [f"ADR-{num} <- {', '.join(where[:4])}" for num, where in sorted(hits.items())]
 
 
+def decision_numbers(path: Path) -> set[int]:
+    """一篇 ADR 的 `## 决定` 里出现过的顶层编号(篇内引用指向的就是它们)."""
+    section = path.read_text(encoding="utf-8").split("## 决定", 1)[-1].split("\n## ", 1)[0]
+    return {int(m.group(1)) for m in re.finditer(r"^(\d+)\. ", section, re.M)}
+
+
+def decision_numbers_by_adr() -> dict[str, set[int]]:
+    return {path.stem[:4]: decision_numbers(path) for path in adr_files()}
+
+
+def decision_problems(files: Iterable[Path], known: Mapping[str, set[int]]) -> list[str]:
+    """返回"引用的决定号在那一篇里不存在"的清单;空列表 = 都指得到."""
+    out: list[str] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        shown = path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else path.as_posix()
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for number, item in DECISION.findall(line):
+                items = known.get(number)
+                if items and int(item) not in items:
+                    out.append(
+                        f"ADR-{number} 决定 {item} <- {shown}:{lineno}"
+                        f"(那篇的决定号只到 {max(items)})"
+                    )
+    return out
+
+
 def scanned_files() -> Iterator[Path]:
     for path in sorted(ROOT.iterdir()):
         if path.is_file() and path.suffix in SUFFIXES and path.name not in ROOT_FILE_SKIP:
@@ -150,6 +186,25 @@ def test_every_citation_resolves() -> None:
     assert not problems, (
         "引用了不存在的 ADR 编号(改引用, 或补那一篇;重编号时全仓一起改):\n" + "\n".join(problems)
     )
+
+
+def test_every_decision_citation_lands() -> None:
+    problems = decision_problems(scanned_files(), decision_numbers_by_adr())
+    assert not problems, (
+        "引用的决定号在那一篇里不存在(并决定 / 删决定时, 篇外那些下标要一起改):\n"
+        + "\n".join(problems)
+    )
+
+
+def test_decision_check_fires(tmp_path: Path) -> None:
+    note = tmp_path / "note.md"
+    note.write_text(
+        "见 ADR-0002 决定 9 与 ADR-0002 第 2 条, 还有 ADR-0003 决定 1.\n", encoding="utf-8"
+    )
+    problems = decision_problems([note], {"0002": {1, 2}, "0003": {1}})
+    assert len(problems) == 1
+    assert "ADR-0002 决定 9" in problems[0]
+    assert "note.md:1" in problems[0]
 
 
 def test_adr_numbers_are_unique() -> None:
