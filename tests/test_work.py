@@ -23,10 +23,10 @@ from dsb.work import (
     ERROR_PATTERN_TOO_SLOW,
     ERROR_PROTECTED,
     WORK_READ_BYTES,
-    WORK_READ_LINE_LIMIT,
     WORK_RESULT_CHARS,
     WORK_ROOT_ENV_KEY,
     WorkError,
+    cap_result,
     edit_text,
     grep_tree,
     list_dir,
@@ -137,12 +137,14 @@ def test_list_dir_refuses_out_of_root(tmp_path: Path) -> None:
 
 def test_list_dir_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """件数上限每维都不超时,整条仍可能很大:总量闸按整行砍,并在末行说怎么续."""
-    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 40)
+    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 100)
     for index in range(20):
         (tmp_path / f"{index:05d}").write_text("x", encoding="utf-8")
-    rows = list_dir(tmp_path).splitlines()
-    assert rows[:6] == [f"{index:05d}" for index in range(6)]
-    assert rows[-1] == "...(整条超 40 字,已截断:给了前 6 行 / 共 20 行;换个更小的目录再列)"
+    result = list_dir(tmp_path)
+    rows = result.splitlines()
+    assert rows[:9] == [f"{index:05d}" for index in range(9)]
+    assert rows[-1] == "...(整条超 100 字,已截断:给了前 9 行 / 共 20 行;换个更小的目录再列)"
+    assert len(result) <= 100
 
 
 # ---- read_text ----
@@ -263,10 +265,21 @@ def test_read_always_yields_a_page_even_when_the_budget_is_tiny(
 
 
 def test_read_page_stays_within_the_same_budget_as_one_result(tmp_path: Path) -> None:
-    """read 的总量闸就是页预算:最多超出一行(预算小到放不下时那一行仍然给)加一句脚注."""
+    """整页(行号、换行、脚注都在内)不超过页预算--扩展那道与它同数,越一个字就被截.
+
+    这是 ADR-0035 量出来的那个洞:行宽 100 字时一页 16,154 字,扩展把脚注(``offset``
+    的唯一来源)截掉了.
+    """
     (tmp_path / "long.txt").write_text("\n".join("y" * 500 for _ in range(400)), encoding="utf-8")
     page = read_text(tmp_path, "long.txt", 1, 400)
-    assert len(page) <= WORK_READ_BYTES + WORK_READ_LINE_LIMIT + 200
+    assert len(page) <= WORK_READ_BYTES
+    assert page.splitlines()[-1].startswith("(字节预算截断")
+
+    many = "\n".join("x" * 3 for _ in range(2_000))
+    (tmp_path / "many.txt").write_text(many, encoding="utf-8")
+    short = read_text(tmp_path, "many.txt", 1, 2_000)
+    assert len(short) <= WORK_READ_BYTES
+    assert "接着读:offset=" in short.splitlines()[-1]
 
 
 def test_the_result_cap_is_one_read_page() -> None:
@@ -458,13 +471,35 @@ def test_grep_stops_at_the_hit_limit(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 def test_grep_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """命中数与单行长度都没超,整条仍可能很大(200 x 500 字):总量闸按整行砍."""
-    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 40)
+    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 150)
     (tmp_path / "f.txt").write_text("\n".join(f"x{index}" for index in range(20)), encoding="utf-8")
-    rows = grep_tree(tmp_path, "x").splitlines()
-    assert rows[:3] == ["f.txt:1: x0", "f.txt:2: x1", "f.txt:3: x2"]
+    result = grep_tree(tmp_path, "x")
+    rows = result.splitlines()
+    assert rows[:7] == [f"f.txt:{index + 1}: x{index}" for index in range(7)]
     assert (
-        rows[-1] == "...(整条超 40 字,已截断:给了前 3 行 / 共 20 行;收窄模式,或指定 path 分几次搜)"
+        rows[-1] == "...(整条超 150 字,已截断:给了前 7 行 / 共 20 行;收窄模式,或指定 path 分几次搜)"
     )
+    assert len(result) <= 150
+
+
+def test_a_capped_result_leaves_room_for_its_last_line() -> None:
+    """整条(连末句)不超过 :data:`WORK_RESULT_CHARS`:末句也占额度.
+
+    这些行宽是量出来的(ADR-0035):末句不算进去时,64/80/100/120 字各越线 24~41 字,
+    **而扩展就是从尾巴上截的**--截掉的正好是"怎么续"那句.
+    """
+    for width in (64, 80, 100, 120, 300):
+        capped = cap_result("\n".join("x" * width for _ in range(1_000)), "换个更小的目录再列")
+        assert len(capped) <= WORK_RESULT_CHARS, width
+        assert capped.splitlines()[-1].startswith("...(整条超"), width
+
+
+def test_a_capped_result_still_gives_one_line_when_the_budget_is_tiny(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """预算小到连末句都放不下时**仍然给一行**:与 `read` 那条'宁可超预算也给那一行'同一条."""
+    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 10)
+    assert cap_result("\n".join(["aaaa"] * 3), "换个更小的目录再列").splitlines()[0] == "aaaa"
 
 
 def test_grep_bad_regex_is_bad_regex(tmp_path: Path) -> None:

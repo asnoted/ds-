@@ -45,6 +45,9 @@ WORK_ROOT_ENV_KEY = "DSB_WORK_ROOT"
 WORK_READ_PAGE_LINES = 200
 WORK_READ_MAX_LINES = 2_000
 WORK_READ_LINE_LIMIT = 500
+#: 一页的**总量**(行号、行与行之间的换行、末尾那句脚注,全算在内,ADR-0035):它与扩展
+#: 那道 ``MAX_RESULT_CHARS`` 同数,所以一页能原样进对话--多一个字都会被扩展从尾巴上截掉,
+#: 而截掉的正是脚注(``offset`` 的唯一来源).
 WORK_READ_BYTES = 16_000
 WORK_LIST_LIMIT = 500
 WORK_GREP_LIMIT = 200
@@ -64,7 +67,8 @@ WORK_BINARY_PROBE = 8_192
 #: 列与搜的出口过同一道(照 pi 的 ``truncateHead`` 口径):超了只砍在行边界上(半行
 #: 比没有更坏),末行留一句"接着怎么办",而不是网关那句"已截断:原文 N 字"--模型拿着
 #: 那句什么都做不了.与 ``read`` 的一页预算同数:一条结果 = 一页(那边归
-#: :data:`WORK_READ_BYTES` 管,页预算就是它的总量闸).
+#: :data:`WORK_READ_BYTES` 管,页预算就是它的总量闸).**末句也占这笔额度**(ADR-0035):
+#: 不算它,整条会越过扩展那道 16,000,被截掉的正是"怎么续"那句.
 WORK_RESULT_CHARS = 16_000
 
 #: 工具载荷码册子(与 gateway 的三码,mcp.py 的 JSON-RPC 码分属三套,不混).
@@ -238,6 +242,9 @@ def _relative_to_root(root: Path, path: Path) -> str:
 def cap_result(text: str, hint: str) -> str:
     """整条结果的闸:超 :data:`WORK_RESULT_CHARS` 字就按整行砍,末行说清接着怎么办.
 
+    **整条(连末句)不超过 :data:`WORK_RESULT_CHARS`**--末句不算进去就会越过扩展那道
+    同数的闸,被截掉的正是"怎么续"那句(ADR-0035).
+
     ``hint`` 是砍掉之后该走的那一步(换个更小的目录 / 收窄模式),由调用方给--闸只
     知道"太大了",不知道"怎么变小".砍在行边界上:半行比没有更坏(模型会把半行当成
     一整行,与 :func:`render_page` 标单行的理由同一条).
@@ -245,19 +252,23 @@ def cap_result(text: str, hint: str) -> str:
     if len(text) <= WORK_RESULT_CHARS:
         return text
     rows = text.splitlines()
+    # 末句也占这笔额度:不算它,整条(正文 + 末句)就会越过扩展那道 16000,被扩展从
+    # 尾巴上截--截掉的正好是"怎么续"(ADR-0035).
+    room = len(_result_note(len(rows), len(rows), hint))
     kept: list[str] = []
     used = 0
     for row in rows:
         cost = len(row) + 1
-        if used + cost > WORK_RESULT_CHARS:
+        if kept and used + cost + room > WORK_RESULT_CHARS:
             break
         used += cost
         kept.append(row)
-    dropped = (
-        f"...(整条超 {WORK_RESULT_CHARS} 字,已截断:给了前 {len(kept)} 行 / 共 {len(rows)} 行;"
-        f"{hint})"
-    )
-    return "\n".join([*kept, dropped])
+    return "\n".join([*kept, _result_note(len(kept), len(rows), hint)])
+
+
+def _result_note(kept: int, total: int, hint: str) -> str:
+    """截断末句:说清给了多少、砍了多少,以及接着该怎么办."""
+    return f"...(整条超 {WORK_RESULT_CHARS} 字,已截断:给了前 {kept} 行 / 共 {total} 行;{hint})"
 
 
 def list_dir(root: Path, raw: str = ".") -> str:
@@ -295,6 +306,9 @@ def splitlines(content: str) -> list[str]:
 def render_page(lines: list[str], offset: int, limit: int) -> str:
     """一页行 → 带行号的正文 + 一句脚注(纯函数,判定全在这里,ADR-0026).
 
+    **整页(含行号、换行、脚注)不超过 :data:`WORK_READ_BYTES`**:它正是扩展那道
+    ``MAX_RESULT_CHARS``,越线就会被扩展从尾巴上截掉,而截掉的正是脚注(ADR-0035).
+
     三种脚注各自说清'读到哪'与'接着怎么读',而**只有一种真的有下一读**:
 
     - 文件读完了 → 说总行数,不编下一步;
@@ -316,22 +330,28 @@ def render_page(lines: list[str], offset: int, limit: int) -> str:
         number = start + step
         row = text if len(text) <= WORK_READ_LINE_LIMIT else text[:WORK_READ_LINE_LIMIT]
         marked = len(row) != len(text)
-        cost = (
-            len(row)
-            + len(str(number))
-            + 2
-            + (len(suffix_text := f"...(本行超 {WORK_READ_LINE_LIMIT} 字)") if marked else 0)
-        )
+        body = f"{number}: {row}" + (f"...(本行超 {WORK_READ_LINE_LIMIT} 字)" if marked else "")
+        # 行与行之间的换行、末尾那句脚注都占页预算:不算它们,一页(正文 + 脚注)就会越过
+        # 扩展那道 16000,被扩展从尾巴上截--截掉的正好是脚注(``offset`` 的唯一来源).
+        cost = len(body) + (1 if out else 0) + 1 + _page_footer_room(start, number, total)
         # 一行都放不下时**放它进去**(哪怕超预算)并说明被砍--空页对模型最没用,
         # 它拿不到任何内容,连翻到哪都不知道.
         if out and used + cost > WORK_READ_BYTES:
             capped = True
             break
-        used += cost
-        out.append(f"{number}: {row}{suffix_text if marked else ''}")
+        used += len(body) + (1 if out else 0)
+        out.append(body)
     end = start + len(out) - 1
-    out.append(_page_footer(start, end, total, capped))
-    return "\n".join(out)
+    rows = "\n".join(out)
+    return f"{rows}\n{_page_footer(start, end, total, capped)}"
+
+
+def _page_footer_room(start: int, end: int, total: int) -> int:
+    """这一页脚注的保守长度(取最长那一态):页预算要连它一起算(ADR-0035)."""
+    return max(
+        len(_page_footer(start, end, total, capped=True)),
+        len(_page_footer(start, end, total, capped=False)),
+    )
 
 
 def _page_footer(start: int, end: int, total: int, capped: bool) -> str:
