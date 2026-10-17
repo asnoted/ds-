@@ -91,13 +91,18 @@ NOT_IN_REPO = {
     "/api/v0/chat/continue": "站点端点",
     "deepseek-ai/DeepSeek-V3": "上游模型仓",
     "ds-/failure-frames": "`storage.local` 的键名, 不是文件",
+    "ds-/watchdog": "`storage.local` 的键名, 不是文件",
     "structuredContent": "MCP 协议字段(ADR-0012 明确不建这条通路)",
     "outputSchema": "MCP 协议字段",
     "__ds_remote_feature_store_model": "站点 localStorage 的键",
+    "__ds_remote_feature_store_provider": "站点 localStorage 的键",
     "model_configs": "站点配置里的字段",
     "resume_stream": "站点接口里的开关",
     "sse_auto_resume_timeout": "站点接口里的超时",
     "chrome.debugger": "浏览器 API(Considered Options 里否决的退路)",
+    "visibilityState": "DOM 的 API(探针手册按它判站点在不在前台)",
+    "FSTRING_START/MIDDLE/END": "Python 3.13 拆 f-string 的 token 类型名(编码规范里记的坑)",
+    "dsweb/bundle": "抓下来的站点 bundle 落这儿, 被 .gitignore 挡着(没抓过就没有)",
 }
 
 #: 判"在不在仓里"时跳过的目录: 别人的(`vendor/` / `.agents/`)与生成物.
@@ -212,17 +217,26 @@ def repo_index() -> tuple[set[str], str]:
     return names, "\n".join(bodies)
 
 
-def named_problems(adr_dir: Path = ADR_DIR) -> list[str]:
-    """返回"篇里点名、仓里却没有"的清单;空列表 = 点名的都在.
+def named_files() -> list[Path]:
+    """写**当前口径**的那些文档: 13 篇 ADR, 加根层与 `docs/` 里手维护的四份.
 
-    只扫 ADR 的正文: `docs/evidence/` 是**来历**, 里面刻意留着旧名字(改名前的常量就在
-    那儿当证据), 拿它当"当前口径"扫是扫错地方.
+    `docs/evidence/` 不在内: 那些是**来历**, 里面刻意留着旧名字(改名前的常量就在那儿当
+    证据), 拿它当"当前口径"扫是扫错地方.
     """
+    return [
+        *adr_files(),
+        ROOT / "README.md",
+        ROOT / "GLOSSARY.md",
+        ROOT / "docs" / "CODING_STANDARDS.md",
+        ROOT / "docs" / "probe.md",
+    ]
+
+
+def named_problems(files: Iterable[Path] | None = None) -> list[str]:
+    """返回"点名了、仓里却没有"的清单;空列表 = 点名的都在."""
     names, bodies = repo_index()
     out: list[str] = []
-    for path in sorted(adr_dir.glob("*.md")):
-        if path.name == "README.md":
-            continue
+    for path in named_files() if files is None else files:
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             for token in BACKTICK.findall(line):
                 if token in NOT_IN_REPO or CITATIONISH.match(token):
@@ -305,7 +319,7 @@ def test_named_check_fires(tmp_path: Path) -> None:
         f"`tests/test_gateway.py::{bad_case}`; 对照 `dsb/work.py` 与 `cap_result`.\n",
         encoding="utf-8",
     )
-    problems = named_problems(tmp_path)
+    problems = named_problems([note])
     assert len(problems) == 3, problems
     joined = "\n".join(problems)
     assert bad_path in joined

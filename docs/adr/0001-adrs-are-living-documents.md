@@ -48,9 +48,11 @@
 7. **词汇表管词**: 输出提到领域概念时用 `GLOSSARY.md` 里的词, 不要漂到同义词.
 8. **点名的东西要在**. 篇里反引号点着的路径与标识符是**指路牌**: 代码里改了名, 文件挪了家,
    牌就得跟着换 -- 否则读者按它去翻会翻空. **有守卫**: 同一道(`tests/test_adr_corpus.py`
-   扫 13 篇的正文, 钉住 369 处路径 / 常量 / 标识符, 连 pytest 的节点号写法也一起看). 真在仓外的东西(站点端点, MCP 协议字段, 用户本机的 `mcp.json`, Considered
-   Options 里被否决的目录)进一条**显式白名单**, 每条写清为什么; 白名单以外缺一个就红 --
-   常量被改名的那种漏, 这一条专治.
+   扫 13 篇加 `README.md` / `GLOSSARY.md` / `docs/CODING_STANDARDS.md` / `docs/probe.md`,
+   钉住 491 处路径 / 常量 / 标识符, 连 pytest 的节点号写法也一起看). 真在仓外的东西(站点
+   端点与 localStorage 键, MCP 协议字段, 用户本机的 `mcp.json`, Considered Options 里被
+   否决的目录)进一条**显式白名单**, 每条写清为什么; 白名单以外缺一个就红 -- 常量被改名的
+   那种漏, 这一条专治. `docs/evidence/` 不在扫面里: 那些是来历, 旧名字是它的证据.
 
 ## Considered Options
 
