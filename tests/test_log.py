@@ -22,7 +22,7 @@ from dsb.server import make_server
 ROOT = Path(__file__).resolve().parents[1]
 
 #: 中继侧事件名的册子(ADR-0008 决定 4 那张表). 加 / 删事件要三处一起动: 这张表, 那张表,
-#: 以及调用点.
+#: 以及调用点 -- 三处都在下面那两条用例的射程里.
 EVENT_NAMES = frozenset(
     {
         "bad-request",
@@ -147,6 +147,17 @@ def test_the_event_names_are_the_catalogued_ones() -> None:
         used |= logged_event_names(path.read_text(encoding="utf-8"))
     assert used <= EVENT_NAMES, f"册子外的事件名: {sorted(used - EVENT_NAMES)}"
     assert used >= EVENT_NAMES, f"册子里已经没人用的: {sorted(EVENT_NAMES - used)}"
+
+
+def test_the_catalogue_is_in_the_adr_too() -> None:
+    """册子的第三处: ADR-0008 决定 4 那张表.
+
+    前两处(这张表 ↔ 调用点)由上面那条钉着; 第三处原来靠自觉 -- 2026-10-17 那次就是它漏了
+    四条(码在跑、表在文档里没写), 而两边都绿. 补上: 册子里每个名字都得在篇里点到名.
+    """
+    adr = (ROOT / "docs" / "adr" / "0008-failures-leave-a-trace.md").read_text(encoding="utf-8")
+    missing = sorted(name for name in EVENT_NAMES if name not in adr)
+    assert not missing, f"ADR-0008 决定 4 那张表少点名的: {missing}"
 
 
 def test_body_text_cannot_be_logged_because_it_is_not_in_the_signature() -> None:

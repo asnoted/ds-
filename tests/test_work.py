@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from dsb import work
 from dsb.work import (
     ERROR_BAD_PATH,
     ERROR_BAD_RANGE,
@@ -38,6 +40,9 @@ from dsb.work import (
     work_tools,
     write_text,
 )
+
+#: 工作工具那张表的家(ADR-0009): 码定义了却没写进这篇, 就是表漏了.
+ADR_0009 = "0009-in-house-work-tools-and-permissions.md"
 
 
 def code_of(exc: pytest.ExceptionInfo[WorkError]) -> str:
@@ -741,3 +746,26 @@ def test_arguments_type_is_a_mapping(tmp_path: Path) -> None:
     handler = tool_by_name(tmp_path, "ls").handler
     arguments: Mapping[str, Any] = {"path": "."}
     assert handler(arguments)[1] is False
+
+
+def test_every_code_is_catalogued_in_the_adr() -> None:
+    """ADR-0009 那张表读起来是完整的一张: ``dsb/work.py`` 里定义的每个码都得在篇里点到名.
+
+    反方向(篇里点名的码在仓里存在)由 ADR 的点名守卫管; 这一条管的是"码定义了、表里没写"
+    -- 2026-10-17 的教训(中继事件册子漏了四条, 两边都绿).
+    """
+    # 只看"长得像码"的值: ``ERROR_HINT`` 是写给人看的一句话, 不在册子里.
+    codes = sorted(
+        value
+        for name, value in vars(work).items()
+        if name.startswith("ERROR_")
+        and isinstance(value, str)
+        and re.fullmatch(r"[a-z][a-z0-9-]*", value)
+    )
+    # 提取坏掉时别给假绿(空集合会让下面那条断言过得很轻松).
+    assert ERROR_OUT_OF_ROOT in codes and ERROR_PATTERN_TOO_SLOW in codes
+    adr = (Path(__file__).resolve().parents[1] / "docs" / "adr" / ADR_0009).read_text(
+        encoding="utf-8"
+    )
+    missing = [code for code in codes if code not in adr]
+    assert not missing, f"ADR-0009 那张表少点名的码: {missing}"

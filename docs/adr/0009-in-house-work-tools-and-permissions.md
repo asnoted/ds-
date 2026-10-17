@@ -24,7 +24,8 @@
 
 另有 `bad-path`(参数坏 / root 不存在)与 `io-failed`(读写失败). 错码是**工具载荷码**, 与
 JSON-RPC 码, 页面动作码分属三套, 不混; 码写进正文(`out-of-root(路径 ...)`), 模型读得到, 接得
-下去, 与 `tool-not-running(工具 ...)` 同款.
+下去, 与 `tool-not-running(工具 ...)` 同款. **有守卫**: `dsb/work.py` 里定义的码, 这张表少点
+一个就红(`tests/test_work.py`) -- 反方向(表里点名的码在仓里存在)归点名那条.
 
 ## 决定
 
