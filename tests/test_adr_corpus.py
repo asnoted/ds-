@@ -15,7 +15,10 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   指着空地 -- 旧语料写着的 `MAX_RESULT_CHARS = 2000` 就是这么来的.
 - **判据里点的路径**: `## 判据` 那些 ```sh 块是让人照着跑的(ADR-0001 决定 3: 判据要真的会
   咬). 块里点着的文件没了, 那句判据就成了空话 -- 而"命令跑不起来"只有真去跑的人才会发现,
-  所以在这里对着仓核一遍. 核的是**路径在不在**, 不是"跑起来对不对"(那要真跑).
+  所以在这里对着仓核一遍. 拿 `-k` 筛用例的也要核: 筛词得真在那些文件的用例名里, 用例改了名
+  而筛词没改, 那条命令会**一个用例都不收**而退出码照旧 0(这个夜里真发生过两次:
+  `-k token` 收到的是别的用例, `-k blows_up` 那条其实叫 `blew_up`). 核的是**存不存在 /
+  收不收得到**, 不是"跑起来对不对"(那要真跑).
 
 `tests/test_coding_standards_refs.py` 是同一类守卫(引用了 `docs/CODING_STANDARDS.md` 的
 节号); 那条既然落在 tests/, 这条也落这里, 于是本地 `pnpm quality` 与 CI 都跑得到.
@@ -93,6 +96,11 @@ JUDGE_PATH = re.compile(
     r"^[\w.@-]+(?:/[\w.@-]+)+(?:::\w+)?$"
     r"|^[\w.@-]+\.(?:py|ts|json|md|sh|yaml|yml|toml)(?:::\w+)?$"
 )
+#: 判据里的 `-k 'a or b'`: 筛词的用例名改一个字(blows_up / blew_up), 这条命令就悄悄收不到
+#: 任何用例, 而它照样退出码 0 -- 2026-10-17 夜里真发生过两次.
+JUDGE_K = re.compile(r"-k\s+[\"']([^\"']+)[\"']")
+K_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+K_NOISE = frozenset({"and", "or", "not"})
 
 #: 点名了、但本来就不在仓里的东西: 站点 / 上游 / 协议 / 用户本机. 每条都写清为什么 --
 #: 新遇到一条, 先问"是篇里写错了, 还是它真在仓外", 后者才往这里加.
@@ -274,20 +282,72 @@ def named_problems(files: Iterable[Path] | None = None) -> list[str]:
     return out
 
 
-def judge_paths(text: str) -> Iterator[tuple[int, str]]:
-    """`## 判据` 的 ```sh 块里点到的路径(带行号)."""
+def judge_commands(text: str) -> Iterator[tuple[int, str]]:
+    """`## 判据` 的 ```sh 块里逐条命令(带首行行号): 续行(`\\`)并起来, 行内注释去掉."""
     at = text.find(JUDGE_SECTION)
     if at < 0:  # 缺这一节是骨架那条守卫的事, 这里不重复报
         return
     section = text[at:]
     for block in JUDGE_BLOCK.finditer(section):
         body_at = at + block.start(1)
+        first = text[:body_at].count("\n") + 1
+        merged: list[tuple[int, str]] = []
         for offset, raw in enumerate(block.group(1).splitlines()):
+            if merged and merged[-1][1].endswith("\\"):
+                merged[-1] = (merged[-1][0], f"{merged[-1][1][:-1]} {raw}")
+            else:
+                merged.append((first + offset, raw))
+        for lineno, raw in merged:
             line = JUDGE_COMMENT.sub("", raw)
-            for word in line.split():
-                token = word.strip("\"'")
-                if JUDGE_PATH.match(token):
-                    yield text[:body_at].count("\n") + 1 + offset, token
+            if line.strip():
+                yield lineno, line
+
+
+def judge_paths(text: str) -> Iterator[tuple[int, str]]:
+    """`## 判据` 的命令里点到的路径(带行号)."""
+    for lineno, line in judge_commands(text):
+        for word in line.split():
+            token = word.strip("\"'")
+            if JUDGE_PATH.match(token):
+                yield lineno, token
+
+
+def case_names_by_file() -> dict[str, set[str]]:
+    """每个测试文件里的用例名: pytest 的 `test_*` 函数, vitest 的 `it` / `test` 首参."""
+    out: dict[str, set[str]] = {}
+    for path in sorted(ROOT.rglob("*")):
+        if not path.is_file() or any(part in INDEX_SKIP for part in path.parts):
+            continue
+        if path.suffix == ".py" and path.name.startswith("test_"):
+            names = set(re.findall(r"^def (test_\w+)", path.read_text(encoding="utf-8"), re.M))
+        elif path.suffix == ".ts" and ".test." in path.name:
+            names = set(
+                re.findall(r"(?:it|test)\(\s*[\"'`](.+?)[\"'`]", path.read_text(encoding="utf-8"))
+            )
+        else:
+            continue
+        if names:
+            out[path.relative_to(ROOT).as_posix()] = names
+    return out
+
+
+def k_problems(files: Iterable[Path] | None = None) -> list[str]:
+    """返回"判据里的 `-k` 词收不到任何用例"的清单;空列表 = 每个词都真收得到."""
+    by_file = case_names_by_file()
+    everywhere = set().union(*by_file.values()) if by_file else set()
+    out: list[str] = []
+    for path in adr_files() if files is None else files:
+        for lineno, line in judge_commands(path.read_text(encoding="utf-8")):
+            for expr in JUDGE_K.findall(line):
+                words = [w for w in K_WORD.findall(expr) if w not in K_NOISE]
+                targets = [token for token in line.split() if token in by_file]
+                pool = set().union(*(by_file[t] for t in targets)) if targets else everywhere
+                out.extend(
+                    f"-k '{word}' <- {path.name}:{lineno}(那些文件的用例名里找不到这个词)"
+                    for word in words
+                    if not any(word in name for name in pool)
+                )
+    return out
 
 
 def judge_problems(files: Iterable[Path] | None = None) -> list[str]:
@@ -374,6 +434,33 @@ def test_every_judge_path_exists() -> None:
         "判据里点到的路径在仓里找不到(判据是给人照着跑的, 路径没了那句就是空话):\n"
         + "\n".join(problems)
     )
+
+
+def test_every_judge_k_filter_bites() -> None:
+    """判据里拿 `-k` 筛用例的, 每个词都得真在那些文件的用例名里 -- 不然那条命令绿得没意义."""
+    problems = k_problems()
+    assert not problems, (
+        "判据里的 -k 词收不到任何用例(用例名改了就把那句一起改, 或换成不靠名字的写法):\n"
+        + "\n".join(problems)
+    )
+
+
+def test_judge_k_filter_check_fires(tmp_path: Path) -> None:
+    """拼一个仓里没有的词, 这条守卫要咬."""
+    ghost = "nope_" + "nowhere"
+    note = tmp_path / "0007-bad-k.md"
+    note.write_text(
+        "# ADR-0007: x\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
+        "## 决定\n\n1. 有.\n\n## Considered Options\n\n## Consequences\n\n"
+        "## 判据(怎么自己复现)\n\n"
+        "```sh\n"
+        f"uv run pytest tests/test_gateway.py -q -k 'deadlocked or {ghost}'\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    problems = k_problems([note])
+    assert len(problems) == 1, problems
+    assert ghost in problems[0] and "deadlocked" not in problems[0]
 
 
 def test_judge_path_check_fires(tmp_path: Path) -> None:

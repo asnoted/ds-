@@ -162,7 +162,7 @@ uv run pytest tests/test_work.py tests/test_mcp_server.py -q \
   -k 'whole_result or one_result or one_read_page or last_line or overlong_line or utf16 or huge_detail or astral'
 
 # 墙钟: 闸跟着走(纯函数层 + 工具载荷层)
-uv run pytest tests/test_work.py -q -k 'backtracking or blows_up'
+uv run pytest tests/test_work.py -q -k 'backtracking or blew_up'
 
 # 不误伤: 本仓上最慢的那档(实测 3.5s)照常出命中
 uv run scripts/measure-result-forms.py grep --pattern 'ERROR_' --json
