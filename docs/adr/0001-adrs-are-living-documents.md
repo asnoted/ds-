@@ -53,12 +53,14 @@
 7. **词汇表管词**: 输出提到领域概念时用 `GLOSSARY.md` 里的词, 不要漂到同义词.
 8. **点名的东西要在**. 篇里反引号点着的路径与标识符是**指路牌**: 代码里改了名, 文件挪了家,
    牌就得跟着换 -- 否则读者按它去翻会翻空. **有守卫**: 同一道(`tests/test_adr_corpus.py`)
-   扫 13 篇加 `README.md` / `GLOSSARY.md` / `docs/CODING_STANDARDS.md` / `docs/probe.md`
-   这四份, 篇里每一处路径 / 常量 / 标识符都核, 连 pytest 的节点号写法也一起看(换面 / 加面
-   要连着这一句一起改 -- 有个用例盯着这两处一致). 真在仓外的东西(站点端点与
-   localStorage 键, MCP 协议字段, 用户本机的 `mcp.json`, Considered Options 里被否决的
-   目录)进一条**显式白名单**, 每条写清为什么; 白名单以外缺一个就红 -- 常量被改名的那种漏,
-   这一条专治. `docs/evidence/` 不在扫面里: 那些是来历, 旧名字是它的证据.
+   扫 13 篇加 `README.md` / `GLOSSARY.md` / `docs/CODING_STANDARDS.md` / `docs/probe.md` /
+   `docs/setup.md` / `docs/page-actions.md` 这六份写当前口径的, 每一处路径 / 常量 / 标识符
+   都核, 连 pytest 的节点号写法也一起看(换面 / 加面要连着这一句一起改 -- 有个用例盯着这两处
+   一致). 真在仓外的东西(站点端点与 localStorage 键, MCP 协议字段, 用户本机的 `mcp.json`,
+   Considered Options 里被否决的目录)进一条**显式白名单**, 每条写清为什么; 白名单以外缺一个
+   就红 -- 常量被改名的那种漏, 这一条专治. `docs/evidence/` 不在扫面里: 那些是来历, 旧名字是
+   它的证据; `docs/agents/` 也不在: 那几份是**技能的口径**(名字来自 Matt 的技能, 比如按需生成
+   的 `GLOSSARY-MAP.md`), 只受引用那条守卫管.
 
 ## Considered Options
 

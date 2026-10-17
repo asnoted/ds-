@@ -80,7 +80,11 @@ DECISION = re.compile(r"ADR-(\d{4})[^0-9\n]{0,12}(?:决定|第)\s*(\d+)\s*条?")
 #: 话就让读者"按它去翻会翻空" -- 这正是这份语料重写前的病(旧篇写着 `MAX_RESULT_CHARS = 2000`).
 BACKTICK = re.compile(r"`([^`\n]+)`")
 #: 路径: 带斜杠的, 或带代码 / 文档后缀的. 有空格的一律不算(那是命令, 命令由 `## 判据` 那套跑).
-PATHISH = re.compile(r"^[\w.-]+(?:/[\w.-]+)+$|^[\w.-]+\.(?:py|ts|json|md|sh|yaml|yml|toml)$")
+#: 后缀表宁宽勿窄: 少一个后缀, 一类文件就整片地不在扫面里 -- `.env.example` 就是这么漏过去的
+#: (2026-10-18 凌晨补的; 点名的 `send.page` / `storage.local` 这类"带点的标识符"是另一回事,
+#: 它们不在这条正则的形态里).
+SUFFIXED = "py|ts|tsx|json|jsonc|md|sh|yaml|yml|toml|txt|svg|html|cfg|ini|lock|example"
+PATHISH = re.compile(rf"^[\w.-]+(?:/[\w.-]+)+$|^[\w.-]+\.(?:{SUFFIXED})$")
 #: 标识符: 全大写常量 / snake_case / camelCase.
 NAMEISH = re.compile(r"^(?:[A-Z][A-Z0-9_]{3,}|[a-z_][a-z0-9_]{3,}|[a-z][a-z0-9]*[A-Z]\w*)$")
 #: 编号本身交给上面那两道守卫, 别在这里重复报.
@@ -93,8 +97,8 @@ JUDGE_BLOCK = re.compile(r"^```sh[ \t]*$\n(.*?)^```[ \t]*$", re.M | re.S)
 JUDGE_COMMENT = re.compile(r"(?:^|\s)#.*$")
 #: 命令里算"路径"的 token: 带斜杠的 / 带后缀的, 尾部 `::测试名` 一并记(与反引号那条同口径).
 JUDGE_PATH = re.compile(
-    r"^[\w.@-]+(?:/[\w.@-]+)+(?:::\w+)?$"
-    r"|^[\w.@-]+\.(?:py|ts|json|md|sh|yaml|yml|toml)(?:::\w+)?$"
+    rf"^[\w.@-]+(?:/[\w.@-]+)+(?:::\w+)?$"
+    rf"|^[\w.@-]+\.(?:{SUFFIXED})(?:::\w+)?$"
 )
 #: 判据里的 `-k 'a or b'`: 筛词的用例名改一个字(blows_up / blew_up), 这条命令就悄悄收不到
 #: 任何用例, 而它照样退出码 0 -- 2026-10-17 夜里真发生过两次.
@@ -125,6 +129,8 @@ NOT_IN_REPO = {
     "visibilityState": "DOM 的 API(探针手册按它判站点在不在前台)",
     "FSTRING_START/MIDDLE/END": "Python 3.13 拆 f-string 的 token 类型名(编码规范里记的坑)",
     "dsweb/bundle": "抓下来的站点 bundle 落这儿, 被 .gitignore 挡着(没抓过就没有)",
+    "mattpocock/skills": "上游技能仓(Matt 的技能, 见 ADR-0001)",
+    "GLOSSARY-MAP.md": "Matt 技能按需生成的多语境映射; 本仓是单语境, 没有它",
 }
 
 #: 判"在不在仓里"时跳过的目录: 别人的(`vendor/` / `.agents/`)与生成物.
@@ -240,10 +246,11 @@ def repo_index() -> tuple[set[str], str]:
 
 
 def named_files() -> list[Path]:
-    """写**当前口径**的那些文档: 13 篇 ADR, 加根层与 `docs/` 里手维护的四份.
+    """写**当前口径**的那些文档: 13 篇 ADR, 加根层与 `docs/` 里手维护的六份.
 
     `docs/evidence/` 不在内: 那些是**来历**, 里面刻意留着旧名字(改名前的常量就在那儿当
-    证据), 拿它当"当前口径"扫是扫错地方.
+    证据), 拿它当"当前口径"扫是扫错地方. `docs/agents/*.md` 也不在: 那几份是**技能的口径**
+    (名字来自 Matt 的技能, 比如按需生成的 `GLOSSARY-MAP.md`), 只受引用那条守卫管.
     """
     return [
         *adr_files(),
@@ -251,6 +258,8 @@ def named_files() -> list[Path]:
         ROOT / "GLOSSARY.md",
         ROOT / "docs" / "CODING_STANDARDS.md",
         ROOT / "docs" / "probe.md",
+        ROOT / "docs" / "setup.md",
+        ROOT / "docs" / "page-actions.md",
     ]
 
 
