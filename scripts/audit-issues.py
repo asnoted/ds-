@@ -21,18 +21,25 @@
      理由见 `check_unlabeled` 的注释 -- 那是编造, 不是审计.
   5. `needs-info` 且正文与评论**都空**的是僵尸票.
 
-**用法**: `uv run scripts/audit-issues.py`. 加 `--trace` 会多报一类信息 --
-已关闭且非 `wontfix` 的票, 在提交历史里查无 `#编号` 点名(说明从票走不到代码).
-那是**信息级**, 不算失败: 早期提交本来就没引用 issue 编号的惯例, 要改是改今后的规矩.
+**用法**: `uv run scripts/audit-issues.py`. 两个开关各多报一类**信息级**情况(都不算失败):
+
+- `--trace`: 已关闭且非 `wontfix` 的票, 在提交历史里查无 `#编号` 点名(说明从票走不到代码).
+  早期提交本来就没引用 issue 编号的惯例, 要改是改今后的规矩.
+- `--citations`: 票的正文引了当前语料里没有的 `ADR-NNNN`. 2026-10-17 那次重编号(28 篇并
+  13 篇)之后, 关着的票留在正文里的旧号正落在这一类; 旧号到新号的映射写在那次重写的提交
+  信息里(`git show` 那一笔). **改不改那些票由人定** -- 票的正文是当时的记录, 工具只把
+  它指出来. 号码虽然落在当前 13 篇之内, 但当时指的是别的篇的, 这条查不出来.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 TAG = "[audit-issues]"
 
@@ -44,6 +51,14 @@ WAITING = ("needs-triage", "needs-info")
 DISPATCH = ("ready-for-agent", "ready-for-human", "wontfix")
 
 FIELDS = "number,title,state,body,labels,comments,createdAt,updatedAt"
+
+#: 票正文里的引用形态: 与 `tests/test_adr_corpus.py` 同一批口径(并列写法 `ADR-0007/0006`
+#: 里每个号都算 -- 上一轮重编号漏的正是这种半边). 顿号写成转义(`\u3001`): 中文标点是
+#: 那半边守卫的禁字, 而这里要的是它的**语义**.
+CITE = re.compile(r"ADR[- ]?(\d{3,4}(?:\s*[/,\u3001]\s*\d{3,4})*)")
+CITE_SPLIT = re.compile(r"\s*[/,\u3001]\s*")
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def fetch() -> list[dict]:
@@ -163,6 +178,31 @@ def check_trace(issues: list[dict]) -> list[str]:
     return out
 
 
+def check_citations(issues: list[dict], known: set[str]) -> list[str]:
+    """信息级: 正文引的 `ADR-NNNN` 在当前语料里指不到哪一篇(重编号后的旧号多是这样).
+
+    只查正文, 不查评论: 评论也会带旧号, 但 `gh issue list --json` 只给正文那一份字符串,
+    为这个再去逐个拉评论不值. 号码落在当前篇数之内却指的是别的篇的, 这里查不出.
+    """
+    out = []
+    for issue in issues:
+        body = issue.get("body") or ""
+        ghosts = {
+            num for run in CITE.findall(body) for num in CITE_SPLIT.split(run) if num not in known
+        }
+        if ghosts:
+            refs = ", ".join(f"ADR-{num}" for num in sorted(ghosts))
+            out.append(f"  #{issue['number']} 引不到 {refs}: {issue['title'][:36]}")
+    return out
+
+
+def current_adr_numbers() -> set[str]:
+    """当前语料里的编号: `docs/adr/NNNN-*.md` 的文件名头四位(`README.md` 不算)."""
+    return {
+        path.stem[:4] for path in (ROOT / "docs" / "adr").glob("*.md") if path.name != "README.md"
+    }
+
+
 def report(title: str, lines: list[str], level: str) -> bool:
     """打印一段; 有内容返回 True(= 算问题)."""
     if not lines:
@@ -184,6 +224,9 @@ def main() -> None:
     )
     ap.add_argument(
         "--trace", action="store_true", help="额外报已关闭票在提交历史里的点名情况(信息级)"
+    )
+    ap.add_argument(
+        "--citations", action="store_true", help="额外报正文里引不到的 ADR 编号(信息级)"
     )
     args = ap.parse_args()
 
@@ -211,6 +254,19 @@ def main() -> None:
         print(f"{TAG} [信息] 已关闭但提交历史查无点名: {len(trace)} 张")
         for line in trace:
             print(line)
+
+    if args.citations:
+        known = current_adr_numbers()
+        found = check_citations(issues, known)
+        print(
+            f"{TAG} [信息] 正文引了当前语料里没有的 ADR 编号(现共 {len(known)} 篇): {len(found)} 张"
+        )
+        for line in found:
+            print(line)
+        print(
+            f"{TAG}   ^ 旧号到新号的映射: 那次重写(28 篇并 13 篇)的提交信息, 见 `jj log` / "
+            "`git show`. 票是当时的记录, 改不改由人定."
+        )
 
     if failed:
         print(f"{TAG} 有问题要收拾 (退出码 1).")
