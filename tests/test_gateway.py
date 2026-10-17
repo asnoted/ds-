@@ -229,7 +229,7 @@ def test_a_hanging_server_hits_the_deadline(fake_script: Path) -> None:
 
 
 def test_a_hanging_server_is_dropped_so_a_retry_gets_a_fresh_one(fake_script: Path) -> None:
-    """过线就把孩子断掉(ADR-0034):留着它,重试会排在卡住那件后面一起超时."""
+    """过线就把孩子断掉(ADR-0003):留着它,重试会排在卡住那件后面一起超时."""
     gate = make_gateway(fake_script, timeout=0.4)
     try:
         handler = gate.tools()[0].handler

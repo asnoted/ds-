@@ -140,7 +140,7 @@ describe("一行 → 一条消息", () => {
   });
 
   it("代码块外框:表头与复制/下载按钮是 `<pre>` 的兄弟,不算正文", () => {
-    // 代码块原件取自存证 `code.block`(真机 2026-10-07,ADR-0018):表头,复制/下载按钮在
+    // 代码块原件取自存证 `code.block`(真机 2026-10-07,ADR-0013):表头,复制/下载按钮在
     // `md-code-block-banner-wrap` 里,`<pre>` 与两个角 svg 是它的兄弟--一字不缩写.
     document.body.innerHTML = `
       <div class="ds-virtual-list">

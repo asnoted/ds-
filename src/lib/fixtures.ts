@@ -81,7 +81,7 @@ export type SendPaceCase = {
   readonly expectedMs: number;
 };
 
-/** 唯一限速的间隔规格(`send-pace.json`):全仓一条(ADR-0029),TS 与 Python 共读. */
+/** 唯一限速的间隔规格(`send-pace.json`):全仓一条(ADR-0004),TS 与 Python 共读. */
 export type SendPaceFixtureFile = FixtureFile<SendPaceCase> & {
   readonly minMs: number;
   readonly modeMs: number;

@@ -31,7 +31,7 @@ describe("drawWindowInterval", () => {
     expect(drawWindowInterval(fixedRandom(1))).toBe(15000);
   });
 
-  it("抽样比率 1/4 = Beta(2,4) 的众数,落回区间正是 6 秒(ADR-0029)", () => {
+  it("抽样比率 1/4 = Beta(2,4) 的众数,落回区间正是 6 秒(ADR-0004)", () => {
     expect(drawWindowInterval(fixedRandom(0.25))).toBe(WINDOW_MODE_MS);
   });
 
@@ -49,7 +49,7 @@ describe("drawWindowInterval", () => {
     expect(drawWindowInterval(fixedRandom(Number.POSITIVE_INFINITY))).toBe(3000);
   });
 
-  it("任取随机数抽到的间隔都在 3~15 秒内(ADR-0002 的出站口,ADR-0029 的分布)", () => {
+  it("任取随机数抽到的间隔都在 3~15 秒内(ADR-0004 的出站口与分布)", () => {
     for (let i = 0; i <= 100; i += 1) {
       const interval = drawWindowInterval(fixedRandom(i / 100));
       expect(interval).toBeGreaterThanOrEqual(WINDOW_MIN_MS);

@@ -1,5 +1,5 @@
 /**
- * 中继的调用契约(MCP 版,ADR-0011):`POST /mcp`,JSON-RPC 2.0,无会话,无流.
+ * 中继的调用契约(MCP 版,ADR-0002):`POST /mcp`,JSON-RPC 2.0,无会话,无流.
  *
  * dsb 被动到底:探活是 `ping`,干活是 `tools/call`,别的方法一概没有--`/send`
  * `/health` `/status` 那批 HTTP 路随问答后端一起废了.端点与请求体在这儿定死

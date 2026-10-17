@@ -1,6 +1,6 @@
 # 真机探针手册
 
-页面动作没有外露调用面(ADR-0011),要真机验就走 `scripts/page-action.py`.
+页面动作没有外露调用面(ADR-0002),要真机验就走 `scripts/page-action.py`.
 房规与导航在 [`AGENTS.md`](../AGENTS.md);**本文件是用法与判据纪律**.
 
 ## 子命令
@@ -17,12 +17,12 @@
 | `stop-test`                   | 端到端:起生成 → 等停止键 → 点 → 等复位                                                                                                                                                                                               |
 | `storage get\|set\|remove`    | 读写扩展 storage                                                                                                                                                                                                                     |
 | `capture` / `ax`              | 全量证据:HTML / CSS / 资源 / 行快照 / 可访问性树(`--codes` 另存站点脚本)                                                                                                                                                             |
-| `visible-capture`             | 验扩展能否抓可见标签页(`--out` 落盘成 JPEG;现场帧的权限/体积判据,ADR-0030)                                                                                                                                                           |
-| `frame-fail`                  | 验抓帧失败的负路:站点退后台时报一笔失败--失败痕照落,帧不新增;跑完扳一次总开关对齐内存(#106,ADR-0030 决定 6)                                                                                                                          |
-| `send-page`                   | 验本地工具 `send.page` 的两步(`composer.type` → `send.enter`,全走三道闸):闸开着真发一条(要 `--send`),闸关着只落草稿(判据看"对话末行前后对拍");打字前先盯写作框 6 秒(躲开扩展自己的续聊),跑完对账本(多出痕/帧就不算绿)(ADR-0013/0023) |
+| `visible-capture`             | 验扩展能否抓可见标签页(`--out` 落盘成 JPEG;现场帧的权限/体积判据,ADR-0008)                                                                                                                                                           |
+| `frame-fail`                  | 验抓帧失败的负路:站点退后台时报一笔失败--失败痕照落,帧不新增;跑完扳一次总开关对齐内存(#106,ADR-0008 决定 6)                                                                                                                          |
+| `send-page`                   | 验本地工具 `send.page` 的两步(`composer.type` → `send.enter`,全走三道闸):闸开着真发一条(要 `--send`),闸关着只落草稿(判据看"对话末行前后对拍");打字前先盯写作框 6 秒(躲开扩展自己的续聊),跑完对账本(多出痕/帧就不算绿)(ADR-0007/0006) |
 | `continue-click`              | 点站点自己的"继续生成"并验 `/chat/continue` 真发出去(真鼠标事件;票 #105)                                                                                                                                                             |
 | `toggles-off`                 | 测试环境关掉深度思考与智能搜索(`--debug` 会顺带跑)                                                                                                                                                                                   |
-| `evidence`                    | 存证对账:留档按钮原件 vs 站点当前(ADR-0018,只读,不进 `pnpm quality`)                                                                                                                                                                 |
+| `evidence`                    | 存证对账:留档按钮原件 vs 站点当前(ADR-0013,只读,不进 `pnpm quality`)                                                                                                                                                                 |
 
 独立探针脚本(不走 `page-action.py` 的名册路径):
 
@@ -114,7 +114,7 @@ uv run scripts/page-action.py --no-pace js 'String(window.fetch).includes("nativ
   页面收到的是与用户手点一样的东西(手势判定,`onClick` 都照常走);`js` 仍**只读**,
   不许拿它去点控件或改状态.判据用**两个观测点**:出站请求 URL(CDP `Network` 域)与
   页面行为(按钮消失 / 圆键进生成相);`Network` 域漏抓过,一边没有不当成"没发生".
-- **动手等待默认走唯一限速**(Beta(2,4),3~15s,峰在 6s;ADR-0029):探针与扩展的
+- **动手等待默认走唯一限速**(Beta(2,4),3~15s,峰在 6s;ADR-0004):探针与扩展的
   发送限速共用同一份规格(`protocol/fixtures/send-pace.json`),`--pace` 只是
   人工排障的口子,`--no-pace` 只准用于只读抓瞬态.
 - `send` 遇瞬时失败(`read-failed` / `page-changed` / `no-site-tab` / CDP 超时)不回错误给调用人:

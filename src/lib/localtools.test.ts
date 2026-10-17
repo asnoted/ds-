@@ -55,7 +55,7 @@ describe("send.page / 组合两步", () => {
     expect(SEND_PAGE.params).toEqual(["question"]);
   });
 
-  it("不再碰 wait.fence / wait.reply(那三段在 ADR-0014 之后失联)", async () => {
+  it("不再碰 wait.fence / wait.reply(那三段在 ADR-0005 之后失联)", async () => {
     const { calls, run } = recorder();
 
     await SEND_PAGE.run({ question: "q" }, { tabId: 1, run });

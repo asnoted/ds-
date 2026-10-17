@@ -1,4 +1,4 @@
-"""工作工具:路径沙箱,五件行为,截断与上限,``.git`` 护栏,各错码(ADR-0012)."""
+"""工作工具:路径沙箱,五件行为,截断与上限,``.git`` 护栏,各错码(ADR-0009)."""
 
 from __future__ import annotations
 
@@ -151,7 +151,7 @@ def test_list_dir_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_read_returns_the_whole_file_with_line_numbers(tmp_path: Path) -> None:
-    """短文件一次读完:逐行带行号,脚注说读完,共几行(ADR-0026)."""
+    """短文件一次读完:逐行带行号,脚注说读完,共几行(ADR-0010)."""
     (tmp_path / "f.txt").write_text("第一行\n第二行", encoding="utf-8")
     assert read_text(tmp_path, "f.txt") == "1: 第一行\n2: 第二行\n(文件读完:共 2 行)"
 
@@ -267,7 +267,7 @@ def test_read_always_yields_a_page_even_when_the_budget_is_tiny(
 def test_read_page_stays_within_the_same_budget_as_one_result(tmp_path: Path) -> None:
     """整页(行号、换行、脚注都在内)不超过页预算--扩展那道与它同数,越一个字就被截.
 
-    这是 ADR-0035 量出来的那个洞:行宽 100 字时一页 16,154 字,扩展把脚注(``offset``
+    这是 ADR-0010 量出来的那个洞:行宽 100 字时一页 16,154 字,扩展把脚注(``offset``
     的唯一来源)截掉了.
     """
     (tmp_path / "long.txt").write_text("\n".join("y" * 500 for _ in range(400)), encoding="utf-8")
@@ -283,7 +283,7 @@ def test_read_page_stays_within_the_same_budget_as_one_result(tmp_path: Path) ->
 
 
 def test_the_result_cap_is_one_read_page() -> None:
-    """一条结果 = 一页:两个数同源(ADR-0027 的补记),改一个没改另一个就红."""
+    """一条结果 = 一页:两个数同源(ADR-0010 的补记),改一个没改另一个就红."""
     assert WORK_RESULT_CHARS == WORK_READ_BYTES
 
 
@@ -485,7 +485,7 @@ def test_grep_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_a_capped_result_leaves_room_for_its_last_line() -> None:
     """整条(连末句)不超过 :data:`WORK_RESULT_CHARS`:末句也占额度.
 
-    这些行宽是量出来的(ADR-0035):末句不算进去时,64/80/100/120 字各越线 24~41 字,
+    这些行宽是量出来的(ADR-0010):末句不算进去时,64/80/100/120 字各越线 24~41 字,
     **而扩展就是从尾巴上截的**--截掉的正好是"怎么续"那句.
     """
     for width in (64, 80, 100, 120, 300):
@@ -511,7 +511,7 @@ def test_grep_bad_regex_is_bad_regex(tmp_path: Path) -> None:
 def test_grep_gives_up_on_exponential_backtracking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """墙钟这道闸(ADR-0033):40 个 ``a`` 后面挂 ``(a+)+b`` 是指数回溯,没闸就回不来."""
+    """墙钟这道闸(ADR-0010):40 个 ``a`` 后面挂 ``(a+)+b`` 是指数回溯,没闸就回不来."""
     monkeypatch.setattr("dsb.work.WORK_GREP_DEADLINE", 0.3)
     (tmp_path / "big.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
     started = time.monotonic()

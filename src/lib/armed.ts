@@ -78,7 +78,7 @@ export function expireIfStale(state: ArmedState, now: number): ArmedState {
  *
  * 比对前过一遍 `normalize.ts` 的 `normalizeText`(站点与 React 受控输入框在换行与
  * 首尾空白上不完全一致,CRLF vs LF,末尾多一个 `\n`),归一化之后**其余字符仍严格
- * 相等**--不多不少地放宽这一点(ADR-0020).
+ * 相等**--不多不少地放宽这一点(ADR-0005).
  *
  * 只有逐字等于标记才返回 true:用户手打的消息,粘贴进来的内容,带协议说明的历史
  * 回放,全都不是标记,也全都不该被工具结果顶掉.

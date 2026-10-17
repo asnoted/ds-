@@ -1,5 +1,5 @@
 {
-  "description": "read 页的限额与脚注三态:dsb 产出那半(dsb/work.py)与扩展教模型认那半(src/lib/instructions.ts)各自对着这份断言(ADR-0026/0027).网关 64K 与扩展 16K 是两道各管一段的闸,不进这份(ADR-0016).**一页的总字数(行号、换行、脚注都在内)不超过 readPageBudget**(ADR-0035),所以 readPageBudget 与扩展那道 MAX_RESULT_CHARS 同数时一页能原样进对话.",
+  "description": "read 页的限额与脚注三态:dsb 产出那半(dsb/work.py)与扩展教模型认那半(src/lib/instructions.ts)各自对着这份断言(ADR-0010).网关 64K 与扩展 16K 是两道各管一段的闸,不进这份(ADR-0003).**一页的总字数(行号、换行、脚注都在内)不超过 readPageBudget**(ADR-0010),所以 readPageBudget 与扩展那道 MAX_RESULT_CHARS 同数时一页能原样进对话.",
   "readPageLines": 200,
   "readPageBudget": 16000,
   "cases": [

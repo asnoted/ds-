@@ -48,6 +48,6 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because..._
+> _Contradicts the ADR on event-sourced orders, but worth reopening because..._
 
-ADRs are immutable once accepted: the header's first three lines are `Status` / `Date` / `Supersedes`. To overturn one, write a **new** ADR whose `Supersedes:` names the old one and leave the old file exactly as it was; the supersession graph is how readers tell which ADRs are still in force.
+ADRs are living documents: each one states the current rule, and you edit it in place when the rule changes (bumping `Date`). The header's first two lines are `Status` / `Date`; one-off measurements live in `docs/evidence/` and are pointed at from the ADR body. See `docs/adr/0001-adrs-are-living-documents.md`.

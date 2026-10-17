@@ -65,7 +65,7 @@ kill_browser() {
   kill -9 "$1" 2>/dev/null
 }
 
-# 一行 JSON-RPC 打 /mcp：唯一端点（ADR-0011）——自检 initialize、
+# 一行 JSON-RPC 打 /mcp：唯一端点（ADR-0002）——自检 initialize、
 # 查表 tools/list 都走它；扩展的周期探活是 ping（dsb 记日志）。
 rpc() {
   curl -s -m 10 -X POST "$MCP" -H 'Content-Type: application/json' -d "$1"
@@ -359,7 +359,7 @@ else
 fi
 
 # ---- 4) 判据 ----
-# 扩展不再有外露的探针面（POST /action 与动作流随 ADR-0007 一起废了）：
+# 扩展不再有外露的探针面（POST /action 与动作流随 ADR-0002 一起废了）：
 # 本机这半直接验；扩展那一半靠 ping 日志（判据 4）+ 末尾的图标与控制台。
 # 等中继把口张开：配了 MCP server 时网关是**先把子进程拉起来、再 bind** 的，冷启动
 # （npx 首次下载）实测要三十几秒——固定 sleep 3 会把「还在起」判成「不健康」。

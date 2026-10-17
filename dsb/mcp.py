@@ -1,4 +1,4 @@
-"""MCP 服务面:JSON-RPC over Streamable HTTP 的最小实现--dsb 被动等命令(ADR-0011).
+"""MCP 服务面:JSON-RPC over Streamable HTTP 的最小实现--dsb 被动等命令(ADR-0002).
 
 **只有一条 ``POST /mcp``**:没有 GET 流,没有 SSE,没有 ``Mcp-Session-Id``,dsb 从不发起
 任何事--不推送,不轮询,不连出站.客户端(扩展,或任何本机进程)发 JSON-RPC 过来,

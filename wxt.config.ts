@@ -5,12 +5,12 @@ export default defineConfig({
     name: "ds-",
     description: "Browser extension built with WXT",
     // 站点范围在装的那一刻定死,运行期不接受任何切换;总开关不参与站点判定.
-    // `<all_urls>` 是唯一的例外,只解锁一件事:失败当场抓一帧(ADR-0030,#106).
+    // `<all_urls>` 是唯一的例外,只解锁一件事:失败当场抓一帧(ADR-0008,#106).
     // `captureVisibleTab` 的硬要求就是 `<all_urls>` 或 activeTab,站点级 host 权限
     // 不算数--实机证伪过,判据是 `uv run scripts/page-action.py visible-capture`.
     // 它盖住了原来那几条(站点域与中继的 127.0.0.1/localhost);内容脚本的注入范围
     // 照旧钉在 chat.deepseek.com(见各 entrypoint 的 matches),中继仍是直连免 CORS
-    // 那条路(ADR-0011).
+    // 那条路(ADR-0002).
     host_permissions: ["<all_urls>"],
     // 浏览器权限只有两个,都跟站点范围无关:storage 存总开关(默认关),
     // alarms 排周期探活(开关开着才排,30s 一次).站点权限与浏览器权限分开,

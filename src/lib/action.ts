@@ -1,7 +1,7 @@
 /**
  * 页面动作的执行:谁执行,回什么码.
  *
- * 动作不再有外来的推送面(ADR-0007 的动作流已随问答后端一起废掉,
+ * 动作不再有外来的推送面(ADR-0002: 外部动作流已随问答后端一起废掉, 不回来;
  * dsb 完全被动)--现在还剩两个调用方:**出站**(看门狗的催办)与
  * **看门狗**(退避闸的探针).执行器(`entrypoints/content.ts` 的名册)
  * 依旧活着:`browser.tabs.sendMessage` 把帧投进目标标签页,当场回一个
@@ -20,7 +20,7 @@ import { BACKOFF_GATED_ACTIONS, SPEAK_GATED_ACTIONS, TOGGLE_ACTIONS } from "./re
 // 三道闸名单从注册表派生(#99):归类写在 `registry.ts` 的行上,这里只消费.
 export { BACKOFF_GATED_ACTIONS, SPEAK_GATED_ACTIONS, TOGGLE_ACTIONS } from "./registry";
 
-/** 认标签页只认这个站点;host_permissions 已因抓帧放到 `<all_urls>`(ADR-0030). */
+/** 认标签页只认这个站点;host_permissions 已因抓帧放到 `<all_urls>`(ADR-0008). */
 export const DEEPSEEK_HOST = "chat.deepseek.com";
 
 /**

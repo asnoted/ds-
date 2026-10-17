@@ -9,7 +9,7 @@
 cookies / webRequest / debugger,浏览器层面就拿不到那些能力.想扩权先改 wxt.config.ts,
 改完第 1 条必红.
 
-**host_permissions 有一处认过的例外**:抓帧要 `<all_urls>`(ADR-0030,#106).所以这一条
+**host_permissions 有一处认过的例外**:抓帧要 `<all_urls>`(ADR-0008,#106).所以这一条
 从"站点 + 回环"改成"只准这一条",并且补一条把**注入范围**钉住--扩的是 host 权限,
 内容脚本仍只进 `chat.deepseek.com`,那才是"不替用户逛别的站"的实际边界.
 """
@@ -49,7 +49,7 @@ SITE_SECRETS = re.compile(
     r"chrome\.cookies|browser\.cookies|document\.cookie|localStorage|sessionStorage"
 )
 
-#: 接浏览器调试口.ADR-0007 判过不上;真要上得先按"只读渲染 DOM,只重载"改这条.
+#: 接浏览器调试口.ADR-0008 判过不上(见它的 Considered Options);真要上得先按"只读 DOM,只重载"改这条.
 CDP = re.compile(r"chrome\.debugger|devtools|:9222")
 
 _SOURCES_CACHE: dict[str, str] | None = None
@@ -89,7 +89,7 @@ def test_the_manifest_does_not_ask_for_a_way_into_the_site_behind_its_back() -> 
 
 
 def test_host_permissions_are_all_urls_and_nothing_else() -> None:
-    """`<all_urls>` 是抓帧那一处的例外(ADR-0030),且**只准这一条**.
+    """`<all_urls>` 是抓帧那一处的例外(ADR-0008),且**只准这一条**.
 
     站点域与中继那几条回环地址已被它盖住;再多出任何一条都是没交代过的扩权.
     """
@@ -100,7 +100,7 @@ def test_host_permissions_are_all_urls_and_nothing_else() -> None:
 
 
 def test_content_scripts_stay_pinned_to_the_site() -> None:
-    """扩的是 host 权限,不是注入范围:内容脚本仍只进站点(ADR-0030 的边界)."""
+    """扩的是 host 权限,不是注入范围:内容脚本仍只进站点(ADR-0008 的边界)."""
     for name in ("entrypoints/content.ts", "entrypoints/inject.content.ts"):
         text = (ROOT / name).read_text(encoding="utf-8")
         matches = re.search(r"matches:\s*\[(.*?)\]", text, re.S)
@@ -133,7 +133,7 @@ def test_no_source_reads_site_credentials() -> None:
 
 
 def test_no_source_wires_up_cdp() -> None:
-    """不接浏览器调试口:要读页面走内容脚本(ADR-0007 判过外挂 CDP 不上)."""
+    """不接浏览器调试口:要读页面走内容脚本(ADR-0008 判过外挂 CDP 不上)."""
     for name, text in _sources().items():
         match = CDP.search(text)
         assert match is None, f"{name}:接了调试口 {match.group(0)}"

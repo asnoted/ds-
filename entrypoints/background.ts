@@ -499,7 +499,7 @@ export default defineBackground(() => {
   /**
    * 收活:内容脚本报"这轮答复没有围栏"(模型干净收尾),或续聊到顶停手--
    * 结账:本笔活的连催与停手清零,这笔回催过就给连续笔数记一笔;
-   * 连续两笔都靠催办推进就封掉本武装期(#104),封的那一下照 ADR-0004
+   * 连续两笔都靠催办推进就封掉本武装期(#104),封的那一下照 ADR-0008
    * 留一笔(环节 `watchdog`).没开过的活收到收尾是重复的,幂等.
    */
   function closeWatchdogTask(tabId: number, why: string): void {
@@ -575,7 +575,7 @@ export default defineBackground(() => {
    * `syncHealthAlarm`).决策是纯函数(`watchdog.ts`),这层只管
    * 照做:漂移走 `tabs.update` 导航回去(host permission 覆盖
    * 本站标签页,不必为它申请 tabs 权限),催办走 `deliverNudge`,
-   * 停手照 ADR-0004 留一笔(环节 `watchdog`).
+   * 停手照 ADR-0008 留一笔(环节 `watchdog`).
    *
    * 站外漂移看不见:没有 tabs 权限,非本站标签页的 url 读不到--
    * 真机故障正是站内漂到新对话,那一档在这条扫的范围里.
@@ -655,7 +655,7 @@ export default defineBackground(() => {
    * 回 `disabled` 是你自己关的,不是中继坏了.与 `deliverNudge` 同一口径:失败只进控制台,
    * 不翻红,不留失败痕(效果由处置 module 声明:角标 / 保活照配对,图标结论一条不发).
    * 重入护栏(同一标签页一次只跑一个)也在处置 module 的 `sendCall` 里
-   * --那是 spec 与 ADR-0013 点名的截获点,见它的注释.
+   * --那是 spec 与 ADR-0007 点名的截获点,见它的注释.
    *
    * 组合不该抛(内部把失败都折成载荷);真抛了是 bug,交给内容脚本那层既有的兜底.
    */
@@ -954,7 +954,7 @@ export default defineBackground(() => {
       return undefined;
     }
     // 续聊到顶停手(页面世界报的):不是故障而是刹车,但同样要留得下来
-    // --"怎么忽然不自动往下答了"得有个交代(ADR-0004).停手也意味着我们
+    // --"怎么忽然不自动往下答了"得有个交代(ADR-0008).停手也意味着我们
     // 这一侧的参与到头了,看门狗那笔活一并收掉,别再往死里催(#104 任务门).
     const stop = parseStopReport(message);
     if (stop !== null) {
@@ -974,7 +974,7 @@ export default defineBackground(() => {
     }
     // 续聊这一跳失败(#51):发不出去,正文换不进去,钥匙不符...此前只有控制台
     // 一行,扩展侧答不出"为什么这轮工具结果没回到模型手上".cause 已是短句,
-    // 这里只落痕(正文进不来,ADR-0004).
+    // 这里只落痕(正文进不来,ADR-0008).
     const continuationFail = parseContinuationFailReport(message);
     if (continuationFail !== null) {
       console.log(`[ds-] 页面报续聊失败:${continuationFail.cause}`);

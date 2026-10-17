@@ -108,7 +108,7 @@ class Test默认规则表:
 
         '真实生效的那一个'由 :func:`dsb.work.is_protected` 第二层按实际路径拦
         (无论它被 ``DSB_MCP_CONFIG`` 指到哪儿),规则表里不必按名字铺开--铺开就是
-        ADR-0012 反对的那种'越做越像沙箱'的名单位置.
+        ADR-0009 反对的那种'越做越像沙箱'的名单位置.
         """
         assert is_allowed("edit", "deep/nested/dir/mcp.json") is True
 

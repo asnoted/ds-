@@ -419,7 +419,7 @@ describe("那个圆键:button.get / button.click", () => {
     return undefined;
   }
 
-  // 真机 2026-10-04 抓的(生成中 / 空闲各一次),原件住 `protocol/evidence/controls.json`(ADR-0018).
+  // 真机 2026-10-04 抓的(生成中 / 空闲各一次),原件住 `protocol/evidence/controls.json`(ADR-0013).
   // 两态的 class 一个不换,aria-label 为空,只有圆键里的图标不同--**所以那不是两个控件,
   // 是一个**:合成一个动作 button.click(可用就点),读的部分是 button.get(认图标).
   const STOP_BUTTON_HTML = evidenceHtml("circle.stop");
@@ -537,7 +537,7 @@ describe("那个圆键:button.get / button.click", () => {
 });
 
 describe("chats.list / chat.switch 执行器", () => {
-  // 原件取自存证 `sidebar.chat-row`(真机 2026-10-07,ADR-0018):整条 `<a>`,含"更多"按钮.
+  // 原件取自存证 `sidebar.chat-row`(真机 2026-10-07,ADR-0013):整条 `<a>`,含"更多"按钮.
   // 只在取到的原件上做最小变形--换 href 里的 uuid,换标题文字;不手抄一整条.
   const ROW = evidenceHtml("sidebar.chat-row");
   const ROW_ID = /\/a\/chat\/s\/[0-9a-f-]+/;
@@ -695,7 +695,7 @@ describe("chats.list / chat.switch 执行器", () => {
 });
 
 describe("sidebar.get / sidebar.set 执行器", () => {
-  // 原件取自存证(真机 2026-10-07,ADR-0018):展开 / 收起两态的顶栏容器.只做最小变形,不手抄.
+  // 原件取自存证(真机 2026-10-07,ADR-0013):展开 / 收起两态的顶栏容器.只做最小变形,不手抄.
   const EXPANDED_BAR = evidenceHtml("sidebar.topbar.expanded");
   const COLLAPSED_BAR = evidenceHtml("sidebar.topbar.collapsed");
   const NEW_CHAT = '<div tabindex="0">开启新对话</div>';

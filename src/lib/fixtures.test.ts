@@ -25,7 +25,7 @@ const EXPECTED_FILES = [
   "send-pace.json",
 ];
 
-/** 配置只有一种解析分支:认端口 / 会话号那套已随问答后端废掉(ADR-0011). */
+/** 配置只有一种解析分支:认端口 / 会话号那套已随问答后端废掉(ADR-0002). */
 const KNOWN_CONFIG_KINDS = ["value"];
 
 function rawCases(filename: string): Record<string, unknown>[] {

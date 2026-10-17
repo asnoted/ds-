@@ -12,7 +12,7 @@ describe("enqueue / 内容进队列", () => {
     expect(gate.window).toEqual({ openedAt: 1000, intervalMs: 3000 });
   });
 
-  it("间隔随机但一定落在 3~15 秒(ADR-0029 修订了 ADR-0002 的区间)", () => {
+  it("间隔随机但一定落在 3~15 秒(ADR-0004)", () => {
     for (const random of [0, 0.25, 0.5, 0.75, 1]) {
       const gate = enqueue(newGate(), "回灌一条", 1000, fixedRandom(random));
       expect(gate.window.intervalMs).toBeGreaterThanOrEqual(WINDOW_MIN_MS);

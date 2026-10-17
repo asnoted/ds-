@@ -162,7 +162,7 @@ def read_cases() -> list[dict[str, Any]]:
 def test_read_limits_match_dsb_constants() -> None:
     """「一页 read 的结果能原样进对话」的两个数:dsb 产出那半与 fixture 相等.
 
-    扩展那半(MAX_RESULT_CHARS 与教模型的脚注)在 vitest 独立对着同一份断言(ADR-0026/0027).
+    扩展那半(MAX_RESULT_CHARS 与教模型的脚注)在 vitest 独立对着同一份断言(ADR-0010).
     """
     fixture = load_fixture("read.json")
     assert fixture["readPageLines"] == work.WORK_READ_PAGE_LINES

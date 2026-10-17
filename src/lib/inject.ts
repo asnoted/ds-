@@ -65,7 +65,7 @@ function prependOnce(text: string, tools: readonly ToolInfo[] | null): string | 
  * 共用这一次解析与这一条形状规则--站点换出站载荷形状时只改这里,不会再出现
  * 「钥匙认得出、替换认不出」的半通状态.
  *
- * 形状两条(与 ADR-0014 的替换口径一致):`prompt` 是字符串(站点原生只带这一条
+ * 形状两条(与 ADR-0005 的替换口径一致):`prompt` 是字符串(站点原生只带这一条
  * 新消息),或 `messages` 是数组(整段历史一起带).**两条都不在 → `shapeOk:false`,
  * 其余三种用法全部落空**.
  */

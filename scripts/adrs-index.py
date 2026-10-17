@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """生成/核对 `docs/adr/README.md` 这份 ADR 索引.
 
-**为什么要有它**: 本仓 21 篇 ADR 此前**没有任何索引** -- `AGENTS.md` 只说了一句
-"root `GLOSSARY.md` + `docs/adr/`", 要找某个决策只能 `ls` 再逐个读文件名, 更看不出
-哪几篇已被后来者取代. 对照 Firefox 的做法(`browser/docs/index.md` 那份 toctree):
-**索引与正文分离, 索引由工具生成, 所以它不可能与正文漂**. 手写索引迟早烂 -- 我今天
-已经在 README 的限额表上撞到一次("给模型看的结果 2000 字", 代码里是 16000).
+**为什么要有它**: 索引是读者进门第一眼看到的东西, 而**手写的索引迟早烂** -- 我不止一次
+撞到过手抄表与代码对不上(对着 README 的限额表读, 发现"给模型看的结果"写着 2000 字, 代码
+里是 16000). 索引与正文分离, 索引由工具生成, 它就不可能漂.
 
 **用法**:
     uv run scripts/adrs-index.py           # 重新生成 docs/adr/README.md
     uv run scripts/adrs-index.py --check   # 只核对, 不合写回; 有出入退出码 1
 
-`--check` 接进了 `pnpm quality:ci`(守卫只在 CI 跑), 所以"新增了一篇 ADR 却忘了
+`--check` 接进了 `pnpm quality:ci`(守卫只在 CI 跑), 所以"新增/删除/改动了一篇 ADR 却忘了
 更新索引"在 CI 里就会红.
 
-**它读什么**: 每篇 ADR 的 H1 与 `Status` / `Date` / `Supersedes` 三行头
-(`docs/agents/domain.md` 说这三行是固定的). 有一处读不出就**退出码 1 并列出是哪篇**,
-不悄悄生成一份缺字段的索引 -- 那是把烂账藏进看起来正常的表格里(见 `broken`).
+**它读什么**: 每篇 ADR 的 H1 与 `Status` / `Date` 两行头(`docs/agents/domain.md` 说这两行是
+固定的). 有一处读不出就**退出码 1 并列出是哪篇**, 不悄悄生成一份缺字段的索引 -- 那是把烂账
+藏进看起来正常的表格里(见 `broken`).
+
+**它不读什么**: 正文. ADR 是**活文档**(见 ADR-0001), 当前口径就在每一篇里, 索引不重复它;
+一次性实测在 `docs/evidence/`, 也不进这里.
 """
 
 from __future__ import annotations
@@ -31,43 +32,28 @@ ADR_DIR = Path("docs/adr")
 OUT = ADR_DIR / "README.md"
 
 H1 = re.compile(r"^#\s*(?:ADR-\d{3,4}\s*[::]\s*)?(.+)$", re.M)
-FIELD = re.compile(r"^- \*\*(Status|Date|Supersedes)\*\*:\s*(.+?)\s*$", re.M)
+FIELD = re.compile(r"^- \*\*(Status|Date)\*\*:\s*(.+?)\s*$", re.M)
 NUMBER = re.compile(r"(\d{3,4})")
-SUP = re.compile(r"ADR-(\d{3,4})")
 
 
 def parse(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
     num_m = NUMBER.match(path.stem)
     num = num_m.group(1) if num_m else path.stem
-    # 取第一条 `# ` 行的标题. 多数篇的 H1 就是标题本身(不带 ADR-NNNN 前缀),
-    # 0017 那种带前缀的要剥掉, 否则索引里同一列两种写法.
+    # 取第一条 `# ` 行的标题. H1 可以带 `ADR-NNNN:` 前缀, 索引里统一剥掉, 免得同一列
+    # 两种写法.
     title_m = H1.search(text)
     fields = {k: v for k, v in FIELD.findall(text)}
-    sup_raw = fields.get("Supersedes", "(缺)")
-    # `Supersedes: none(某句被局部修订)` **不是取代** -- 括号里是补充说明.
-    # 2026-10-11 起初没剥括号, 于是 0011 与 0012 在索引里"互相取代"了, 那是编的.
-    head = sup_raw.split("(", 1)[0].strip()
     return {
         "num": num,
         "title": title_m.group(1).strip() if title_m else "(没有 H1)",
         "status": fields.get("Status", "(缺)"),
         "date": fields.get("Date", "(缺)"),
-        # 只取被它点名的编号; `none(...)` 这类一句修订不算取代.
-        "supersedes": SUP.findall(head) if head != "none" else [],
-        "sup_raw": sup_raw,
         "path": path.as_posix(),
     }
 
 
 def render(entries: list[dict]) -> str:
-    by_num = {e["num"]: e for e in entries}
-    # "已被取代"不看它自己的 Status -- 已接受的 ADR 不可变, 被推翻那篇的 Status
-    # 仍然是 accepted, 真实信号在**别人有没有点名它**.
-    killed = {t for e in entries for t in e["supersedes"]}
-    live = [e for e in entries if e["num"] not in killed]
-    dead = [e for e in entries if e["num"] in killed]
-
     out: list[str] = []
     out.append("# ADR 索引")
     out.append("")
@@ -81,33 +67,18 @@ def render(entries: list[dict]) -> str:
         "判据与格式见该脚本的文档字符串."
     )
     out.append("")
-    out.append(f"## 在册({len(live)} 篇)")
+    out.append(f"## {len(entries)} 篇")
     out.append("")
-    out.append("| 号 | 标题 | 状态 | 日期 | 取代了 |")
-    out.append("| --- | --- | --- | --- | --- |")
-    for e in sorted(live, key=lambda x: x["num"]):
-        supers = ", ".join(f"ADR-{n}" for n in e["supersedes"]) or "-"
-        out.append(f"| {e['num']} | {e['title']} | {e['status']} | {e['date']} | {supers} |")
-    out.append("")
-    out.append("## 已被取代")
-    out.append("")
-    if not dead:
-        out.append("(没有 -- 到目前为止没人写过新篇去推翻旧篇.)")
-    else:
-        killer = {t: e["num"] for e in entries for t in e["supersedes"]}
-        for e in sorted(dead, key=lambda x: x["num"]):
-            by = killer.get(e["num"], "?")
-            target = by_num.get(by)
-            tail = f" -- {target['title']}" if target else ""
-            out.append(f"- **ADR-{e['num']}** {e['title']}")
-            out.append(f"  - 由 ADR-{by} 取代{tail}")
-            out.append(f"  - **照它做的请改看 ADR-{by}**; 本篇一字不改, 留着看演进过程.")
+    out.append("| 号 | 标题 | 状态 | 日期 |")
+    out.append("| --- | --- | --- | --- |")
+    for e in sorted(entries, key=lambda x: x["num"]):
+        out.append(f"| {e['num']} | {e['title']} | {e['status']} | {e['date']} |")
     out.append("")
     out.append("## 怎么用这份索引")
     out.append("")
     out.append(
-        "**已接受的 ADR 不可变**: 要推翻就写新篇, 在它的 `Supersedes:` 里点名旧篇, "
-        "旧文件一个字不改. 见 `docs/agents/domain.md`."
+        "**每一篇写的是当前口径**: 口径变了就改那一篇(连 `Date` 一起改), 不另开一篇去"
+        '"修订/取代"它; 一次性的实测记录在 `docs/evidence/`, 正文里点名. 见 ADR-0001.'
     )
     out.append("")
     out.append(
@@ -149,7 +120,7 @@ def main() -> None:
         raise SystemExit(2)
 
     entries = [parse(p) for p in files]
-    # 读不出头三行与标题的, 当场报出来 -- 上一版就把 21 篇标题全读成"(没有 H1)"
+    # 读不出头两行与标题的, 当场报出来 -- 上一版就把 21 篇标题全读成"(没有 H1)"
     # 而照样生成了一份**看起来很正常**的索引, 那比不生成更坏.
     broken = [
         f"{e['path']}: {k}={e[k]}"
@@ -174,8 +145,7 @@ def main() -> None:
             raise SystemExit(1)
         have = normalize(OUT.read_text(encoding="utf-8"))
         if have != normalize(wanted):
-            # 提示按"整个文件里有没有出现这个号"来判: 被取代的那几篇不在表格里,
-            # 在下面另一节; 只认表格行会误报"少了"它(第一版就误报了 0017).
+            # 提示按"整个文件里有没有出现这个号"来判: 只认表格行会误报(第一版就误报过一次).
             missing = [e["num"] for e in entries if e["num"] not in have]
             hint = f"(索引里完全没有 {', '.join(missing)})" if missing else "(内容与 ADR 正文不符)"
             print(f"{TAG} 索引与 ADR 正文不一致 {hint}", file=sys.stderr)

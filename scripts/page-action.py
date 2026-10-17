@@ -5,7 +5,7 @@
 # ///
 """页面动作真机探针(开发用):经 CDP 把一件页面动作发给 DeepSeek 标签页的内容脚本名册.
 
-外部动作口随 ADR-0011 废掉后,没有外露探针面;这个脚本补上开发期的那只手:
+外部动作口随 ADR-0002 废掉后,没有外露探针面;这个脚本补上开发期的那只手:
 动作走扩展自己的名册(内容脚本 `ACTION_ROSTER`),绕开 `runAction` 的三道闸(总开关 /
 替人开口 / 退避)--那是给产品路径用的,探针要能直接验执行器.只读页面 DOM 与驱动扩展
 自身,不 hook 站点,不碰令牌(issue #31 的硬边界).
@@ -19,7 +19,7 @@
   uv run scripts/page-action.py send composer.type --params '{"text": "你好"}'
   uv run scripts/page-action.py storage get --keys '["backoffUntil","toggle","speak"]'
   uv run scripts/page-action.py toggles-off   # 测试环境:把深度思考,智能搜索都关掉
-  uv run scripts/page-action.py evidence      # 存证对账:留档原件 vs 站点当前那一颗(ADR-0018)
+  uv run scripts/page-action.py evidence      # 存证对账:留档原件 vs 站点当前那一颗(ADR-0013)
 
 `send` / `storage` 遇瞬时失败(`read-failed` / `page-changed` / `no-site-tab` / CDP 超时)
 不直接回错误:脚本自己排队,等限速时间到重发,`--attempts` 定总次数(默认 5).
@@ -97,12 +97,12 @@ SPEAK_KEY = "speak"
 #: 总开关关一下再开之后,等两边各自就位(background 重读留痕,content script 重挂名册).
 BACKGROUND_SETTLE = 1.2
 
-#: 本地工具 `send.page` 的探针问题(ADR-0013):一眼看得出是探针发的.判据按**整条**比,
+#: 本地工具 `send.page` 的探针问题(ADR-0007):一眼看得出是探针发的.判据按**整条**比,
 #: 所以正文后面挂一个每次跑都不一样的号--不挂的话,重跑时上一轮那条会冒充这一轮.
 SEND_PAGE_QUESTION = "真机探针:收到就只回两个字--收到"
 
 #: 投完链信封,等"问题进对话"的秒数上限:第一步 `composer.type` 是当场写,第二步
-#: `send.enter` 还要过扩展自己那条唯一限速(ADR-0029,最长 15 秒)才发得出去.
+#: `send.enter` 还要过扩展自己那条唯一限速(ADR-0004,最长 15 秒)才发得出去.
 SEND_PAGE_WAIT = 45.0
 
 #: 站点把发出那条消息搬进对话列表有先后:紧跟判据读到的写作框还带着上一拍的残影,
@@ -136,7 +136,7 @@ TARGET_NULL_ACTIONS = frozenset(
     }
 )
 
-#: 唯一限速(ADR-0029):动手前的等待与扩展的发送限速是**同一条**--Beta(2,4),
+#: 唯一限速(ADR-0004):动手前的等待与扩展的发送限速是**同一条**--Beta(2,4),
 #: 3~15s,峰在 6s.规格住在共享 fixture 里,TS 与 Python 共读,漂移会被两边的测试抓住;
 #: `--pace MIN,MAX` 只剩人工排障的口子,默认路径永远走这一条.
 SEND_PACE_SPEC_FILE = REPO / "protocol" / "fixtures" / "send-pace.json"
@@ -163,14 +163,14 @@ def draw_window_interval(spec: dict, rng=None) -> float:
     return spec["minMs"] + ratio * (spec["maxMs"] - spec["minMs"])
 
 
-#: 页面控件存证(ADR-0018):真机按钮原件.CI 对拍管"存证 ↔ 回归用例",这里管"站点 ↔ 存证".
+#: 页面控件存证(ADR-0013):真机按钮原件.CI 对拍管"存证 ↔ 回归用例",这里管"站点 ↔ 存证".
 EVIDENCE_FILE = REPO / "protocol" / "evidence" / "controls.json"
 
 
 def pace(spec: str | None, *, no_pace: bool = False) -> None:
     """动手前随机等一下(默认开,`--no-pace` 关,`--pace MIN,MAX` 自定义).
 
-    默认与扩展的发送限速**同一条**(唯一限速,ADR-0029):Beta(2,4),3~15s,峰在 6s.
+    默认与扩展的发送限速**同一条**(唯一限速,ADR-0004):Beta(2,4),3~15s,峰在 6s.
     为什么固化进工具而不是每次手敲:这条纪律靠记性一定会漏,而漏了就是连打站点.
     随机而非固定时长,免得打出机器人的节奏.打印等待时长,方便复盘时对齐时间线.
     """
@@ -820,7 +820,7 @@ def frame_fail() -> int:
 
     走产品自己那条路:页面世界投一条 `continuation-fail`(注 chain 信封那条,见文件头),
     background 照 `recordFailure` 落痕,随即 fire-and-forget 去抓帧;那一抓会被
-    "报上来的标签页此刻不在前台"挡下(ADR-0030 决定 2),留纯文字因由,失败痕照旧.
+    "报上来的标签页此刻不在前台"挡下(ADR-0008 决定 2),留纯文字因由,失败痕照旧.
     所以**必须**先把扩展页置前台(站点退后台):少了这一步,验的是正路,判据会假绿.
 
     探针造的那笔痕跑完撤掉,并让 background 重读一遍 storage;两件事都做完,这台机器
@@ -899,7 +899,7 @@ def frame_fail() -> int:
     # 还原:站点标签页回前台--别的探针动作与抓帧正路都靠它.
     asyncio.run(call_cdp(site["webSocketDebuggerUrl"], "Page.bringToFront"))
     report["ok"] = bool(report["recorded"]) and len(frames_after) == len(frames_before)
-    report["note"] = "抓帧失败不留单独的印(ADR-0030):判据只有两条--痕照落,帧数没变"
+    report["note"] = "抓帧失败不留单独的印(ADR-0008):判据只有两条--痕照落,帧数没变"
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["ok"] else 1
 
@@ -955,7 +955,7 @@ def ledger_clean(before: dict, after: dict) -> tuple[bool, str]:
 
     探针的活动本身会引出续聊;打字撞上扩展那一步就会造出一笔痕--**账本干净这一轮才
     算数**:多出来的那笔判据读不出是谁的错,但它多半意味着"扩展那一步的发送被算到了
-    `send.page` 头上",那一轮的两步归属就不成立了(真机上踩过一次,见 ADR-0023).
+    `send.page` 头上",那一轮的两步归属就不成立了(真机上踩过一次,见 ADR-0006).
     """
     moved = [
         name
@@ -1037,7 +1037,7 @@ def wait_continuation() -> bool:
     """等工具结果顺 回灌 那条路自动续的那一轮(短标记进对话).
 
     `send.page` 回的是"发完即回确认",那条载荷按回灌口径回页面;闸开着时它进队列,
-    武装,发出去(ADR-0014 / ADR-0023).**等它落地再收手**,机器才是安静的--
+    武装,发出去(ADR-0005 / ADR-0006).**等它落地再收手**,机器才是安静的--
     别的探针最怕跑到一半撞上续聊(`frame-fail` 的文件头就写着别在续聊途中跑).
 
     只看最后三行:上一趟跑剩的同名标记不许冒充这一趟.等不到不当故障--这一条只说明
@@ -1070,8 +1070,8 @@ def send_page_verdict(
 
     - **闸开着**:两步都该成--那条问题原样出现在对话里(第一步写进写作框,第二步发出去).
     - **闸关着**:第一步成,第二步被 `runAction` 拦下--问题**留在写作框**里当草稿,
-      对话**末行一动没动**(ADR-0023 的产品口径:等你自己按发送).
-    - 两头各有一条反证:闸关着却进了对话 = 闸没拦住发送(ADR-0023 的红线);
+      对话**末行一动没动**(ADR-0006 的产品口径:等你自己按发送).
+    - 两头各有一条反证:闸关着却进了对话 = 闸没拦住发送(ADR-0006 的红线);
       闸开着却查无此问题 = 两步里有一处没成.
 
     **闸关着那条腿不能靠"对话里没有"**:`messages.list` 读漏了也长这样--真机上见过一次
@@ -1084,7 +1084,7 @@ def send_page_verdict(
     if in_conversation and not speak:
         return (
             False,
-            "闸关着,问题却进了对话:发送步没被拦下(ADR-0023 那条红线)."
+            "闸关着,问题却进了对话:发送步没被拦下(ADR-0006 那条红线)."
             "要么 live 那份闸没跟上 storage,要么它真没拦住--两种都得查",
         )
     if in_conversation:
@@ -1105,7 +1105,7 @@ def send_page_verdict(
 
 
 def send_page(question: str, *, allow_send: bool) -> int:
-    """验本地工具 `send.page` 的两步(ADR-0013):`composer.type` → `send.enter`,全走三道闸.
+    """验本地工具 `send.page` 的两步(ADR-0007):`composer.type` → `send.enter`,全走三道闸.
 
     本地工具在 `ACTION_ROSTER` 之外,唯一触发法是往页面里投一条 chain `call` 信封
     (文件头第 2 条);**走的仍是产品那条路**,所以闸照拦--这正是要验的:
@@ -1116,7 +1116,7 @@ def send_page(question: str, *, allow_send: bool) -> int:
     闸是真人的(agent 不代勾也不代关),所以哪条腿跑得动由**当前**那把闸决定:
     闸开着没给 `--send` 就打 `blocked` 退 4,别拿真话当假话.
 
-    写作框里已经有字就不打:第一步会把人家的草稿覆盖掉(ADR-0023 如实写明的取舍),
+    写作框里已经有字就不打:第一步会把人家的草稿覆盖掉(ADR-0006 如实写明的取舍),
     探针不替人做那个决定.闸关着那条腿验完把探针自己那笔草稿清掉(写作框回到空).
 
     判据一律把 `SEND_PAGE_WAIT` 等满:探针分不出"还没发"与"不会发",半路收手就把
@@ -1150,7 +1150,7 @@ def send_page(question: str, *, allow_send: bool) -> int:
         return blocked_report(
             report,
             f"写作框里有字({watched[:24]!r}):可能是你的草稿,也可能是扩展正要把上一轮"
-            "工具结果发出去--第一步会覆盖它(ADR-0023 那条取舍),探针不动",
+            "工具结果发出去--第一步会覆盖它(ADR-0006 那条取舍),探针不动",
         )
     # 闸关着那条腿的判据要看"对话末行有没有动":先记下目前这一行(读不出就判不了).
     tail_before = None if speak else last_row()
@@ -1882,7 +1882,7 @@ def main() -> None:
     )
     off.add_argument("--wait", type=float, default=15.0, help="等写作框出现的秒数上限,默认 15")
     ev = sub.add_parser(
-        "evidence", help="存证对账:留档按钮原件 vs 站点当前那一颗逐字比(只读,ADR-0018)"
+        "evidence", help="存证对账:留档按钮原件 vs 站点当前那一颗逐字比(只读,ADR-0013)"
     )
     ev.add_argument("--id", action="append", help="只比这一条(可重复);默认全比")
     ax = sub.add_parser("ax", help="dump 无障碍树(role + 可访问名;只读,开发探针)")
@@ -1905,7 +1905,7 @@ def main() -> None:
         "send-page",
         help=(
             "验本地工具 send.page 的两步(composer.type → send.enter,全走三道闸):"
-            "闸开着真发一条(要 --send),闸关着只落草稿(ADR-0013/0023)"
+            "闸开着真发一条(要 --send),闸关着只落草稿(ADR-0007/0006)"
         ),
     )
     send_page_parser.add_argument(

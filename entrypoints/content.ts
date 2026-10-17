@@ -128,7 +128,7 @@ export default defineContentScript({
       }
     };
 
-    /** 自动续聊到顶停手:报给 background 留一笔(ADR-0004),不进对话流. */
+    /** 自动续聊到顶停手:报给 background 留一笔(ADR-0008),不进对话流. */
     const reportStop = async (stop: StopMessage): Promise<void> => {
       try {
         await browser.runtime.sendMessage(
@@ -255,7 +255,7 @@ export default defineContentScript({
 
     /**
      * 发送限速(#61):三种"替用户把消息发出去"的原语,执行前先过检查点--
-     * 距上一次发送不够一个间隔(3~15 秒,峰在 6 秒,ADR-0029)就**等**够(等,不拒,不增失败码).
+     * 距上一次发送不够一个间隔(3~15 秒,峰在 6 秒,ADR-0004)就**等**够(等,不拒,不增失败码).
      *
      * 圆键那一下可能不是发送(`composer.circleIntent` 分得出发送 / 停止 / 认不出),按
      * `checkSendIntent` 的三条口径分别处理:**停止永不延迟**,认不出不延迟但照样记账.

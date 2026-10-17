@@ -1,4 +1,4 @@
-"""MCP 网关:把配好的 MCP servers 接进来,汇总成一张工具表,替扩展转调用(ADR-0011).
+"""MCP 网关:把配好的 MCP servers 接进来,汇总成一张工具表,替扩展转调用(ADR-0002).
 
 浏览器 spawn 不了 MCP 进程--这正是 dsb 存在的那半条命:真 MCP servers 跑在本机(stdio 子
 进程),扩展只认 dsb 一个地址;工具表由 dsb 汇总,调用由 dsb 转发,**dsb 自己一条工具都不
@@ -248,7 +248,7 @@ class StdioServer:
         """收摊:断 stdin 让它自己退,给 ``grace`` 秒;仍不走就杀.
 
         ``grace=0`` 是"信道卡住"那条路(:meth:`_request` 过线)用的:它多半没在读 stdin,
-        体面退那几秒白等,还要算在用户头上--断掉就走,让下一次调用起个新的(ADR-0034).
+        体面退那几秒白等,还要算在用户头上--断掉就走,让下一次调用起个新的(ADR-0003).
         """
         proc, self._proc = self._proc, None
         self._fail_all()
@@ -357,7 +357,7 @@ class StdioServer:
         except queue.Empty as exc:
             with self._guard:
                 self._pending.pop(request_id, None)
-            # 过线还没答上来:这个孩子当场断掉,下一次调用起个新的(ADR-0034).留着它,
+            # 过线还没答上来:这个孩子当场断掉,下一次调用起个新的(ADR-0003).留着它,
             # 后面每一件工具都排在它后面、各自等到自己的超时--它要是永不回头,工具面就
             # 一直哑着,只能人来重启中继.
             if self._proc is not None:
