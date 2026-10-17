@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { MAX_RESULT_CHARS } from "./continuation";
 import {
   FAILURE_RELAY_UNREACHABLE,
   FAILURE_UNEXPECTED_RESPONSE,
@@ -264,6 +265,28 @@ describe("joinCallAnswers / 一轮多块的结果拼装", () => {
 
   it("空数组回空串--不该发生,但别无中生有", () => {
     expect(joinCallAnswers([])).toBe("");
+  });
+
+  it("额度是这一轮的总量:八块各要一整页时每块各分一份,不是头一块吃光", () => {
+    const chunk = "x".repeat(MAX_RESULT_CHARS);
+    const joined = joinCallAnswers(
+      Array.from({ length: MAX_CALLS_PER_ROUND }, () => ({ tool: "fs_read_file", text: chunk })),
+    );
+    expect(joined.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
+    // 每块都还在,而且每块各留自己那句"已截断"--整段只出现一次就是头一块把后面挤没了.
+    expect(joined.match(/工具 fs_read_file:/g)).toHaveLength(MAX_CALLS_PER_ROUND);
+    expect(joined.match(/工具结果已截断/g)).toHaveLength(MAX_CALLS_PER_ROUND);
+  });
+
+  it("各块平分:八块里某块短于自己那份时原样交,长的那些才被砍", () => {
+    const answers = Array.from({ length: 2 }, (_, index) => ({
+      tool: "fs_read_file",
+      text: index === 0 ? "短的一段" : "y".repeat(MAX_RESULT_CHARS),
+    }));
+    const joined = joinCallAnswers(answers);
+    expect(joined).toContain("短的一段");
+    expect(joined.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
+    expect(joined.match(/工具结果已截断/g)).toHaveLength(1);
   });
 
   it("一轮的上限是个正数(排再多也只是分几轮)", () => {

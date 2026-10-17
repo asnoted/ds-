@@ -11,6 +11,7 @@
  * 对话流(`isInjectableReply` 挡着),图标翻红,留痕补一笔.
  */
 
+import { MAX_RESULT_CHARS, truncateResult } from "./continuation";
 import { errorPayload, okPayload, type ReplyPayload } from "./reply";
 
 /** 中继是本机服务,端口走 dsb 的默认值 `DSB_PORT`(扩展无输入面,改不了). */
@@ -95,10 +96,25 @@ export type ToolAnswer = {
  *
  * 一块就一个工具时**原样交**(工具的正文不该被我们加的头尾污染);多块才给每块
  * 加上"工具 <名字>:"这一行--不然模型分不出哪段是谁说的.
+ *
+ * **额度是这一轮的,不是每块一块**:`MAX_RESULT_CHARS` 是一轮正文的总量(8 块各
+ * 16,000 就是 128,000,顶穿 ADR-0011 那道上下文预算).先扣掉"工具 <名字>:"与空行,
+ * 剩下的按块平摊,每块各留自己那句"已截断"--于是后面几块不会被头一块整个挤没,
+ * 而且每块都看得到自己被砍(ADR-0005 决定 7).
  */
 export function joinCallAnswers(answers: readonly ToolAnswer[]): string {
-  if (answers.length <= 1) return answers[0]?.text ?? "";
-  return answers.map(({ tool, text }) => `工具 ${tool}:\n${text}`).join("\n\n");
+  const only = answers[0]?.text ?? "";
+  if (answers.length <= 1) return truncateResult(only);
+  const headers = answers.reduce((sum, one) => sum + toolHeader(one.tool).length + 2, 0);
+  const share = Math.max(1, Math.floor((MAX_RESULT_CHARS - headers) / answers.length));
+  return answers
+    .map(({ tool, text }) => `${toolHeader(tool)}${truncateResult(text, share)}`)
+    .join("\n\n");
+}
+
+/** 多块时每块抬头那一行:模型靠它分哪段是谁说的. */
+function toolHeader(tool: string): string {
+  return `工具 ${tool}:\n`;
 }
 
 /* -------------------------------------------------------------------------- */
