@@ -59,6 +59,21 @@ describe("truncateResult", () => {
     expect(truncateResult("x".repeat(16_000))).toBe("x".repeat(16_000));
   });
 
+  it("贴边那一页一个字都不动:16,000 是**单元**数,星平面字也一样(ADR-0010)", () => {
+    // dsb 那边也按 UTF-16 单元量(dsb/work.py 的 `_units()`),于是"dsb 交出的每一条
+    // 都原样进对话"这条保证在星平面字上也成立:8,000 个星平面字 = 16,000 单元,
+    // 贴边但不越线,这里就不该动它.
+    const text = "\u{20000}".repeat(8_000);
+    expect(text.length).toBe(MAX_RESULT_CHARS);
+    expect(truncateResult(text)).toBe(text);
+    // 多一个单元就是另一回事:边界是 `<=`,而且量的是单元(多那一个是 ASCII,一个单元).
+    const over = `${text}x`;
+    expect(over.length).toBe(MAX_RESULT_CHARS + 1);
+    const cut = truncateResult(over);
+    expect(cut).not.toBe(over);
+    expect(cut.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
+  });
+
   it("MAX_SAFE_INPUT_TOKENS 就是本仓的上下文预算 90 万,不是实测硬墙(ADR-0011)", () => {
     // 实测硬墙在 [982000, 982700).预算取 90 万,差额 ~82,000 token **是余量**--
     // 用来吸收量不到的部分(站点系统提示词,服务端下发的浮动,上下文压缩).
