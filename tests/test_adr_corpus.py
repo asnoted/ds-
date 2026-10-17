@@ -95,8 +95,8 @@ NAMEISH = re.compile(r"^(?:[A-Z][A-Z0-9_]{3,}|[a-z_][a-z0-9_]{3,}|[a-z][a-z0-9]*
 #: 编号本身交给上面那两道守卫, 别在这里重复报.
 CITATIONISH = re.compile(r"^ADR|^\d")
 
-#: `## 判据` 里的 ```sh 块: 判据是给人照着跑的, 块里点着的路径要真在仓里.
-JUDGE_SECTION = "## 判据"
+#: ```sh 块(六份写当前口径的文档里, ADR 那边就是 `## 判据`): 块里的命令是给人照着跑的,
+#: 点着的路径要真在仓里. 只认标了 `sh` 的块 -- 别的围栏里是散文 / 树状图 / 协议样例.
 JUDGE_BLOCK = re.compile(r"^```sh[ \t]*$\n(.*?)^```[ \t]*$", re.M | re.S)
 #: 行内注释(`# 两半对拍同一份 send-pace.json` 那种): `#` 得自成一段, 免得吃 `#106` 这类引用.
 JUDGE_COMMENT = re.compile(r"(?:^|\s)#.*$")
@@ -296,15 +296,15 @@ def named_problems(files: Iterable[Path] | None = None) -> list[str]:
     return out
 
 
-def judge_commands(text: str) -> Iterator[tuple[int, str]]:
-    """`## 判据` 的 ```sh 块里逐条命令(带首行行号): 续行(`\\`)并起来, 行内注释去掉."""
-    at = text.find(JUDGE_SECTION)
-    if at < 0:  # 缺这一节是骨架那条守卫的事, 这里不重复报
-        return
-    section = text[at:]
-    for block in JUDGE_BLOCK.finditer(section):
-        body_at = at + block.start(1)
-        first = text[:body_at].count("\n") + 1
+def sh_commands(text: str) -> Iterator[tuple[int, str]]:
+    """这份文档里**每个 ```sh 块**的逐条命令(带首行行号): 续行(`\\`)并起来, 行内注释去掉.
+
+    只认标了 `sh` 的块: 别的围栏里是散文 / 树状图 / 协议样例, 拿它们当命令是扫错地方.
+    ADR 里这类块都在 `## 判据` 下(缺那一节是骨架那条守卫的事), 另外六份写当前口径的文档
+    里则是"照着跑"的命令 -- 两边同一条口径: 点着的路径要真在仓里.
+    """
+    for block in JUDGE_BLOCK.finditer(text):
+        first = text[: block.start(1)].count("\n") + 1
         merged: list[tuple[int, str]] = []
         for offset, raw in enumerate(block.group(1).splitlines()):
             if merged and merged[-1][1].endswith("\\"):
@@ -318,8 +318,8 @@ def judge_commands(text: str) -> Iterator[tuple[int, str]]:
 
 
 def judge_paths(text: str) -> Iterator[tuple[int, str]]:
-    """`## 判据` 的命令里点到的路径(带行号)."""
-    for lineno, line in judge_commands(text):
+    """`sh` 块的命令里点到的路径(带行号)."""
+    for lineno, line in sh_commands(text):
         for word in line.split():
             token = word.strip("\"'")
             if JUDGE_PATH.match(token):
@@ -350,8 +350,8 @@ def k_problems(files: Iterable[Path] | None = None) -> list[str]:
     by_file = case_names_by_file()
     everywhere = set().union(*by_file.values()) if by_file else set()
     out: list[str] = []
-    for path in adr_files() if files is None else files:
-        for lineno, line in judge_commands(path.read_text(encoding="utf-8")):
+    for path in named_files() if files is None else files:
+        for lineno, line in sh_commands(path.read_text(encoding="utf-8")):
             for expr in JUDGE_K.findall(line):
                 words = [w for w in K_WORD.findall(expr) if w not in K_NOISE]
                 targets = [token for token in line.split() if token in by_file]
@@ -365,11 +365,13 @@ def k_problems(files: Iterable[Path] | None = None) -> list[str]:
 
 
 def judge_problems(files: Iterable[Path] | None = None) -> list[str]:
-    """返回"判据里点到、仓里却没有"的清单;空列表 = 判据点的路径都在."""
+    """返回"sh 块里点到、仓里却没有"的清单;空列表 = 那些路径都在."""
     names, _ = repo_index()
     out: list[str] = []
-    for path in adr_files() if files is None else files:
+    for path in named_files() if files is None else files:
         for lineno, token in judge_paths(path.read_text(encoding="utf-8")):
+            if token in NOT_IN_REPO:
+                continue
             rel, _, case = token.partition("::")
             target = ROOT / rel
             where = f"{path.name}:{lineno}"
@@ -458,9 +460,10 @@ def test_every_evidence_file_is_pointed_at() -> None:
 
 
 def test_every_judge_path_exists() -> None:
+    """六份写当前口径的文档里, 每个 ```sh 块点到的路径都得真在仓里."""
     problems = judge_problems()
     assert not problems, (
-        "判据里点到的路径在仓里找不到(判据是给人照着跑的, 路径没了那句就是空话):\n"
+        "sh 块里点到的路径在仓里找不到(那些命令是给人照着跑的, 路径没了那句就是空话):\n"
         + "\n".join(problems)
     )
 
