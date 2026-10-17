@@ -13,6 +13,9 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
 - **点名的东西**: 篇里反引号点着的路径与标识符(`dsb/work.py`, `cap_result`,
   `MAX_RESULT_CHARS` 这类)是给读者当**指路牌**用的; 代码里改了名、文件挪了家, 牌还在原地
   指着空地 -- 旧语料写着的 `MAX_RESULT_CHARS = 2000` 就是这么来的.
+- **判据里点的路径**: `## 判据` 那些 ```sh 块是让人照着跑的(ADR-0001 决定 3: 判据要真的会
+  咬). 块里点着的文件没了, 那句判据就成了空话 -- 而"命令跑不起来"只有真去跑的人才会发现,
+  所以在这里对着仓核一遍. 核的是**路径在不在**, 不是"跑起来对不对"(那要真跑).
 
 `tests/test_coding_standards_refs.py` 是同一类守卫(引用了 `docs/CODING_STANDARDS.md` 的
 节号); 那条既然落在 tests/, 这条也落这里, 于是本地 `pnpm quality` 与 CI 都跑得到.
@@ -79,6 +82,17 @@ PATHISH = re.compile(r"^[\w.-]+(?:/[\w.-]+)+$|^[\w.-]+\.(?:py|ts|json|md|sh|yaml
 NAMEISH = re.compile(r"^(?:[A-Z][A-Z0-9_]{3,}|[a-z_][a-z0-9_]{3,}|[a-z][a-z0-9]*[A-Z]\w*)$")
 #: 编号本身交给上面那两道守卫, 别在这里重复报.
 CITATIONISH = re.compile(r"^ADR|^\d")
+
+#: `## 判据` 里的 ```sh 块: 判据是给人照着跑的, 块里点着的路径要真在仓里.
+JUDGE_SECTION = "## 判据"
+JUDGE_BLOCK = re.compile(r"^```sh[ \t]*$\n(.*?)^```[ \t]*$", re.M | re.S)
+#: 行内注释(`# 两半对拍同一份 send-pace.json` 那种): `#` 得自成一段, 免得吃 `#106` 这类引用.
+JUDGE_COMMENT = re.compile(r"(?:^|\s)#.*$")
+#: 命令里算"路径"的 token: 带斜杠的 / 带后缀的, 尾部 `::测试名` 一并记(与反引号那条同口径).
+JUDGE_PATH = re.compile(
+    r"^[\w.@-]+(?:/[\w.@-]+)+(?:::\w+)?$"
+    r"|^[\w.@-]+\.(?:py|ts|json|md|sh|yaml|yml|toml)(?:::\w+)?$"
+)
 
 #: 点名了、但本来就不在仓里的东西: 站点 / 上游 / 协议 / 用户本机. 每条都写清为什么 --
 #: 新遇到一条, 先问"是篇里写错了, 还是它真在仓外", 后者才往这里加.
@@ -260,6 +274,41 @@ def named_problems(files: Iterable[Path] | None = None) -> list[str]:
     return out
 
 
+def judge_paths(text: str) -> Iterator[tuple[int, str]]:
+    """`## 判据` 的 ```sh 块里点到的路径(带行号)."""
+    at = text.find(JUDGE_SECTION)
+    if at < 0:  # 缺这一节是骨架那条守卫的事, 这里不重复报
+        return
+    section = text[at:]
+    for block in JUDGE_BLOCK.finditer(section):
+        body_at = at + block.start(1)
+        for offset, raw in enumerate(block.group(1).splitlines()):
+            line = JUDGE_COMMENT.sub("", raw)
+            for word in line.split():
+                token = word.strip("\"'")
+                if JUDGE_PATH.match(token):
+                    yield text[:body_at].count("\n") + 1 + offset, token
+
+
+def judge_problems(files: Iterable[Path] | None = None) -> list[str]:
+    """返回"判据里点到、仓里却没有"的清单;空列表 = 判据点的路径都在."""
+    names, _ = repo_index()
+    out: list[str] = []
+    for path in adr_files() if files is None else files:
+        for lineno, token in judge_paths(path.read_text(encoding="utf-8")):
+            rel, _, case = token.partition("::")
+            target = ROOT / rel
+            where = f"{path.name}:{lineno}"
+            if rel in names or target.exists():
+                if case and (
+                    not target.is_file() or case not in target.read_text(encoding="utf-8")
+                ):
+                    out.append(f"{token} <- {where}({rel} 里没这个测试名)")
+                continue
+            out.append(f"{token} <- {where}(仓里没这个路径)")
+    return out
+
+
 def scanned_files() -> Iterator[Path]:
     for path in sorted(ROOT.iterdir()):
         if path.is_file() and path.suffix in SUFFIXES and path.name not in ROOT_FILE_SKIP:
@@ -306,6 +355,53 @@ def test_every_named_thing_exists() -> None:
         "ADR 里点名的路径 / 标识符在仓里找不到(改了名 / 挪了家就把篇里那句一起改; "
         "真在仓外的往 NOT_IN_REPO 里加并写清理由):\n" + "\n".join(problems)
     )
+
+
+def test_the_scanned_docs_are_the_advertised_ones() -> None:
+    """扫面([ADR-0001 决定 8])换了 / 加了面, 那一句要一起改 -- 免得守卫偷偷少扫一份."""
+    text = (ADR_DIR / "0001-adrs-are-living-documents.md").read_text(encoding="utf-8")
+    for path in named_files():
+        if path in adr_files():  # 13 篇本来就在扫面里, 不必逐篇点名
+            continue
+        assert path.name in text, (
+            f"{path.name} 进了扫面, ADR-0001 决定 8 却没点名(加一份扫面要两处一起动)"
+        )
+
+
+def test_every_judge_path_exists() -> None:
+    problems = judge_problems()
+    assert not problems, (
+        "判据里点到的路径在仓里找不到(判据是给人照着跑的, 路径没了那句就是空话):\n"
+        + "\n".join(problems)
+    )
+
+
+def test_judge_path_check_fires(tmp_path: Path) -> None:
+    """判据块里点空、以及"文件在, 测试名没了", 两样都要咬."""
+    bad_path = "scripts/" + "nope.py"
+    bad_case = "test_nope_" + "does_not_exist"
+    note = tmp_path / "0007-bad-judge.md"
+    note.write_text(
+        "# ADR-0007: x\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
+        "## 决定\n\n1. 有.\n\n## Considered Options\n\n## Consequences\n\n"
+        "## 判据(怎么自己复现)\n\n"
+        "```sh\n"
+        f"uv run {bad_path} --check\n"
+        f"uv run pytest tests/test_gateway.py::{bad_case} -q\n"
+        "uv run pytest tests/test_gateway.py -q\n"
+        "uv run scripts/page-action.py send --file <某文件>\n"
+        "uv run scripts/page-action.py evidence  # 对照 protocol/evidence/controls.json\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    problems = judge_problems([note])
+    assert len(problems) == 2, problems
+    joined = "\n".join(problems)
+    assert bad_path in joined and "仓里没这个路径" in joined
+    assert bad_case in joined and "没这个测试名" in joined
+    lines = note.read_text(encoding="utf-8").splitlines()
+    at = 1 + next(i for i, line in enumerate(lines) if bad_path in line)
+    assert f"0007-bad-judge.md:{at}" in joined
 
 
 def test_named_check_fires(tmp_path: Path) -> None:
