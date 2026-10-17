@@ -21,13 +21,18 @@
 
 1. **一篇一个主题, 写当前口径**. 改口径 = 改那一篇; 整个主题不存在了 = 删那一篇.
    没有 `Supersedes` 链, 没有"只修订 X 的一点"这种篇.
-2. **头两行固定** `Status` / `Date`, 落在 `docs/adr/`, 文件名 `NNNN-kebab-title.md`,
-   编号全仓唯一, 不复用. 没有 `Supersedes` 字段 -- 演进不再靠"谁取代谁"这张图.
+2. **骨架固定**(由 `tests/test_adr_corpus.py` 钉着): 落在 `docs/adr/`, 文件名
+   `NNNN-kebab-title.md`; H1 是 `# ADR-NNNN: 标题`(编号与文件名一致); 头两行 `Status` /
+   `Date`(没有 `Supersedes` -- 演进不再靠"谁取代谁"这张图); 下面一句开篇段; 四个固定节按序
+   到齐: `## 决定` / `## Considered Options` / `## Consequences` / `## 判据(怎么自己复现)`.
+   别的节(已知洞 / 未验证项 / 自己的小节)随便加.
 3. **一次性的实测不进正文**, 进 `docs/evidence/`. 判据是"别人照着能不能自己复现":
    能(测试名, 命令, 常量名, fixture 路径)就留在 ADR 的 `## 判据` 里, 不能
    (某天某点的探针读数, 账本上的某几笔)就进 evidence, 正文点名一句.
 4. **引用要指得到**. 引用 `ADR-NNNN` 就必须有那一篇; 重编号时全仓引用一起改
-   (注释, 测试标题, fixture 的 `description`, 探针的 report 字符串都算引用).
+   (注释, 测试标题, fixture 的 `description`, 探针的 report 字符串都算引用). **有守卫**:
+   `tests/test_adr_corpus.py` 扫全仓, 并列写法(`ADR-0007/0006`)里每个号都算, 有一个指不到
+   就红 -- 本篇落地那天是靠人肉 `grep` 扫的, 扫出 6 处悬空.
 5. **索引 `docs/adr/README.md` 由脚本生成**: `uv run scripts/adrs-index.py`
    重新生成, `--check` 接在 `pnpm quality:ci` 里. 手改索引会判红.
 6. **文档布局**: 根目录只许 `AGENTS.md` / `README.md` / `GLOSSARY.md`, 别的文档一律进
@@ -55,18 +60,13 @@
   旧号只在 `git show` 里有意义. 那次合并的映射写在提交信息里.
 - **`docs/CODING_STANDARDS.md` 第 2 节("修订型 ADR"那条)随之作废**, 改成"活文档"这条的
   投影; `docs/agents/domain.md` 末尾那句"不可变"也一并改掉.
+- **守卫只查形状, 不查内容**: 骨架与全仓引用由 `tests/test_adr_corpus.py` 守, 索引由
+  `scripts/adrs-index.py` 守; "这篇写的是不是当前口径"没人守 -- 那得读的人自己核代码.
 
 ## 判据(怎么自己复现)
 
 ```sh
 uv run scripts/adrs-index.py --check      # 索引与正文一致
+pnpm relay:test                           # 骨架与全仓引用(tests/test_adr_corpus.py)
 pnpm quality:ci                           # 三道守卫: 中文标点 / 混入文字体系 / ADR 索引
-grep -rn 'ADR-[0-9]' --include='*.md' --include='*.py' --include='*.ts' . | grep -v docs/adr/README.md
 ```
-
-最后那条扫的是**引用**: 每出现一个编号, `docs/adr/` 里就得有同名文件那一篇.
-
-## 已知洞
-
-- **引用完整性没有守卫**: `pnpm quality:ci` 只保证索引与正文一致, 不检查"全仓引用的编号
-  都存在". 重编号靠人(或 agent)扫 `grep` 输出. 本篇落地的当天就是靠这条扫的.

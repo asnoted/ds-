@@ -74,7 +74,7 @@
 ```sh
 pnpm vitest run src/lib/fence.test.ts src/lib/fixtures.test.ts
 uv run scripts/measure-result-forms.py grep --pattern '续聊' --pattern 'WORK_' \
-  --pattern 'send-failed' --pattern 'ADR-002' --pattern 'def ' --pattern '\.test\.ts'
+  --pattern 'send-failed' --pattern 'ADR-[0-9]' --pattern 'def ' --pattern '\.test\.ts'
 ```
 
 样本由 **dsb 自己的 `grep`** 在本仓上跑出来, 不是照形状手写. 协议规范与 SDK 的原文引用,

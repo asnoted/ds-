@@ -17,7 +17,8 @@
 藏进看起来正常的表格里(见 `broken`).
 
 **它不读什么**: 正文. ADR 是**活文档**(见 ADR-0001), 当前口径就在每一篇里, 索引不重复它;
-一次性实测在 `docs/evidence/`, 也不进这里.
+一次性实测在 `docs/evidence/`, 也不进这里. 骨架与"全仓引用指得到"那两条由
+`tests/test_adr_corpus.py` 守(pytest 在本地也跑, 这里只管索引).
 """
 
 from __future__ import annotations

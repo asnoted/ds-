@@ -48,7 +48,7 @@
 未验证项当时就承认了).口径与命令都在 `scripts/measure-result-forms.py`:
 
     uv run scripts/measure-result-forms.py grep --pattern '续聊' --pattern 'WORK_' \
-      --pattern 'send-failed' --pattern 'ADR-002' --pattern 'def ' --pattern '\.test\.ts'
+      --pattern 'send-failed' --pattern 'ADR-[0-9]' --pattern 'def ' --pattern '\.test\.ts'
 
 样本由 **dsb 自己的 `grep`** 在本仓上跑出来,不是照形状手写--模式挑的是本仓会话里真的会
 用的那几类(中文领域词 / 常量前缀 / 错误码 / ADR 号 / 语言构造 / 测试文件名).第三,四行
