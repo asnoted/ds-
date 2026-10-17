@@ -46,6 +46,9 @@
    (2026-10-18 凌晨补的, 那之前有五处, 全在 `docs/evidence/`). 实测段搬进 `docs/evidence/`
    之后同理: 那里面"那一篇的某节"要改成"本篇那节"(同一个夜里清掉九处这样的指向)--
    那种**指代的词**守卫仍然查不出; 查得出的是上一条: 写清了归属却指不到.
+   仓外(GitHub 票)先前按"记录不动"的口径不改号; 2026-10-18 人拍板改成对齐: 票的正文与
+   评论已按 `docs/evidence/numbering.md` 的映射改齐一遍(正文 31 张, 评论 42 条). 三处口径
+   一起改: 这里, 那张表的前言, 以及 `scripts/audit-issues.py` 的说明.
 5. **索引 `docs/adr/README.md` 由脚本生成**: `uv run scripts/adrs-index.py`
    重新生成, `--check` 接在 `pnpm quality:ci` 里. 手改索引会判红.
 6. **文档布局**: 根目录只许 `AGENTS.md` / `README.md` / `GLOSSARY.md`, 别的文档一律进
