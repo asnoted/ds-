@@ -700,14 +700,46 @@ def catalogued_stages(source: str) -> list[str]:
     return re.findall(r'"([a-z][a-z0-9-]*)"', matched.group(1))
 
 
-def test_every_failure_stage_is_catalogued_in_the_adr() -> None:
-    """ADR-0008 决定 4 的后半句(扩展侧环节)也读起来是完整的一张: 联合类型里的每个名字都得在篇里.
+#: 篇里那张环节名单(ADR-0008 决定 4 的后半句): 从"扩展侧是**环节**"到"这半句**有守卫**"
+#: 之间, 反引号里的小写短名.
+ADR_STAGES = re.compile(r"扩展侧是\*\*环节\*\*:(.*?)这半句", re.DOTALL)
 
-    加了环节不补篇, 两边都绿 -- 与中继事件册子同一种漏(那次真漏了四条). 另一半在
+
+def catalogued_stages_in_adr(adr: str) -> set[str]:
+    """从 ADR-0008 决定 4 的后半句里取出那张环节名单."""
+    matched = ADR_STAGES.search(adr)
+    assert matched, "ADR-0008 决定 4 里没找到`扩展侧是**环节**`(改了句式就把这里一起改)"
+    return set(re.findall(r"`([a-z][a-z0-9-]*)`", matched.group(1)))
+
+
+def stage_problems(source: str, adr: str) -> list[str]:
+    """(联合类型里的环节, 篇里的名单)**两头**对拍;空列表 = 一致."""
+    stages = set(catalogued_stages(source))
+    named = catalogued_stages_in_adr(adr)
+    assert stages and named, "提取坏了会给假绿(空清单让下面的断言过得很轻松)"
+    return [f"仓里有, 篇里没点名: {name}" for name in sorted(stages - named)] + [
+        f"篇里点名了, 仓里没有: {name}" for name in sorted(named - stages)
+    ]
+
+
+def test_every_failure_stage_is_catalogued_in_the_adr() -> None:
+    """ADR-0008 决定 4 的后半句(扩展侧环节)与联合类型两头对拍.
+
+    加了环节不补篇, 或者篇里点着一个仓里没有的名字, 都会红 -- 后一个方向原来漏了
+    (2026-10-18 凌晨试出来的: 从联合类型里删掉 `rounds`, 全仓测试照样绿). 另一半在
     `tests/test_log.py`(中继侧事件名).
     """
-    stages = catalogued_stages((ROOT / "src" / "lib" / "failurelog.ts").read_text(encoding="utf-8"))
-    assert stages, "提取坏了会给假绿(空清单让下面那条断言过得很轻松)"
+    source = (ROOT / "src" / "lib" / "failurelog.ts").read_text(encoding="utf-8")
+    problems = stage_problems(source, adr_text("0008"))
+    assert not problems, "ADR-0008 决定 4 后半句与 `FailureWhere` 对不上:\n" + "\n".join(problems)
+
+
+def test_failure_stage_check_fires() -> None:
+    """两头都咬: 从联合类型里删掉一个, 与篇里多点名一个."""
     adr = adr_text("0008")
-    missing = [stage for stage in stages if stage not in adr]
-    assert not missing, f"ADR-0008 决定 4 少点名的环节: {missing}"
+    union = 'export type FailureWhere = "health" | "call" | "watchdog" | "rounds" | "continuation";'
+    assert stage_problems(union, adr) == []
+    dropped = stage_problems(union.replace('"rounds" | ', ""), adr)
+    assert dropped == ["篇里点名了, 仓里没有: rounds"], dropped
+    swapped = stage_problems(union.replace('"continuation"', '"extra"'), adr)
+    assert len(swapped) == 2, swapped
