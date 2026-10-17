@@ -1,5 +1,5 @@
 """守卫: `docs/adr/` 这份语料的几条不变量 -- 骨架, 引用, 点名的东西, 判据会不会咬, 来历有
-没有人点.
+没有人点, 册子两边对不对得上.
 
 ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修订/取代". 好处是读一篇就够,
 代价是**好几样东西没有编译器管**:
@@ -21,7 +21,13 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   `-k token` 收到的是别的用例, `-k blows_up` 那条其实叫 `blew_up`). 核的是**存不存在 /
   收不收得到**, 不是"跑起来对不对"(那要真跑).
 - **来历有没有人点**: `docs/evidence/` 那些一次性实测, ADR 正文里留一句点名才走得过去;
-  一份没人点的文件就是孤儿, 而多出来的文件不会有谁觉得碍事.
+  一份没人点的文件就是孤儿, 而多出来的文件不会有谁觉得碍事. 这一条是**两向**的: 开头那句
+  指路牌指着哪篇, 那篇就得点到它 -- 指错门的文件把人带到别的主题去, 与孤儿一样算漏.
+- **册子两边对不对得上**: 那种"仓里一份, 篇里一份"的**名册**, 只核一个方向会漏 -- 篇里的
+  名字在仓里查得到(点名那条管了), 而**仓里新加的、篇里没写**的那个没人管. 2026-10-17 真的
+  发生过一次(中继事件册子在 ADR-0008 决定 4 里少了四条, 而两边都绿). 中继侧事件名那一半住
+  `tests/test_log.py`, 工具载荷码那一半住 `tests/test_work.py`, 扩展侧环节名(`FailureWhere`)
+  那条住本文件.
 
 `tests/test_coding_standards_refs.py` 是同一类守卫(引用了 `docs/CODING_STANDARDS.md` 的
 节号); 那条既然落在 tests/, 这条也落这里, 于是本地 `pnpm quality` 与 CI 都跑得到.
@@ -451,19 +457,52 @@ def test_the_scanned_docs_are_the_advertised_ones() -> None:
         )
 
 
-def test_every_evidence_file_is_pointed_at() -> None:
-    """`docs/evidence/` 里每份都得被**某篇 ADR 点名**(ADR-0001 决定 3).
+#: 来历文件开头那句指路牌: `> 当前口径见 [ADR-0004](../adr/0004-....md), ...`.
+EVIDENCE_POINTER = re.compile(r"当前口径见[\s>]*\[ADR-(\d{4})\]\(\.\./adr/([^)]+)\)")
 
-    那些是"一次性的实测"的去处, ADR 正文里留一句点名当指路牌; 没人点的孤儿文件, 读者从语料
-    里根本走不到 -- 等于没写.
+
+def pointer_problems(directory: Path) -> list[str]:
+    """来历与篇对不对得上: 每份开头得有一句指路牌, 指到的那篇得在, 而且那篇得点到它.
+
+    两向都要通(ADR-0001 决定 3): 孤儿文件读者从语料里走不到, 指错门的把他带到别的主题去.
     """
-    adr_text = "\n".join(path.read_text(encoding="utf-8") for path in adr_files())
-    orphans = [
-        path.name
-        for path in sorted((ROOT / "docs" / "evidence").glob("*.md"))
-        if path.name not in adr_text
-    ]
-    assert not orphans, f"这些来历没有哪篇 ADR 点名(在篇里加一句指路): {orphans}"
+    problems: list[str] = []
+    for path in sorted(directory.glob("*.md")):
+        matched = EVIDENCE_POINTER.search(path.read_text(encoding="utf-8"))
+        if not matched:
+            problems.append(f"{path.name}: 开头没有'当前口径见 ADR-NNNN'那句指路牌")
+            continue
+        number, target = matched.group(1), matched.group(2)
+        if not (ROOT / "docs" / "adr" / target).exists():
+            problems.append(f"{path.name}: 指的门不在 ({target})")
+        elif path.name not in adr_text(number):
+            problems.append(f"{path.name}: 指着 ADR-{number}, 那篇却没点到它")
+    return problems
+
+
+def test_evidence_files_and_adrs_point_at_each_other() -> None:
+    """来历与篇**互相认得**(ADR-0001 决定 3).
+
+    两向都要通: 开头那句指路牌指到哪篇, 那篇就得点到它 -- 孤儿文件读者从语料里走不到, 指错门
+    的文件把他带到别的主题去, 两种都算漏.
+    """
+    problems = pointer_problems(ROOT / "docs" / "evidence")
+    assert not problems, "\n".join(problems)
+
+
+def test_evidence_pointer_check_fires(tmp_path: Path) -> None:
+    """两边各打一枪: 指错门(篇在, 但那篇没点它), 以及干脆没指路牌."""
+    wrong = tmp_path / "wrong.md"
+    wrong.write_text(
+        "> 当前口径见 [ADR-0001](../adr/0001-adrs-are-living-documents.md).\n",
+        encoding="utf-8",
+    )
+    problems = pointer_problems(tmp_path)
+    assert len(problems) == 1 and "却没点到它" in problems[0], problems
+
+    (tmp_path / "bare.md").write_text("一句话.\n", encoding="utf-8")
+    problems = pointer_problems(tmp_path)
+    assert any("指路牌" in problem for problem in problems), problems
 
 
 def test_every_judge_path_exists() -> None:

@@ -96,7 +96,7 @@
 
 ```sh
 uv run scripts/adrs-index.py --check      # 索引与正文一致
-pnpm relay:test                           # 骨架 / 引用 / 篇内下标 / 点名的东西(tests/test_adr_corpus.py)
+pnpm relay:test                           # tests/test_adr_corpus.py 那套(清单在它开头)
 pnpm quality:ci                           # 三道守卫: 中文标点 / 混入文字体系 / ADR 索引
 uv run scripts/audit-issues.py --citations   # 仓外那些票里的旧号(信息级; 要 gh + 网络)
 ```
