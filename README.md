@@ -42,6 +42,7 @@ root 内(`DSB_WORK_ROOT` 配置,缺省本仓根),不给任何命令执行;见 `d
 | 握手超时              | 30s(`DSB_CONNECT_TIMEOUT`)                          | 起子进程 + `initialize`        |
 | 发现超时              | 20s(`DSB_DISCOVERY_TIMEOUT`)                        | `tools/list`                   |
 | 调用超时              | 120s(`DSB_TOOL_TIMEOUT`)                            | 一次 `tools/call`              |
+| `grep` 墙钟           | 20s(过线中止,回 `pattern-too-slow`)                 | 工作工具 `WORK_GREP_DEADLINE`  |
 
 三个超时键都认进程环境与 `.env`(认不出或非正数落默认);其余是常量,改常量有测试钉着.
 

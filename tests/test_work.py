@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from dsb.work import (
     ERROR_NOT_A_FILE,
     ERROR_NOT_FOUND,
     ERROR_OUT_OF_ROOT,
+    ERROR_PATTERN_TOO_SLOW,
     ERROR_PROTECTED,
     WORK_READ_BYTES,
     WORK_READ_LINE_LIMIT,
@@ -471,6 +473,19 @@ def test_grep_bad_regex_is_bad_regex(tmp_path: Path) -> None:
     assert code_of(exc) == ERROR_BAD_REGEX
 
 
+def test_grep_gives_up_on_exponential_backtracking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """墙钟这道闸(ADR-0033):40 个 ``a`` 后面挂 ``(a+)+b`` 是指数回溯,没闸就回不来."""
+    monkeypatch.setattr("dsb.work.WORK_GREP_DEADLINE", 0.3)
+    (tmp_path / "big.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
+    started = time.monotonic()
+    with pytest.raises(WorkError) as exc:
+        grep_tree(tmp_path, "(a+)+b")
+    assert code_of(exc) == ERROR_PATTERN_TOO_SLOW
+    assert time.monotonic() - started < 5
+
+
 def test_grep_missing_path_is_not_found(tmp_path: Path) -> None:
     with pytest.raises(WorkError) as exc:
         grep_tree(tmp_path, "x", "nope")
@@ -567,6 +582,18 @@ def test_missing_root_is_reported_clearly(tmp_path: Path) -> None:
     payload, failed = tool_by_name(missing, "read").handler({"path": "a.txt"})
     assert failed is True
     assert payload["text"].startswith(ERROR_BAD_PATH)
+
+
+def test_grep_tool_reports_a_pattern_that_blew_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """模型那侧拿到的是一句能照着改的话,不是一个没头没尾的 ``tool-timeout``."""
+    monkeypatch.setattr("dsb.work.WORK_GREP_DEADLINE", 0.3)
+    (tmp_path / "big.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
+    payload, failed = tool_by_name(tmp_path, "grep").handler({"pattern": "(a+)+b"})
+    assert failed is True
+    assert payload["text"].startswith(f"{ERROR_PATTERN_TOO_SLOW}(模式")
+    assert "缩小范围" in payload["text"]
 
 
 def test_handlers_round_trip_through_the_tools(tmp_path: Path) -> None:

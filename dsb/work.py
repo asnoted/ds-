@@ -22,7 +22,10 @@ from __future__ import annotations
 
 import os
 import re
+import signal
+import threading
 from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +48,12 @@ WORK_READ_LINE_LIMIT = 500
 WORK_READ_BYTES = 16_000
 WORK_LIST_LIMIT = 500
 WORK_GREP_LIMIT = 200
+#: ``grep`` 的墙钟(ADR-0033):模式是模型给的,嵌套量词叠上一行几十万字能指数回溯,
+#: 而活工具跑在**单线程**的 stdio 子进程里--一次卡住,后面每一件工具都排在它后面
+#: 哑掉(gateway 那边只判 ``tool-timeout``,不杀还在转的孩子).过线就整个中止,回一个
+#: 能让模型改写的码,而不是把工具面一起带走.给得比"正常那趟"宽得多:本仓上 ``ERROR_``
+#: 那种模式跑完要 3.5s,早已越过 ``dsb.log.SLOW_MS`` 那道水印.
+WORK_GREP_DEADLINE = 20.0
 WORK_LINE_LIMIT = 500
 WORK_FILE_LIMIT = 1_000_000
 #: 探二进制时看的前缀长度:首块里出现 ``\x00`` 就当二进制,跳过.
@@ -69,6 +78,7 @@ ERROR_NOT_A_DIRECTORY = "not-a-directory"
 ERROR_EDIT_NO_MATCH = "edit-no-match"
 ERROR_EDIT_NOT_UNIQUE = "edit-not-unique"
 ERROR_BAD_REGEX = "bad-regex"
+ERROR_PATTERN_TOO_SLOW = "pattern-too-slow"
 ERROR_IO_FAILED = "io-failed"
 
 #: 只写不读的护栏:``<root>/.git`` 之下(含 ``.git`` 本身,worktree 里 ``.git`` 是文件也算).
@@ -430,6 +440,31 @@ def _walk_files(base: Path) -> Iterator[Path]:
             yield Path(dirpath) / name
 
 
+@contextmanager
+def _deadline(seconds: float, what: str) -> Iterator[None]:
+    """到点抛 :data:`ERROR_PATTERN_TOO_SLOW`.
+
+    ``re`` 的内部循环会周期性查信号,所以指数回溯**真的**能被这一下打断(实测:
+    40 个 ``a`` 后面挂 ``(a+)+b``,不打就再也回不来).装不上就**不装**--``signal``
+    只能在主线程里装,少一道闸好过在错误的地方抛异常.
+    """
+    main = threading.current_thread() is threading.main_thread()
+    if not hasattr(signal, "setitimer") or not main:  # pragma: no cover - 平台/线程差异
+        yield
+        return
+
+    def fire(*_args: object) -> None:
+        raise WorkError(ERROR_PATTERN_TOO_SLOW, detail=what)
+
+    previous = signal.signal(signal.SIGALRM, fire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 def grep_tree(root: Path, pattern: str, raw: str = ".") -> str:
     """``grep``:在 root 内按正则搜文本行,回 ``相对路径:行号: 行``.
 
@@ -437,8 +472,20 @@ def grep_tree(root: Path, pattern: str, raw: str = ".") -> str:
     ``mcp.json`` / ``.env`` 的内容**一个字都不进结果**,哪怕模式正好命中里面的某行.
 
     ``ls`` 仍如实列出这些文件的名字(只拦内容,不隐藏存在,与 opencode 一致).
+
+    整趟(编译 + 遍历 + 逐行匹配)躺在 ``WORK_GREP_DEADLINE`` 那道墙钟里
+    (:func:`_deadline`,ADR-0033).
     """
     _require_root(root)
+    what = (
+        f"模式 {pattern!r} 未在 {WORK_GREP_DEADLINE:g}s 内搜完(换简单点的写法,或指定 path 缩小范围)"
+    )
+    with _deadline(WORK_GREP_DEADLINE, what):
+        return _grep_scan(root, pattern, raw)
+
+
+def _grep_scan(root: Path, pattern: str, raw: str) -> str:
+    """真搜的那一趟(单独成函数,好让整个扫描躺在墙钟里)."""
     try:
         regex = re.compile(pattern)
     except re.error as exc:
@@ -583,12 +630,18 @@ def work_tools(root: Path) -> list[Tool]:
         ),
         Tool(
             name="grep",
-            description="[工作目录] 在工作目录内按正则搜索文本行,回 相对路径:行号: 行.",
+            description=(
+                "[工作目录] 在工作目录内按正则搜索文本行,回 相对路径:行号: 行. "
+                "正则按 Python `re` 语法. 模式太费(嵌套量词 + 超长行)会中止,换简单点的写法."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string"},
-                    "path": {"type": "string"},
+                    "pattern": {"type": "string", "description": "Python `re` 语法的正则."},
+                    "path": {
+                        "type": "string",
+                        "description": "工作目录内的文件或目录,缺省整个工作目录.",
+                    },
                 },
                 "required": ["pattern"],
             },
@@ -635,6 +688,7 @@ __all__ = [
     "ERROR_NOT_A_FILE",
     "ERROR_NOT_FOUND",
     "ERROR_OUT_OF_ROOT",
+    "ERROR_PATTERN_TOO_SLOW",
     "ERROR_PROTECTED",
     "ENV_FILE_NAME",
     "MCP_CONFIG_ENV_KEY",
@@ -642,6 +696,7 @@ __all__ = [
     "is_protected",
     "root_relative",
     "WORK_FILE_LIMIT",
+    "WORK_GREP_DEADLINE",
     "WORK_GREP_LIMIT",
     "WORK_LINE_LIMIT",
     "WORK_LIST_LIMIT",

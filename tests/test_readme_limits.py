@@ -117,6 +117,13 @@ ROWS = (
         lambda n: f"{n:g}s",
         Placement("TOOL_TIMEOUT_ENV_KEY", literal=True),
     ),
+    Row(
+        "`grep` 墙钟",
+        WORK,
+        "WORK_GREP_DEADLINE",
+        lambda n: f"{n:g}s",
+        Placement("WORK_GREP_DEADLINE"),
+    ),
 )
 
 
