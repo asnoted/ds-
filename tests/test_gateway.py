@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import textwrap
 import time
@@ -28,9 +29,13 @@ from dsb.gateway import (
     text_of_result,
 )
 
-#: 替身 MCP server:说标准 JSON-RPC over stdio.按 arguments.text 的暗号走四种岔路.
+#: 替身 MCP server:说标准 JSON-RPC over stdio.按 arguments.text 的暗号走几种岔路.
 FAKE_SERVER = """
-import json, os, sys, time
+import json, os, signal, sys, time
+
+# 真正死锁那一种(ADR-0003 未验证项里"永不回头"): 不答, 还无视 SIGTERM --
+# 只有真的 kill 才收得动. pid 写文件, 好让测试看它到底死没死.
+PID_FILE = os.environ.get("FAKE_PID_FILE")
 
 # 工具件数可配:单服务工具数上限那条判据要拿一张超长的表来试(第一件恒叫 echo).
 TOOLS = [
@@ -66,6 +71,14 @@ for line in sys.stdin:
         if text == "hang":
             time.sleep(60)
             continue
+        if text == "stuck":
+            # 不答, 也不肯体面退: 只有 kill 收得动.
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            if PID_FILE:
+                with open(PID_FILE, "w", encoding="utf-8") as handle:
+                    handle.write(str(os.getpid()))
+            while True:
+                time.sleep(3600)
         if text == "die":
             sys.exit(1)
         if text == "huge":
@@ -241,6 +254,45 @@ def test_a_hanging_server_is_dropped_so_a_retry_gets_a_fresh_one(fake_script: Pa
         assert time.monotonic() - started < 3
     finally:
         gate.stop()
+
+
+def test_a_deadlocked_child_is_killed_not_left_behind(fake_script: Path, tmp_path: Path) -> None:
+    """真正"永不回头"的孩子(不答 + 无视 SIGTERM)也要真的死掉, 不是留着.
+
+    替身 `hang` 那一种睡 60s 就会自己退, 所以"断掉"与"等它自己好"分不出来; 这一条的替身
+    把 SIGTERM 设成忽略 -- 只有 `kill()`(SIGKILL)才收得动它(ADR-0003 决定 5).
+    """
+    pid_file = tmp_path / "child.pid"
+    gate = make_gateway(fake_script, timeout=0.4, env={"FAKE_PID_FILE": str(pid_file)})
+    try:
+        payload, failed = gate.tools()[0].handler({"text": "stuck"})
+        assert ERROR_TIMEOUT in payload["text"] and failed
+        pid = int(read_child_pid(pid_file))
+        assert wait_until_gone(pid), f"孩子 {pid} 还活着(该被 kill 收尸)"
+    finally:
+        gate.stop()
+
+
+def read_child_pid(pid_file: Path) -> str:
+    """替身写下自己的 pid; 它是异步的, 等它写出来(最多 2 秒)."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip():
+            return pid_file.read_text(encoding="utf-8").strip()
+        time.sleep(0.02)
+    raise AssertionError("替身没写 pid 文件")
+
+
+def wait_until_gone(pid: int) -> bool:
+    """收了尸的 pid 会从进程表上消失(`os.kill(pid, 0)` 抛 ProcessLookupError)."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.02)
+    return False
 
 
 def test_cap_result_keeps_short_text_and_names_the_original_length_of_a_long_one() -> None:

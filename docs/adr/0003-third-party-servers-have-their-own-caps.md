@@ -60,8 +60,11 @@
 # 绿: 超时那条码 + "重试落在新孩子上"(替身 server 的 hang 岔路是睡 60s 不答)
 uv run pytest tests/test_gateway.py -q -k 'hanging'
 
+# 绿: "永不回头"那一种(不答 + 无视 SIGTERM)也要真被 kill 收尸(替身写下自己的 pid)
+uv run pytest tests/test_gateway.py -q -k 'deadlocked'
+
 # 红(它真是这条决定撑着的): 把 dsb/gateway.py 里那句 `self.stop(grace=0)` 拿掉,
-# 上面那条"重试"当场变红 -- 重试自己也会超时.
+# 上面那两条当场变红 -- 重试自己也会超时, 死锁那个孩子也还赖在进程表上.
 ```
 
 限额那三条在 `tests/test_gateway.py` 与 `dsb/server.py` 的启动日志里; 60s 替身与逐刻读数见
@@ -73,4 +76,8 @@ uv run pytest tests/test_gateway.py -q -k 'hanging'
   server 卡住时会怎样(重启要多久, 包里有没有要重下的东西)没量.
 - **"并发那条代价"只在代码上读出来**: 扩展一趟一块地打, 造不出"别的在飞请求被一起打断"的
   现场, 所以那条是读代码得出的, 不是实测.
-- **"永不回头"没构造出来**: 替身是"睡 6 秒", 能自愈; 真正死锁的孩子没有替身.
+- ~~**"永不回头"没构造出来**: 替身是"睡 6 秒", 能自愈; 真正死锁的孩子没有替身.~~
+  -- **已构造(2026-10-17)**: 替身多一条 `stuck` 岔路(不答, 还把自己收到的 `SIGTERM` 设成
+  忽略, 同时写下自己的 pid), 于是"断掉"与"等它自己好"分得开; 判据是
+  `tests/test_gateway.py::test_a_deadlocked_child_is_killed_not_left_behind`(超时那一刻
+  那个 pid 从进程表上消失). 把 `self.stop(grace=0)` 拿掉, 它当场变红.
