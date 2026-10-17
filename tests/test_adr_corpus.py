@@ -36,6 +36,7 @@ ADR_DIR = ROOT / "docs" / "adr"
 #: 被扫的引用面: 本仓自己的那些目录. 别人家的(`.agents/` / `vendor/`)与生成物不碰;
 #: 手维护的存证(`protocol/evidence/controls.json`)与实测记录(`docs/evidence/`)**在扫**
 #: -- 里面的编号同样会悬空(那次重编号就在 `controls.json` 的 `description` 上留了一处).
+#: `dsweb/`(站点逆向的结论)也在扫: 它引 ADR-0011 / ADR-0013 引了好几处, 悬空同样要报.
 SCANNED_ROOTS = (
     "src",
     "entrypoints",
@@ -44,6 +45,7 @@ SCANNED_ROOTS = (
     "docs",
     "tests",
     "protocol",
+    "dsweb",
     ".github",
     ".husky",
 )
@@ -54,7 +56,7 @@ SCANNED_ROOTS = (
 ROOT_FILE_SKIP = frozenset({"pnpm-lock.yaml"})
 
 SUFFIXES = frozenset(
-    {".md", ".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml", ".sh", ".html"}
+    {".md", ".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml", ".sh", ".html", ".toml"}
 )
 
 #: 每篇必须有的四个节, 且按这个顺序出现. 别的节(已知洞 / 未验证项 / 自己的小节)随便加.
