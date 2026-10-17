@@ -65,10 +65,18 @@ export const MAX_SAFE_INPUT_TOKENS = 900_000;
 /**
  * 截断一段工具结果正文.超了在尾巴上留一句"已截断",并写明原长--
  * 让模型知道它看到的不是全文,它会据此改问法,而不是拿半截正文当全貌.
+ *
+ * **末句也占这笔额度**: 先截到 `max` 再追加末句的做法交出去的比 `max` 多一点,
+ * 于是"dsb 交出的每一条都原样进对话"这条保证在这条路上差一句--dsb 那两处
+ * (`render_page` / `cap_result`)早就是"连末句一起算"(ADR-0010),这里对齐它.
  */
 export function truncateResult(text: string, max: number = MAX_RESULT_CHARS): string {
   if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n...(工具结果已截断:原文 ${text.length} 字,这里是前 ${max} 字)`;
+  const note = (kept: number) => `\n...(工具结果已截断:原文 ${text.length} 字,这里是前 ${kept} 字)`;
+  // 末句里那个"前 N 字"切完才知道,按最坏情况估它的长度(拿 `max` 当代入值--
+  // 位数只减不增,估出来只会偏长),于是正文 + 末句 <= max.
+  const kept = Math.max(0, max - note(max).length);
+  return `${text.slice(0, kept)}${note(kept)}`;
 }
 
 /** 续聊正文 = 原来的回灌载荷(`agent:` 锚 + TOON),截断之后改走请求体. */

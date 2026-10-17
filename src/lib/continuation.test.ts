@@ -33,12 +33,17 @@ describe("truncateResult", () => {
     expect(truncateResult(text)).toBe(text);
   });
 
-  it('超了留一句"已截断"并写明原长', () => {
+  it('超了留一句"已截断"并写明原长,而且**末句也在额度内**', () => {
     const text = "x".repeat(MAX_RESULT_CHARS + 10);
     const out = truncateResult(text);
-    expect(out.startsWith("x".repeat(MAX_RESULT_CHARS))).toBe(true);
+    // 交出去的整条(正文 + 末句)不超过那道闸:多一个字的末句就会在下一个环节被截掉,
+    // 而截掉的正好是"这不是全文"这句(ADR-0005 决定 6).
+    expect(out.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
     expect(out).toContain("已截断");
     expect(out).toContain(`${MAX_RESULT_CHARS + 10} 字`);
+    // 正文仍是从头开始的那一段,且没白留一大截额度给末句.
+    expect(text.startsWith(out.split("\n")[0])).toBe(true);
+    expect(out.length).toBeGreaterThan(MAX_RESULT_CHARS - 100);
   });
 
   it("上限可传参", () => {
