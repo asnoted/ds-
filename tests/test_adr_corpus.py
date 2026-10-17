@@ -22,8 +22,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ADR_DIR = ROOT / "docs" / "adr"
 
-#: 被扫的引用面: 与 CODING_STANDARDS 那条守卫同一批口径 -- 别人家的(`.agents/`
-#: `vendor/`)与真机原件(`protocol/evidence/`)不碰.
+#: 被扫的引用面: 本仓自己的那些目录. 别人家的(`.agents/` / `vendor/`)与生成物不碰;
+#: 手维护的存证(`protocol/evidence/controls.json`)与实测记录(`docs/evidence/`)**在扫**
+#: -- 里面的编号同样会悬空(那次重编号就在 `controls.json` 的 `description` 上留了一处).
 SCANNED_ROOTS = (
     "src",
     "entrypoints",
@@ -36,7 +37,10 @@ SCANNED_ROOTS = (
     ".husky",
 )
 
-SCANNED_FILES = ("AGENTS.md", "README.md", "GLOSSARY.md")
+#: 根层的文件也扫(按后缀, 于是 `README.md` / `wxt.config.ts` / `package.json` 都在内):
+#: 那次重编号漏改过 `wxt.config.ts`, 而它不在上面任何一个目录里.
+#: 锁文件是 pnpm 生成的, 里头可能有别人的 `ADR-` 字样, 扫它只会有假报.
+ROOT_FILE_SKIP = frozenset({"pnpm-lock.yaml"})
 
 SUFFIXES = frozenset(
     {".md", ".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml", ".sh", ".html"}
@@ -117,12 +121,21 @@ def cite_problems(files: Iterable[Path], known: set[str]) -> list[str]:
 
 
 def scanned_files() -> Iterator[Path]:
-    for name in SCANNED_FILES:
-        yield ROOT / name
+    for path in sorted(ROOT.iterdir()):
+        if path.is_file() and path.suffix in SUFFIXES and path.name not in ROOT_FILE_SKIP:
+            yield path
     for root in SCANNED_ROOTS:
         for path in sorted((ROOT / root).rglob("*")):
             if path.is_file() and path.suffix in SUFFIXES:
                 yield path
+
+
+def test_the_scanned_set_covers_the_files_that_got_missed_last_time() -> None:
+    """守卫自己也要有判据: 根层的文件在扫(那次重编号漏的正是 `wxt.config.ts`)."""
+    scanned = {path.relative_to(ROOT).as_posix() for path in scanned_files()}
+    assert "wxt.config.ts" in scanned
+    assert "README.md" in scanned
+    assert "protocol/evidence/controls.json" in scanned
 
 
 def test_every_adr_has_the_skeleton() -> None:
