@@ -107,8 +107,11 @@
 
 本篇原先写着"上界的天花板是网关那道 64K".**那是错的**,错在把两条路当成一条:
 
-- `cap_result` 全仓**只有一处调用**(`gateway.py:482`,`Gateway._handler`),那是**第三方
-  MCP server** 的结果那条路.
+- `cap_result` 在**网关那份**(`dsb/gateway.py`)**只有一处调用**(当年记的是 `gateway.py:482`,
+  现在挪到 `499`,`Gateway._handler`),那是**第三方 MCP server** 的结果那条路.
+  -- **2026-10-18 注记**: 同名的第二个 `cap_result` 是那之后按 ADR-0010 加在 `dsb/work.py` 的
+  (自家 `ls` / `grep` 各调一次,`READ` 那条路由页预算兜住). 所以"全仓只有一处调用"这句今天
+  读起来要加限定: 只对**网关那份**成立.
 - **自家五件工作工具不走它**--它们经 `mcp.py:225` 的 `text_result` 直接出门,
   `text_result` 只封装不截断.
 

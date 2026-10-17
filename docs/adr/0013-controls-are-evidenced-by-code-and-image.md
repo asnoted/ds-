@@ -66,7 +66,7 @@ ds-button--capsule ds-button--xs ds-button--icon-relative-l` + 同一个哈希 `
 - **Bad: 存量要回补**(已经办了一部分) -- `messages.test.ts` 那颗代码块 fixture 现在从**存证文件**
   读(`evidenceHtml("code.block")`, 真机 2026-10-07 原件, 一字不缩写), 回补时确认过 `readRow` 对
   真实结构仍成立. 同一份文件里 `conversationHtml()` 那种**读法**的骨架不是存证单元(最小单元是
-  控件, 见决定 1), 不在回补范围.
+  控件, 见 ADR-0013 决定 1), 不在回补范围.
 
 ## 判据(怎么自己复现)
 

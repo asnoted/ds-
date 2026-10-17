@@ -25,8 +25,8 @@
 > content** (even without output schema). 没有注解时从**返回类型注解**推出 outputSchema.
 
 所以"标记"对 server 作者常常是免费的:给工具标个返回类型就有.**这条路不嗅,不猜,
-而且 `read` 那种逐字读取在结构上永远不会被标记**(它返回 `str`)--第 2 条那个交易在这里
-根本不存在.
+而且 `read` 那种逐字读取在结构上永远不会被标记**(它返回 `str`)--ADR-0012 开头那两条里的
+**第 2 条**那个取舍(给工具结果建结构化通路)在这里根本不存在.
 
 **本仓现在把它扔了.** `text_of_result` 只读 `content` 里的 text 块,全仓 grep 不到
 `structured`.第三方 FastMCP 系 server 现在就在发这个标记,我们在丢.

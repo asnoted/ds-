@@ -10,7 +10,9 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   report 字符串)漏改一处, 也没有编译器会红. 2026-10-17 那次重编号(28 篇并 13 篇)就是靠
   人肉 `grep` 扫的, 扫出 6 处悬空 -- 这两条守卫是那次教训的产物. 重编号还留了**第二层**:
   `ADR-NNNN 决定 M` 里的 M 是**篇内下标**, 旧编号下的下标搬过来就指歪了(仓里真有过五处);
-  "号指得到、下标指歪了"这条查不出, 但"那一篇里没有第 M 条"查得出.
+  "号指得到、下标指歪了"这条查不出, 但"那一篇里没有第 M 条"查得出. 还有**光杆**那一种:
+  只写 `决定 M` 不写是谁的 -- 连"去哪篇核"都不知道, 所以那种先判红(2026-10-18 凌晨补的,
+  那之前有五处, 都在 `docs/evidence/` 里).
 - **点名的东西**: 篇里反引号点着的路径与标识符(`dsb/work.py`, `cap_result`,
   `MAX_RESULT_CHARS` 这类)是给读者当**指路牌**用的; 代码里改了名、文件挪了家, 牌还在原地
   指着空地 -- 旧语料写着的 `MAX_RESULT_CHARS = 2000` 就是这么来的.
@@ -248,6 +250,30 @@ def decision_problems(files: Iterable[Path], known: Mapping[str, set[int]]) -> l
     return out
 
 
+#: 写清了归属的下标(`ADR-0008 决定 12` / `ADR-0010 第 19 条`): 中间容几格空白, 换行也算 --
+#: 下面查光杆下标时, 先用它把"已经写清的"摘掉.
+ATTRIBUTED_DECISION = re.compile(r"ADR-\d{4}[^0-9]{0,12}(?:决定|第)\s*\d+\s*条?")
+#: 光杆下标: 前面没写是谁的. 篇外的下标会跟着篇内的一起漂(并 / 删决定时最容易漏), 而写清归属
+#: 的那道守卫核不了不知道属于谁的 -- 所以先要求写清(ADR-0001 决定 4).
+LOOSE_DECISION = re.compile(r"决定\s*(\d+)")
+
+
+def loose_decision_problems(files: Iterable[Path]) -> list[str]:
+    """返回"光杆下标"的清单(`文件:行: 决定 N 没写是谁的`);空列表 = 每一处都写清了归属."""
+    out: list[str] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        shown = path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else path.as_posix()
+        blanked = ATTRIBUTED_DECISION.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+        for lineno, line in enumerate(blanked.splitlines(), 1):
+            for item in LOOSE_DECISION.findall(line):
+                out.append(f"{shown}:{lineno}: 决定 {item} 没写是谁的(要写成 `ADR-NNNN 决定 M`)")
+    return out
+
+
 def repo_index() -> tuple[set[str], str]:
     """(仓里的文件名, 代码正文). 前者判路径, 后者判标识符."""
     names: set[str] = set()
@@ -436,6 +462,29 @@ def test_every_decision_citation_lands() -> None:
         "引用的决定号在那一篇里不存在(并决定 / 删决定时, 篇外那些下标要一起改):\n"
         + "\n".join(problems)
     )
+
+
+def test_every_decision_index_says_whose_it_is() -> None:
+    """光杆下标(没写是谁的)全判红: 写清归属, 上面那条才核得动它."""
+    problems = loose_decision_problems(scanned_files())
+    assert not problems, (
+        "篇外的决定下标要写清归属(并决定 / 删决定时它们会漂, 不写清就没法核):\n"
+        + "\n".join(problems)
+    )
+
+
+def test_loose_decision_check_fires(tmp_path: Path) -> None:
+    """光杆的咬; 写清归属的(含跨行那种)不咬."""
+    note = tmp_path / "note.md"
+    note.write_text(
+        "见 ADR-0008 决定 12, 以及 ADR-0010\n决定 19;但这里还有 决定 "
+        + "7 没写归属, 以及 第 3 条.\n",
+        encoding="utf-8",
+    )
+    problems = loose_decision_problems([note])
+    flagged = "决定 " + "7"
+    assert len(problems) == 1, problems
+    assert flagged in problems[0] and "note.md:2" in problems[0]
 
 
 def test_every_named_thing_exists() -> None:
