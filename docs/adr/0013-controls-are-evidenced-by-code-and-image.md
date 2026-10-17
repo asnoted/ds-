@@ -63,8 +63,10 @@ ds-button--capsule ds-button--xs ds-button--icon-relative-l` + 同一个哈希 `
   有**; CI 那半只保证"没人手抄改写", 证不了"站上还是这样".
 - **Bad: 登记变重**. 每颗按钮要贴完整 `outerHTML`(含 `svg path`, 一颗几百字), 候补那批十几颗
   下来体积可观; 存证**会过时**, 必须靠真机日期区分"当时"与"现在".
-- **Bad: 存量要回补** -- `messages.test.ts` 的代码块 fixture 是缩写过的, 按本条该补回原样;
-  补的时候要确认 `readRow` 对真实结构仍成立(那是实现要认的结构, 不能只改测试).
+- **Bad: 存量要回补**(已经办了一部分) -- `messages.test.ts` 那颗代码块 fixture 现在从**存证文件**
+  读(`evidenceHtml("code.block")`, 真机 2026-10-07 原件, 一字不缩写), 回补时确认过 `readRow` 对
+  真实结构仍成立. 同一份文件里 `conversationHtml()` 那种**读法**的骨架不是存证单元(最小单元是
+  控件, 见决定 1), 不在回补范围.
 
 ## 判据(怎么自己复现)
 
