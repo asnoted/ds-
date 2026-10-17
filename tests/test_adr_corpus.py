@@ -155,6 +155,13 @@ def adr_numbers() -> set[str]:
     return {p.stem[:4] for p in adr_files()}
 
 
+def adr_text(number: str) -> str:
+    """按四位号取一篇的正文(`0008` -> `0008-failures-leave-a-trace.md`)."""
+    matched = [p for p in adr_files() if p.name.startswith(number)]
+    assert len(matched) == 1, f"按号 {number} 没找到唯一一篇: {matched}"
+    return matched[0].read_text(encoding="utf-8")
+
+
 def skeleton_problems(path: Path) -> list[str]:
     """一篇 ADR"长得像不像一篇 ADR";空列表 = 过关."""
     text = path.read_text(encoding="utf-8")
@@ -592,3 +599,27 @@ def test_citation_check_fires(tmp_path: Path) -> None:
     assert len(problems) == 1
     assert ghost in problems[0]
     assert "note.ts:1" in problems[0]
+
+
+#: 扩展侧"环节"的册子是那个联合类型(`FailureWhere`), 篇里是 ADR-0008 决定 4 的后半句.
+FAILURE_WHERE = re.compile(r"type FailureWhere = ([^;]+);")
+
+
+def catalogued_stages(source: str) -> list[str]:
+    """从 `src/lib/failurelog.ts` 的联合类型里取环节名."""
+    matched = FAILURE_WHERE.search(source)
+    assert matched, "failurelog.ts 里没找到 FailureWhere(改了名就把这里一起改)"
+    return re.findall(r'"([a-z][a-z0-9-]*)"', matched.group(1))
+
+
+def test_every_failure_stage_is_catalogued_in_the_adr() -> None:
+    """ADR-0008 决定 4 的后半句(扩展侧环节)也读起来是完整的一张: 联合类型里的每个名字都得在篇里.
+
+    加了环节不补篇, 两边都绿 -- 与中继事件册子同一种漏(那次真漏了四条). 另一半在
+    `tests/test_log.py`(中继侧事件名).
+    """
+    stages = catalogued_stages((ROOT / "src" / "lib" / "failurelog.ts").read_text(encoding="utf-8"))
+    assert stages, "提取坏了会给假绿(空清单让下面那条断言过得很轻松)"
+    adr = adr_text("0008")
+    missing = [stage for stage in stages if stage not in adr]
+    assert not missing, f"ADR-0008 决定 4 少点名的环节: {missing}"
