@@ -264,8 +264,8 @@ def main() -> None:
         for line in found:
             print(line)
         print(
-            f"{TAG}   ^ 旧号到新号的映射: 那次重写(28 篇并 13 篇)的提交信息, 见 `jj log` / "
-            "`git show`. 票是当时的记录, 改不改由人定."
+            f"{TAG}   ^ 旧号到新号的映射(28 篇全在): `docs/evidence/numbering.md`. "
+            "票是当时的记录, 改不改由人定."
         )
 
     if failed:

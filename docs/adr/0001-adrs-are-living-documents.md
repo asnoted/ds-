@@ -75,7 +75,7 @@
 - **代价: 历史只剩 git 与 `docs/evidence/`**. 要"当时为什么这么定"的完整时间线,
   去 `git log` 或 evidence 文件, ADR 不再承担这件事.
 - **编号不再是对旧语料的单调延伸**: 2026-10-17 这次重写把 28 篇并成 13 篇并重新编号,
-  旧号只在 `git show` 里有意义. 那次合并的映射写在提交信息里.
+  旧号只在 `git show` 里有意义. 那次合并的映射(28 篇全在)在 `docs/evidence/numbering.md`.
 - **重编号不追仓外的引用**: 票(GitHub issue)的正文与评论是仓外的记录, 而且已关的票记的
   是"当时的想法" -- 不替它改号. 哪几张还牵着旧号由
   `uv run scripts/audit-issues.py --citations` 报出来(信息级, 要 `gh` + 网络): 语料里没有
