@@ -74,6 +74,19 @@ export type ReadFixtureFile = FixtureFile<ReadFootnoteCase> & {
   readonly readPageBudget: number;
 };
 
+/**
+ * 两边的"字数"单位对拍(`result-units.json`):同一段正文,两边各量一遍.
+ *
+ * `utf16Units` 是扩展那边 JS 的 `.length`(星平面字算两个),`codePoints` 是另一种单位
+ * (星平面字算一个)-- 它俩分岔正是这条 fixture 要盯住的事(ADR-0010).
+ */
+export type ResultUnitsCase = {
+  readonly name: string;
+  readonly text: string;
+  readonly utf16Units: number;
+  readonly codePoints: number;
+};
+
 /** 唯一限速的固定随机源用例(`send-pace.json`):抽样比率 u → 期望间隔. */
 export type SendPaceCase = {
   readonly name: string;

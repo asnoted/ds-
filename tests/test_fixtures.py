@@ -15,6 +15,7 @@ EXPECTED_FILES = [
     "fence.json",
     "read.json",
     "reply.json",
+    "result-units.json",
     "send-pace.json",
 ]
 REPLY_ANCHOR = "agent:"
@@ -167,6 +168,19 @@ def test_read_limits_match_dsb_constants() -> None:
     fixture = load_fixture("read.json")
     assert fixture["readPageLines"] == work.WORK_READ_PAGE_LINES
     assert fixture["readPageBudget"] == work.WORK_READ_BYTES
+
+
+def test_result_units_match_the_extension_measure() -> None:
+    """同一个串在 dsb 侧量出来多长,必须与扩展侧量出来的一样(ADR-0010).
+
+    扩展侧那半在 vitest 对着同一份 fixture 用 JS 的 ``.length`` 量;这边用
+    :func:`dsb.work._units`.两处对不上,星平面字那条路上"原样进对话"就破口.
+    """
+    for case in raw_cases("result-units.json"):
+        text = case["text"]
+        assert work._units(text) == case["utf16Units"], case["name"]
+        # 码点是另一种单位,两边也各记着--它是 UTF-16 单元与它分岔的原因.
+        assert len(text) == case["codePoints"], case["name"]
 
 
 def test_read_footnote_cases_are_the_three_states() -> None:

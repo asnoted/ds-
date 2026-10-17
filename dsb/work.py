@@ -239,6 +239,20 @@ def _relative_to_root(root: Path, path: Path) -> str:
         return str(path)
 
 
+def _units(text: str) -> int:
+    """这段正文在**扩展侧**量出来多长:dsb 与扩展必须用同一种单位(ADR-0010).
+
+    JS 的 ``.length`` 数的是 UTF-16 单元(星平面字--emoji 之类--算两个),Python 的
+    :func:`len` 数的是码点(算一个).纯 CJK 与 ASCII 下两个数相等,所以以前没露过;
+    正文里出现星平面字时,同一个串在扩展侧量出来更大,于是"dsb 交出的每一条结果都原样
+    进对话"那条保证会破,被截掉的正是脚注或"怎么续"那句.两边同数 = 这里按扩展的单位量.
+
+    ``surrogatepass``:文件是按 ``surrogateescape`` 读进来的(:func:`read_text`),非法字节
+    在串里是孤立代理项,默认的 utf-16 编码器见到它会抛.
+    """
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
 def cap_result(text: str, hint: str) -> str:
     """整条结果的闸:超 :data:`WORK_RESULT_CHARS` 字就按整行砍,末行说清接着怎么办.
 
@@ -249,16 +263,16 @@ def cap_result(text: str, hint: str) -> str:
     知道"太大了",不知道"怎么变小".砍在行边界上:半行比没有更坏(模型会把半行当成
     一整行,与 :func:`render_page` 标单行的理由同一条).
     """
-    if len(text) <= WORK_RESULT_CHARS:
+    if _units(text) <= WORK_RESULT_CHARS:
         return text
     rows = text.splitlines()
     # 末句也占这笔额度:不算它,整条(正文 + 末句)就会越过扩展那道 16000,被扩展从
     # 尾巴上截--截掉的正好是"怎么续"(ADR-0010).
-    room = len(_result_note(len(rows), len(rows), hint))
+    room = _units(_result_note(len(rows), len(rows), hint))
     kept: list[str] = []
     used = 0
     for row in rows:
-        cost = len(row) + 1
+        cost = _units(row) + 1
         if kept and used + cost + room > WORK_RESULT_CHARS:
             break
         used += cost
@@ -333,13 +347,13 @@ def render_page(lines: list[str], offset: int, limit: int) -> str:
         body = f"{number}: {row}" + (f"...(本行超 {WORK_READ_LINE_LIMIT} 字)" if marked else "")
         # 行与行之间的换行、末尾那句脚注都占页预算:不算它们,一页(正文 + 脚注)就会越过
         # 扩展那道 16000,被扩展从尾巴上截--截掉的正好是脚注(``offset`` 的唯一来源).
-        cost = len(body) + (1 if out else 0) + 1 + _page_footer_room(start, number, total)
+        cost = _units(body) + (1 if out else 0) + 1 + _page_footer_room(start, number, total)
         # 一行都放不下时**放它进去**(哪怕超预算)并说明被砍--空页对模型最没用,
         # 它拿不到任何内容,连翻到哪都不知道.
         if out and used + cost > WORK_READ_BYTES:
             capped = True
             break
-        used += len(body) + (1 if out else 0)
+        used += _units(body) + (1 if out else 0)
         out.append(body)
     end = start + len(out) - 1
     rows = "\n".join(out)
@@ -349,8 +363,8 @@ def render_page(lines: list[str], offset: int, limit: int) -> str:
 def _page_footer_room(start: int, end: int, total: int) -> int:
     """这一页脚注的保守长度(取最长那一态):页预算要连它一起算(ADR-0010)."""
     return max(
-        len(_page_footer(start, end, total, capped=True)),
-        len(_page_footer(start, end, total, capped=False)),
+        _units(_page_footer(start, end, total, capped=True)),
+        _units(_page_footer(start, end, total, capped=False)),
     )
 
 

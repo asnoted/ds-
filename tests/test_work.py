@@ -215,6 +215,21 @@ def test_read_byte_budget_cuts_the_page_and_says_so(
     )
 
 
+def test_read_page_stays_within_budget_when_the_text_is_astral(tmp_path: Path) -> None:
+    """页预算按**扩展那把尺**(UTF-16 单元)量,星平面字算两个(ADR-0010).
+
+    这里量法独立于 dsb 的实现(直接按 utf-16-le 编码数),四十行星平面字写成码点账只有
+    一半,于是按码点算的页会在扩展侧量出两倍,超出去的那截被从尾巴上截掉--截掉的正是
+    脚注.
+    """
+    line = "\U00020000" * 500
+    (tmp_path / "f.txt").write_text("\n".join([line] * 40), encoding="utf-8")
+    page = read_text(tmp_path, "f.txt")
+    assert len(page.encode("utf-16-le")) // 2 <= WORK_READ_BYTES
+    # 预算真的用上了大半(不是只退回一行),否则这条判据闭着眼也过.
+    assert len(page.encode("utf-16-le")) // 2 > WORK_READ_BYTES // 2
+
+
 def test_read_marks_an_overlong_line_instead_of_silently_shortening_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -83,6 +83,11 @@
 18. **贴边时少给一行, 而不是多给一句**: 给不下的那行按 `offset` 下一次给, 而脚注里正写着它.
 19. **判据是两边共用的一条**: 扩展那句"工具结果已截断"在自家工作工具这条路上**一次都不该
     出现** -- dsb 交出的每一条结果 `<= 16_000`.
+20. **"字"是 UTF-16 单元, 不是码点**(`dsb/work.py` 的 `_units()`): 那道闸长在扩展侧, 而
+    JS 的 `.length` 数的是 UTF-16 单元(星平面字算两个). dsb 原先用 Python 的 `len()`(码点)
+    -- 纯 CJK 与 ASCII 下两个数相等, 所以从没露过; 正文里出现星平面字(emoji 之类)时同一个
+    串在扩展侧量出来更大, 第 19 条在那里破口. 同一个串两边必须量出同一个数, 这条有 fixture
+    钉着: `protocol/fixtures/result-units.json`, TS 与 pytest 各自量一遍(谁也不引用谁).
 
 ## Considered Options
 
@@ -167,10 +172,6 @@ uv run scripts/measure-result-forms.py grep --pattern 'ERROR_' --json
 
 ## 已知洞
 
-- **两边的"字数"不是同一种单位**: dsb 量的是 Python 的 `len()`(码点), 扩展量的是 JS 的
-  `.length`(UTF-16 单元). 纯 CJK 与 ASCII 下两个数相等, 所以决定 19 那条"dsb 交出的每一条
-  结果都原样进对话"成立; 正文里出现星平面字符(emoji 等)时同一个串在扩展侧量出来更大,
-  那条保证在那里不成立.
 - **错误串不过闸**: `bad-regex(...)` / `pattern-too-slow(...)` / `out-of-root(...)` 这些回执
   由 `_wrap` / `_bad_path` 直接拼出来, 不走 `cap_result`; 底下只有 JSON-RPC 那一层的
   `MAX_BODY_BYTES = 256 * 1024`(`dsb/server.py`)兜着. 而模式串是模型写进来的, 可以很长 --

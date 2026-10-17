@@ -11,6 +11,7 @@ import {
   type ReadFixtureFile,
   type ReadFootnoteCase,
   type ReplyCase,
+  type ResultUnitsCase,
 } from "./fixtures";
 import { MAX_RESULT_CHARS } from "./continuation";
 import { protocolInstructions, READ_FOOTNOTE_TEMPLATES, READ_PAGE_LINES } from "./instructions";
@@ -22,6 +23,7 @@ const EXPECTED_FILES = [
   "fence.json",
   "read.json",
   "reply.json",
+  "result-units.json",
   "send-pace.json",
 ];
 
@@ -154,6 +156,17 @@ describe("read 限额对拍(两半必须相等的数)", () => {
     expect(READ_FOOTNOTE_TEMPLATES.done).toBe(readFootnoteTemplate("文件读完"));
     expect(READ_FOOTNOTE_TEMPLATES.more).toBe(readFootnoteTemplate("还有下一页"));
     expect(READ_FOOTNOTE_TEMPLATES.capped).toBe(readFootnoteTemplate("字节预算截断"));
+  });
+});
+
+describe("两边的'字数'单位对拍", () => {
+  it("同一段正文:扩展的 `.length` 就是 fixture 里的 UTF-16 单元数", () => {
+    // dsb 那半在 pytest 里用 `work._units()` 对着同一份量(ADR-0010).
+    // 星平面字上两个数会分岔,而这正是"交出的每一条都原样进对话"破口的地方.
+    for (const oneCase of fixtureCases<ResultUnitsCase>("result-units.json")) {
+      expect(oneCase.text.length).toBe(oneCase.utf16Units);
+      expect([...oneCase.text].length).toBe(oneCase.codePoints);
+    }
   });
 });
 
