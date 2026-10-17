@@ -506,6 +506,33 @@ def test_the_scanned_docs_are_the_advertised_ones() -> None:
         )
 
 
+#: ADR-0001 决定 6 / AGENTS.md 的"文档"一节: 根目录只许这三份 `.md`, 别的文档一律进 `docs/`.
+#: 多出来的一份今天不让任何守卫出声(它只是没人读), 但"只许三份"是明写的规矩.
+ROOT_MARKDOWN = frozenset({"AGENTS.md", "README.md", "GLOSSARY.md"})
+
+
+def root_markdown_problems(root: Path) -> list[str]:
+    """根目录里多出来的 `.md`;空列表 = 只有那三份."""
+    return sorted(path.name for path in root.glob("*.md") if path.name not in ROOT_MARKDOWN)
+
+
+def test_only_the_three_markdowns_live_in_the_root() -> None:
+    """根目录的 `.md` 就那三份(ADR-0001 决定 6): 新写一份会落在没人读的角落里."""
+    problems = root_markdown_problems(ROOT)
+    assert not problems, (
+        "根目录只许 AGENTS.md / README.md / GLOSSARY.md(别的文档进 docs/):\n" + "\n".join(problems)
+    )
+
+
+def test_root_markdown_check_fires(tmp_path: Path) -> None:
+    """多一份就报, 三份都在就安静."""
+    for name in ROOT_MARKDOWN:
+        (tmp_path / name).write_text("x\n", encoding="utf-8")
+    assert root_markdown_problems(tmp_path) == []
+    (tmp_path / "NOTES.md").write_text("x\n", encoding="utf-8")
+    assert root_markdown_problems(tmp_path) == ["NOTES.md"]
+
+
 #: 来历文件开头那句指路牌: `> 当前口径见 [ADR-0004](../adr/0004-....md), ...`.
 EVIDENCE_POINTER = re.compile(r"当前口径见[\s>]*\[ADR-(\d{4})\]\(\.\./adr/([^)]+)\)")
 

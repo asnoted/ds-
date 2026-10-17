@@ -49,7 +49,8 @@
 5. **索引 `docs/adr/README.md` 由脚本生成**: `uv run scripts/adrs-index.py`
    重新生成, `--check` 接在 `pnpm quality:ci` 里. 手改索引会判红.
 6. **文档布局**: 根目录只许 `AGENTS.md` / `README.md` / `GLOSSARY.md`, 别的文档一律进
-   `docs/`. 技能流程用 Matt 那套(`.agents/skills/`, 版本记在 `skills-lock.json`);
+   `docs/`. **有守卫**: 根目录多出第四份 `.md` 就判红(`tests/test_adr_corpus.py`, 2026-10-18
+   凌晨补的 -- 在这之前多写一份不会让任何守卫出声). 技能流程用 Matt 那套(`.agents/skills/`, 版本记在 `skills-lock.json`);
    `docs/agents/*.md` 记 issue 追踪, 分诊标签, 领域文档的规则. **没有 spec 目录**:
    `openspec/` 那套(2026-10-04 到 10-07)整体退役 -- 没有工具校验的 spec 必然过时, 而过时的
    契约比没有契约更误导; "必须怎样"改由 `GLOSSARY.md`, ADR, 测试, `protocol/fixtures/action.json`
