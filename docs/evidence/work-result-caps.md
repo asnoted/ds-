@@ -140,8 +140,6 @@ uv run scripts/measure-result-forms.py grep --pattern 'ERROR_' --json
 只有 ~7.8K 字,离 16,000 还差 7,405;`--limit 2000` 那种形状(短行,上千行)没人真跑过.
 **这是贴边才咬的洞**,不是天天咬的洞.
 
-## 决定
-
 ## 判据(怎么自己复现)
 
 - **两条测试**:`uv run pytest tests/test_work.py -q -k "stays_within_the_same_budget or leaves_room_for_its_last_line"`.

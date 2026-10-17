@@ -98,7 +98,7 @@
 pnpm vitest run src/lib/failureframe.test.ts src/lib/continuationfail.test.ts
 uv run scripts/page-action.py visible-capture     # 抓不抓得到
 uv run scripts/page-action.py frame-fail          # 抓不到时不影响原失败路径
-storage get --keys '["ds-/failure-frames"]'       # 帧落没落, 多大(开发期)
+uv run scripts/page-action.py storage get --keys '["ds-/failure-frames"]'   # 帧落没落, 多大(开发期)
 ```
 
 `frame-fail` 那条负路的真机读数(痕照落, 帧没多, 跑完原样)与两个探针坑见
