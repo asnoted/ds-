@@ -300,7 +300,8 @@ function paints(backgroundColor: string): boolean {
 }
 
 /**
- * 认角色的三层解析,**首个命中为准,认不出不猜**(见 `guides/human-first-thinking-guide.md`):
+ * 认角色的三层解析,**首个命中为准,认不出不猜**(见已退役的
+ * `guides/human-first-thinking-guide.md`, 去处见 ADR-0001 决定 6):
  *
  * 1. **标记层**:行上还留着站点的设计系统类(助手 `.ds-assistant-message-main-content`,
  *    用户 `.ds-collapsible-text`)→ 直接用(站点换版前的行为,零回归);
