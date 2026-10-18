@@ -59,6 +59,9 @@ describe("tabs.list 执行器", () => {
       { id: undefined, title: "没有 id", url: "https://chat.deepseek.com/a/chat/s/x" },
       { id: 9, title: undefined, url: "这一行不是 url" },
       { id: 10, title: "deepseek 首页", url: "https://chat.deepseek.com/" },
+      // 认站要按 hostname 逐字相等:别的站的查询串里塞得下这个域名,子域也能把后缀撞出来.
+      { id: 11, title: "查询串里塞了整串", url: "https://evil.example/?next=chat.deepseek.com" },
+      { id: 12, title: "后缀撞出来的子域", url: "https://evilchat.deepseek.com/a/chat/s/x" },
     ]);
 
     expect(await listSessionTabs(tabs)).toEqual([
@@ -133,6 +136,24 @@ describe("按 target 路由", () => {
         ok: false,
         error: "tab-gone",
       });
+    }
+  });
+
+  it("target 认不出就连一帧都不投--执行口接上了也一样(Number() 把空串读成 0,1e3 读成 1000)", async () => {
+    for (const bad of ["", " ", "1e3", "0x10", "-1", "+1", "9".repeat(30)]) {
+      const seen: Array<{ tabId: number; frame: ActionFrame }> = [];
+      const outcome = await runAction(
+        frame({ target: bad }),
+        context({
+          sendToTab: async (tabId, received) => {
+            seen.push({ tabId, frame: received });
+            return { ok: true, result: {} };
+          },
+        }),
+      );
+
+      expect(outcome).toEqual({ ok: false, error: "tab-gone" });
+      expect(seen).toEqual([]); // 投出去就是投给别的标签页了
     }
   });
 
@@ -425,6 +446,9 @@ describe("isActionOutcome 形状", () => {
     expect(isActionOutcome(undefined)).toBe(false);
     expect(isActionOutcome("yes")).toBe(false);
     expect(isActionOutcome({ ok: "yes" })).toBe(false);
+    // 真值不算 ok:带 result 的非布尔 ok 也不能收成成功.
+    expect(isActionOutcome({ ok: "yes", result: 1 })).toBe(false);
+    expect(isActionOutcome({ ok: 1, result: 1 })).toBe(false);
   });
 });
 
