@@ -303,6 +303,19 @@ def test_read_page_stays_within_the_same_budget_as_one_result(tmp_path: Path) ->
     assert "接着读:offset=" in short.splitlines()[-1]
 
 
+@pytest.mark.parametrize("width", [60, 70, 74, 76, 78, 80, 90, 100, 120])
+def test_read_page_stays_within_budget_across_line_widths(tmp_path: Path, width: int) -> None:
+    """脚注留量要按**最长那一态**算:截断态比不截断多一句"字节预算截断".
+
+    只按其中一态留量,页就正好差那几个字越线,被扩展从尾巴上截掉的正是脚注(宽 76 字 /
+    共 200 行时越 7 个字).上面那两条(宽 500、宽 3)踩的是别处,踩不到这条边界.
+    """
+    (tmp_path / "f.txt").write_text("\n".join("x" * width for _ in range(200)), encoding="utf-8")
+    page = read_text(tmp_path, "f.txt", 1, 200)
+    assert len(page.encode("utf-16-le")) // 2 <= WORK_READ_BYTES
+    assert page.splitlines()[-1].startswith("(")  # 末行仍是脚注--越线的代价正是把它截掉
+
+
 def test_the_result_cap_is_one_read_page() -> None:
     """一条结果 = 一页:两个数同源(ADR-0010 的补记),改一个没改另一个就红."""
     assert WORK_RESULT_CHARS == WORK_READ_BYTES
