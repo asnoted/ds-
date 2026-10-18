@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseToggleMessage,
+  readSpeak,
   readToggle,
   stateMessage,
   TOGGLE_MESSAGE_SOURCE,
@@ -24,6 +25,24 @@ describe("readToggle", () => {
     expect(readToggle(1)).toBe(false);
     expect(readToggle(false)).toBe(false);
     expect(readToggle({ enabled: true })).toBe(false);
+  });
+});
+
+describe("readSpeak", () => {
+  it("缺键即关:闸默认关着,存储里没有它就是没代你发言", () => {
+    expect(readSpeak(undefined)).toBe(false);
+    expect(readSpeak(null)).toBe(false);
+  });
+
+  it("只有显式 true 才是开(与 readToggle 一个脾气)", () => {
+    expect(readSpeak(true)).toBe(true);
+  });
+
+  it("认不出的值一律按关:字符串 / 数字 / 别的形状都不算人开过闸", () => {
+    expect(readSpeak("true")).toBe(false);
+    expect(readSpeak(1)).toBe(false);
+    expect(readSpeak(false)).toBe(false);
+    expect(readSpeak({ speak: true })).toBe(false);
   });
 });
 
