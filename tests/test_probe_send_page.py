@@ -2,11 +2,15 @@
 
 探针本体要 CDP(真机才跑),能在这里对拍的是**判据本身**:闸开着与闸关着各认什么、
 两头的反证长什么样. 判据写错了,真机跑出来的绿红就都是错的,所以它单拎出来测.
+
+另有一条:重试判据认的**瞬时代码**与页面码册子的对拍(页面改名了,探针会静默地不再重试).
 """
 
 from __future__ import annotations
 
-from conftest import load_page_action
+from collections.abc import Iterable
+
+from conftest import load_fixture, load_page_action
 
 #: 闸关着那条腿的末行前后对拍:默认"这一行没动".
 TAIL = ("assistant", "上一句")
@@ -155,3 +159,67 @@ def test_sole_new_trace_survives_a_full_ring() -> None:
     assert not page_action.sole_new_trace(before, mixed, "探针造的")
     # 最前面不是我们的:别撤别人的.
     assert not page_action.sole_new_trace(before, before, "探针造的")
+
+
+#: 页面**不产**、探针自己造的瞬时代码 -- 页面那本册子里没有它们的位置.
+#: `no-site-tab` 是找不到站点标签页; `cdp-timeout` 是探针自己那 20s 墙钟到点(ADR-0010).
+PROBE_LOCAL_TRANSIENT = frozenset({"no-site-tab", "cdp-timeout"})
+
+
+def action_error_codes() -> set[str]:
+    """页面码的唯一册子:fixture 里的 `errorCodes`(执行器那半在 vitest 独立对拍)."""
+    return {entry["code"] for entry in load_fixture("action.json")["errorCodes"]}
+
+
+def transient_code_problems(
+    codes: Iterable[str] | None = None,
+    book: Iterable[str] | None = None,
+    local: Iterable[str] | None = None,
+) -> list[str]:
+    """探针认的瞬时代码得落在"页面码 ∪ 探针本地白名单"里;白名单也不许留下已经收掉的.
+
+    页面侧改个码名, 代码与 fixture 那两向对拍会红; 探针这份 `TRANSIENT_ERRORS` 却**没人管**
+    -- 它旧着也不报, 只在真机上悄悄**不再重试**(偶发失败变常客, 从哪来的没人知道). 所以把
+    探针这一份也跟册子对一次.
+    """
+    codes = set(load_page_action().TRANSIENT_ERRORS if codes is None else codes)
+    known = set(action_error_codes() if book is None else book)
+    local = set(PROBE_LOCAL_TRANSIENT if local is None else local)
+    out = [
+        f"瞬时代码 {code} 既不在 action.json 的 errorCodes 里, 也不在探针本地白名单里"
+        for code in sorted(codes - known - local)
+    ]
+    out.extend(
+        f"白名单里的 {name} 已经不在 TRANSIENT_ERRORS 里了(白名单要跟着收)"
+        for name in sorted(local - codes)
+    )
+    return out
+
+
+def test_transient_codes_come_from_the_page_book_or_the_probe_local_whitelist() -> None:
+    problems = transient_code_problems()
+    assert not problems, (
+        "探针的瞬时代码与页面码册子对不上(页面那本改了名, 探针会静默地不再重试):\n"
+        + "\n".join(problems)
+    )
+
+
+def test_transient_code_check_fires() -> None:
+    """页面码改名 -> 红; 白名单里留一个已经收掉的 -> 红; 真码加本地码 -> 绿."""
+    ghost = "read-" + "failed-v2"
+    renamed = transient_code_problems(
+        codes=["read-failed", ghost, "no-site-tab"], book=["read-failed"], local=["no-site-tab"]
+    )
+    assert len(renamed) == 1, renamed
+    assert ghost in renamed[0]
+
+    stale = transient_code_problems(
+        codes=["read-failed"], book=["read-failed"], local=["no-site-tab"]
+    )
+    assert len(stale) == 1, stale
+    assert "no-site-tab" in stale[0]
+
+    ok = transient_code_problems(
+        codes=["read-failed", "no-site-tab"], book=["read-failed"], local=["no-site-tab"]
+    )
+    assert ok == [], ok
