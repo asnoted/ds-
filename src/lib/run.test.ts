@@ -400,4 +400,24 @@ describe("闸与总开关", () => {
     expect(released.state.armed).toEqual({ phase: "idle" });
     expect(released.state.queued).toBeNull();
   });
+
+  it("队列里明明挂着续聊,放行的却不是那个短标记:逐字不等就不认(ADR-0005 钥匙)", () => {
+    const queued = decide(turnOn(true), { type: "result", payload: PAYLOAD });
+    expect(queued.state.queued).not.toBeNull();
+
+    const released = decide(queued.state, { type: "released", message: "你好", now: 1 });
+    // 钥匙不对就不动:照用户的原文发,挂着的续聊原样留着等它自己那条.
+    expect(released.effects).toEqual([{ kind: "send", message: "你好", continuation: false }]);
+    expect(released.state.queued).toBe(queued.state.queued);
+  });
+
+  it("总开关从开到关:还没到出站窗口那条也作废,轮数归零(不留半条链)", () => {
+    const queued = decide(turnOn(true), { type: "result", payload: PAYLOAD });
+    expect(queued.state.queued).not.toBeNull();
+    expect(queued.state.rounds.rounds).toBe(1);
+
+    const off = decide(queued.state, { type: "toggle", speak: true, enabled: false });
+    expect(off.state.queued).toBeNull();
+    expect(off.state.rounds).toEqual(INITIAL_ROUNDS);
+  });
 });
