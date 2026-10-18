@@ -79,6 +79,34 @@ def test_the_corpus_numbers_come_from_the_adr_directory() -> None:
     assert numbers == on_disk
 
 
+def test_a_dead_corpus_path_is_reported_and_a_live_one_is_not() -> None:
+    """票里点的语料路径要在仓里找得到: 号对了不等于篇路径也对了(上一轮漏的正是路径那一半)."""
+    module = load_audit()
+    dead = "docs/adr/" + "0012-dsb-ships-its-own-work-tools.md"
+    live = "docs/adr/0001-adrs-are-living-documents.md"
+    found = module.check_doc_paths([ticket(4, f"决定记在 `{dead}`."), ticket(5, f"见 `{live}`.")])
+    assert len(found) == 1
+    assert "#4" in found[0] and dead in found[0]
+    assert "#5" not in found[0]
+
+
+def test_the_path_check_reads_comments_too() -> None:
+    """上一轮漏的四处里三处住在评论里 -- 这条检查必须把评论那半也扫进来."""
+    module = load_audit()
+    dead = "docs/adr/" + "0031-native-continue-is-not-used.md"
+    issue = ticket(7, "正文没提路径.")
+    issue["comments"] = [{"body": f"ADR 已推: `{dead}`."}]
+    found = module.check_doc_paths([issue])
+    assert len(found) == 1 and "#7" in found[0] and dead in found[0]
+
+
+def test_paths_outside_the_corpus_are_left_alone() -> None:
+    """旧仓的代码路径满票都是, 那些由各票头顶的处置注记兜着, 这里不重复报."""
+    module = load_audit()
+    issues = [ticket(8, "旧实现 `src/domain/tool/composer-state.ts` 已随 git 历史清除.")]
+    assert module.check_doc_paths(issues) == []
+
+
 def test_the_role_table_matches_the_tracker_doc() -> None:
     """五张角色的**本仓名字**写死在 `docs/agents/triage-labels.md` 那张表的右列, 脚本得跟它一致.
 

@@ -71,10 +71,8 @@ pnpm vitest run src/lib/gate.test.ts src/lib/run.test.ts src/lib/registry.test.t
 uv run pytest tests/test_probe_send_page.py -q
 ```
 
-真机那两半(闸关着时写作框压着 `agent:\n继续` 不动 / 闸开着时没人按它也自己续完)见
-`docs/evidence/speak-gate.md`.
-
-## 未验证项
-
-- **看门狗催办在闸关着时整跳跳过, 以及跳过时不计数**: 要闸关着才做得了(闸由人开), 一直没验.
-- **`composer.type` 覆盖用户草稿的实际观感**: 选项页已如实写明, 但没人试过真被覆盖是什么体验.
+真机那几半(闸关着时写作框压着 `agent:\n继续` 不动 / 闸开着时没人按它也自己续完 /
+闸关着时看门狗催办整跳跳过且不计数 / 闸关着时 `send.page` 只落草稿)见
+`docs/evidence/speak-gate.md`; 后两半的跑法与逐条读数(不给 `--send` 的
+`send-page`, 看门狗探针默认腿), 以及 `composer.type` 顶掉草稿的观感, 都在那份文件的
+"真机验证(2026-10-18)"节.

@@ -30,6 +30,10 @@
   (2026-10-18, 见 `docs/evidence/numbering.md`), 这件工具留着盯**将来**再出的漂移.
   两个盲区照旧: 只扫正文(评论那一半得另跑), 以及号码落在当前 13 篇之内,当时指的却是
   别的篇的 -- 这次真靠它报的话只会报 15 张, 实际 31 张.
+- `--paths`: 票里点的 `docs/adr/` 与 `docs/evidence/` 篇路径在仓里找不到的. 2026-10-18 补:
+  上一轮只对齐了 `ADR-NNNN` 那个**号**, 篇路径是另一类漏网(旧号 0012 / 0014 / 0031 那几处
+  的路径当时没跟着换), 就是靠这条揪出来的. 它扫**正文与评论**: 评论那一半的正文
+  `gh issue list --json` 本来就带着, 顺手补上 `--citations` 说的那个盲区.
 """
 
 from __future__ import annotations
@@ -58,6 +62,9 @@ FIELDS = "number,title,state,body,labels,comments,createdAt,updatedAt"
 #: 那半边守卫的禁字, 而这里要的是它的**语义**.
 CITE = re.compile(r"ADR[- ]?(\d{3,4}(?:\s*[/,\u3001]\s*\d{3,4})*)")
 CITE_SPLIT = re.compile(r"\s*[/,\u3001]\s*")
+#: 票里点的语料路径: 只认本仓重写后那两处. 旧仓的代码路径(`src/domain/**` 那些)满票都是,
+#: 那些由各票头顶的"已随 git 历史清除"处置注记兜着, 不在这里重复报.
+DOC_PATH = re.compile(r"docs/(?:adr|evidence)/[\w.-]*\.md")
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -204,6 +211,25 @@ def current_adr_numbers() -> set[str]:
     }
 
 
+def check_doc_paths(issues: list[dict]) -> list[str]:
+    """信息级: 票里点的 `docs/adr/` `docs/evidence/` 路径在仓里找不到的.
+
+    与 `check_citations` 互补: 那一条量的是**号**指不指得到, 这一条量的是**篇路径**还在不在.
+    正文与评论都扫 -- 上一轮漏的四处里有三处在评论里, 而 `gh issue list --json` 本来就把
+    评论正文一起给了.
+    """
+    out = []
+    for issue in issues:
+        bodies = [issue.get("body") or ""]
+        bodies += [c.get("body") or "" for c in issue.get("comments") or []]
+        missing = sorted(
+            {p for text in bodies for p in DOC_PATH.findall(text) if not (ROOT / p).is_file()}
+        )
+        if missing:
+            out.append(f"  #{issue['number']} 点不到 {', '.join(missing)}: {issue['title'][:30]}")
+    return out
+
+
 def report(title: str, lines: list[str], level: str) -> bool:
     """打印一段; 有内容返回 True(= 算问题)."""
     if not lines:
@@ -228,6 +254,9 @@ def main() -> None:
     )
     ap.add_argument(
         "--citations", action="store_true", help="额外报正文里引不到的 ADR 编号(信息级)"
+    )
+    ap.add_argument(
+        "--paths", action="store_true", help="额外报正文/评论里指不到的语料路径(信息级)"
     )
     args = ap.parse_args()
 
@@ -267,6 +296,16 @@ def main() -> None:
         print(
             f"{TAG}   ^ 旧号到新号的映射(28 篇全在): `docs/evidence/numbering.md`. "
             "2026-10-18 已照它把票里的号改齐; 现在还有, 就是新出的漂移."
+        )
+
+    if args.paths:
+        found = check_doc_paths(issues)
+        print(f"{TAG} [信息] 票里点了仓里没有的语料路径: {len(found)} 张")
+        for line in found:
+            print(line)
+        print(
+            f"{TAG}   ^ 2026-10-18 补这条时揪出 4 处(旧号 0012 / 0014 / 0031 的篇路径没跟着号换), "
+            "已改齐; 现在还有, 就是新出的漂移."
         )
 
     if failed:
