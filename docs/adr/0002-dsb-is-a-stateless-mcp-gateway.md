@@ -72,7 +72,7 @@ dsb 只干一件事: 本机 MCP 网关. JSON-RPC 2.0 从 `POST /mcp` 进来(`ini
 ```sh
 uv run pytest tests/test_mcp_server.py tests/test_gateway.py -q
 pnpm relay:test
-scripts/env-up.sh --status        # 本机这一半: ping + tools/list
+uv run dsbcli env --status        # 本机这一半: ping + tools/list
 
 # 红: 把 dsb/mcp.py 的 DEFAULT_PROTOCOL_VERSION 改成一个别的值, 不带参数开口就回默认版本
 # 那 1 条当场红(tests/test_mcp_server.py; 那条命令 51 条里 1 条).
@@ -83,4 +83,5 @@ scripts/env-up.sh --status        # 本机这一半: ping + tools/list
 ## 已知洞
 
 - **`tools/list` 的缓存没有过期判据**: 隔离世界 `TOOLS_SYNC_INTERVAL_MS = 60_000` 来取一次是节流, 不是新鲜度承诺;
-  本机换工具表后最长 60s 内, 页面模型看到的仍是旧目录.
+  背景脚本那份缓存(`TOOLS_CACHE_TTL_MS = 60_000`)过期才重取, 两头各一个周期 -- 本机换了工具表,
+  页面模型最长还能看到旧目录**约两个周期(≈120s)**; 那两次都取不到(中继没连上)就一直留着旧的.
