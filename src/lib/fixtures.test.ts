@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   FIXTURE_FILENAMES,
+  actionErrorCodes,
   fixtureCases,
   fixtureFile,
   type ActionCase,
@@ -14,6 +15,7 @@ import {
   type ResultUnitsCase,
 } from "./fixtures";
 import { MAX_RESULT_CHARS } from "./continuation";
+import * as actions from "./action";
 import { protocolInstructions, READ_FOOTNOTE_TEMPLATES, READ_PAGE_LINES } from "./instructions";
 import { isKnownFailureKind, REPLY_ANCHOR } from "./reply";
 
@@ -207,5 +209,14 @@ describe("动作 fixture 自洽", () => {
       }
       expect(typeof name).toBe("string");
     }
+  });
+
+  it("TS 那边的 ACTION_ERROR_* 值就是册子里那八条(两向)", () => {
+    // 少了这条, 改一个常量值全仓照旧绿: `channel.ts` 那句
+    // `actionErrorCodes().includes(error.code)` 会当场认不出这个码, 而册子与实现对不上.
+    const declared = Object.entries(actions)
+      .filter(([name]) => name.startsWith("ACTION_ERROR_"))
+      .map(([, value]) => value);
+    expect([...declared].sort()).toEqual([...actionErrorCodes()].sort());
   });
 });

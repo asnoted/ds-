@@ -76,12 +76,14 @@
 
 ```sh
 pnpm vitest run src/lib/action.test.ts src/lib/page.test.ts src/lib/localtools.test.ts \
-  src/lib/fenceround.test.ts
+  src/lib/fenceround.test.ts src/lib/fixtures.test.ts
 uv run pytest tests/test_fixtures.py -q
 
 # 红: 把 protocol/fixtures/action.json 里一条错误码改一个字符(`page-changed` 改成 page_changed),
-# tests/test_fixtures.py 那条"用例自洽"当场红(15 条里 1 条). 反过来只改 src/lib/action.ts 里
-# 那个常量值, 这整排照旧绿 -- 两半不共读这份表: TS 那半的用例引常量.
+# fixtures.test.ts 那条"失败带册子上的码"与 pytest 那条"用例自洽"同时红(15 条里 1 条); 反过来
+# 只改 src/lib/action.ts 里那个常量值, 那条"TS 的值就是册子里那八条(两向)"当场红 -- 这条两向
+# 对拍是 2026-10-18 补的: 补之前改常量值全仓 818 条照旧绿, 而 channel.ts 那句
+# `actionErrorCodes().includes(error.code)` 会当场认不出那个码.
 ```
 
 `send.page` 两步序与闸关着那一半的真机读数见 `docs/evidence/speak-gate.md`.
