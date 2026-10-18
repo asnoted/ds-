@@ -80,6 +80,16 @@ function entryProblems(entry: EvidenceEntry): string[] {
   return problems;
 }
 
+/** probe 是不是能编译的 JS(只编译不求值: 它要 `document`, 求值得在页面上). */
+function probeProblems(probe: string): string[] {
+  try {
+    new Function(probe);
+    return [];
+  } catch (error) {
+    return [`probe 不是合法 JS: ${String(error)}`];
+  }
+}
+
 describe("存证文件完整性", () => {
   const file = evidenceFile();
 
@@ -97,6 +107,13 @@ describe("存证文件完整性", () => {
     "%s:字段齐,svg 与 outerHTML 对得上,原样可往返",
     (_id, entry) => {
       expect(entryProblems(entry)).toEqual([]);
+    },
+  );
+
+  it.each(file.entries.map((entry) => [entry.id, entry.probe] as const))(
+    "%s:probe 是能编译的 JS",
+    (_id, probe) => {
+      expect(probeProblems(probe)).toEqual([]);
     },
   );
 
@@ -119,6 +136,11 @@ describe("完整性判据真的会红", () => {
   it("缺 capturedOn", () => {
     const bad = { ...sample(), capturedOn: "" };
     expect(entryProblems(bad)).toContain("capturedOn 不是 YYYY-MM-DD");
+  });
+
+  it("probe 少半个括号", () => {
+    expect(probeProblems("(() => { document.title; }(").join(" ")).toContain("probe 不是合法 JS");
+    expect(probeProblems("(() => 0)()")).toEqual([]);
   });
 
   it("svgs 少一条 path", () => {
