@@ -172,4 +172,12 @@ describe("failureNotice / 扩展侧失败提示", () => {
     expect(notice.title).toBe("中继不可达");
     expect(notice.reason).toContain("something-new");
   });
+
+  it("码是从中继线上原样来的:落在原型上的键也不算在册", () => {
+    for (const kind of ["toString", "constructor", "hasOwnProperty"]) {
+      expect(isKnownFailureKind(kind)).toBe(false);
+      expect(failureNotice(kind).title).toBe("中继不可达");
+      expect(failureNotice(kind).reason).toContain(kind);
+    }
+  });
 });
