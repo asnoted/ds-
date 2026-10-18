@@ -7,6 +7,7 @@ import { fixtureCases, type ActionCase } from "./fixtures";
 import {
   buttonClick,
   clearComposer,
+  isAccountState,
   isGenerating,
   listChats,
   newChat,
@@ -92,6 +93,20 @@ describe("page.state 执行器", () => {
     expect(readPageState(FRAME).account).toEqual({ kind: "unknown" });
   });
 
+  it('警示条里只提"账号/你"不提禁言/封禁 → 也不算处罚句(两头都要占)', () => {
+    document.body.innerHTML = '<div class="ds-alert__content">你的会话已保存,请稍候</div>';
+
+    expect(readPageState(FRAME).account).toEqual({ kind: "unknown" });
+  });
+
+  it("路径里只是含有 sign_in 不算登录页(要正好以 /sign_in 结尾)", () => {
+    window.history.replaceState(null, "", "/help/sign_in-notes");
+    document.body.innerHTML = "<div>无框</div>";
+
+    expect(readPageState(FRAME).account).toEqual({ kind: "unknown" });
+    window.history.replaceState(null, "", "/");
+  });
+
   it("是处罚句但认不出时刻 → 仍算 muted,until 交 null(认不出时间≠没禁)", () => {
     document.body.innerHTML =
       '<div class="ds-alert__content">你的账号已被封禁,解除时间另行通知</div>';
@@ -130,6 +145,24 @@ describe("page.state 执行器", () => {
   });
 });
 
+describe("isAccountState / 形状不对就当认不出", () => {
+  it("muted 的 until 是 string 或 null 才收;少 it / 是数 / 多带字段都不收", () => {
+    expect(isAccountState({ kind: "muted", until: null })).toBe(true);
+    expect(isAccountState({ kind: "muted", until: "2026 年 10 月 1 日 10:00" })).toBe(true);
+    expect(isAccountState({ kind: "muted" })).toBe(false);
+    expect(isAccountState({ kind: "muted", until: 42 })).toBe(false);
+    expect(isAccountState({ kind: "muted", until: null, note: "x" })).toBe(false);
+  });
+
+  it("null / 多带一个字段 / 没见过的 kind → 不认(退回避闸不猜)", () => {
+    expect(isAccountState(null)).toBe(false);
+    expect(isAccountState("ready")).toBe(false);
+    expect(isAccountState({ kind: "ready", until: null })).toBe(false);
+    expect(isAccountState({ kind: "ready" })).toBe(true);
+    expect(isAccountState({ kind: "signed-out" })).toBe(true);
+  });
+});
+
 describe("composer.* 执行器", () => {
   const typeFrame = (text: unknown) =>
     ({ ...FRAME, action: "composer.type", params: { text } }) as const;
@@ -145,6 +178,12 @@ describe("composer.* 执行器", () => {
     stubBox(document.querySelector("textarea") as Element);
 
     expect(readComposer(FRAME)).toEqual({ text: "写了一半" });
+  });
+
+  it("没有可挑的框也读得成,回空串(读动作不算错,与写/清空两回事)", () => {
+    document.body.innerHTML = "<div>无框</div>";
+
+    expect(readComposer(FRAME)).toEqual({ text: "" });
   });
 
   it("写进去的是原生 setter + 冒泡 input(React 受控输入的写法),且不发送", () => {
@@ -250,6 +289,18 @@ describe("chat.new 执行器", () => {
     expect(clicked).toBe(1);
   });
 
+  it('文字只是包含"开启新对话"的条目不算(严格相等,认错条目会点到别的)', () => {
+    document.body.innerHTML =
+      '<div tabindex="0">开启新对话(快捷键 Ctrl+K)</div>' + '<div tabindex="0">开启新对话</div>';
+    const [, real] = document.querySelectorAll('[tabindex="0"]');
+    let clicked = 0;
+    real?.addEventListener("click", () => (clicked += 1));
+
+    newChat(FRAME);
+
+    expect(clicked).toBe(1);
+  });
+
   it("找不到那个条目就抛", () => {
     document.body.innerHTML = "<div>什么都没有</div>";
 
@@ -290,6 +341,19 @@ describe("think.* / search.* 开关执行器(#30)", () => {
     document.body.innerHTML =
       '<div class="other-button" aria-pressed="true">深度思考</div>' +
       '<div class="ds-toggle-button" aria-pressed="false"> 深度思考 </div>';
+    expect(readThink(FRAME)).toEqual({ enabled: false });
+  });
+
+  it("get:文字只是包含那四个字的不算(严格相等;认错控件就读错状态)", () => {
+    document.body.innerHTML =
+      '<div class="ds-toggle-button" aria-pressed="true">深度思考模式</div>';
+
+    expect(thrownCode(() => readThink(FRAME))).toBe(ACTION_ERROR_PAGE_CHANGED);
+  });
+
+  it("get:没有 aria-pressed 的控件算关(只认 ==='true',缺属性不是'没写 false')", () => {
+    document.body.innerHTML = '<div class="ds-toggle-button">深度思考</div>';
+
     expect(readThink(FRAME)).toEqual({ enabled: false });
   });
 
