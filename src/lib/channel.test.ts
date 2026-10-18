@@ -590,7 +590,9 @@ describe("页面会话 id(从地址里抠出来那一段)", () => {
     const captured = evidenceFile()
       .entries.map((entry) => entry.outerHTML ?? "")
       .join("\n");
-    const hrefs = [...captured.matchAll(/href="(\/a\/chat\/s\/[^"]+)"/g)].map((match) => match[1]);
+    const hrefs = [...captured.matchAll(/href="(\/a\/chat\/s\/[^"]+)"/g)].map(
+      (match) => match[1] ?? "",
+    );
     expect(hrefs.length, "存证里没找到 /a/chat/s/ 那条链接").toBeGreaterThan(0);
     for (const href of hrefs) {
       const id = href.split("/").pop() ?? "";
