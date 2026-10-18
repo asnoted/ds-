@@ -211,7 +211,7 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
   });
 
   it('"停止"永不延迟:等 0,不记账(delay 一趟都不等)', async () => {
-    const clock = fakeClock();
+    const clock = fakeClock(1000);
     const pace = noteSend(newSendPace(), 1000, random0);
     const result = await runPaced({
       pace,
@@ -262,6 +262,22 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     // 没记 → 同一个引用原样回来,lastSentAt 仍是 null(下次发送不受这次影响)
     expect(result.pace).toBe(before);
     expect(result.pace.lastSentAt).toBeNull();
+  });
+
+  it("动手是异步的:shouldRecord 拿到的是真结果,不是一个 Promise", async () => {
+    const clock = fakeClock();
+    const before = newSendPace();
+    const result = await runPaced({
+      pace: before,
+      readIntent: () => "send",
+      execute: async () => ({ sent: true }),
+      shouldRecord: (outcome) => outcome.sent,
+      now: clock.now,
+      random: random0,
+      sleep: clock.sleep,
+    });
+    expect(result.result).toEqual({ sent: true });
+    expect(result.pace).not.toBe(before);
   });
 });
 
