@@ -15,6 +15,7 @@ import {
   parseAccountReport,
   parseAskClearedReport,
   parseAskReport,
+  pageSessionIdOf,
   sendRequestMessage,
   sendResponseMessage,
   CHAIN_MESSAGE_SOURCE,
@@ -54,6 +55,7 @@ import {
 } from "./channel";
 import type { ActionFrame } from "./action";
 import { ACTION_ERROR_COMPOSER_ABSENT, PageError } from "./action";
+import { evidenceFile } from "./evidence";
 import { actionErrorCodes } from "./fixtures";
 
 /** 一个指向某动作的请求帧,`actionListener` 那层收的就是它. */
@@ -579,5 +581,37 @@ describe("内容脚本的动作收信(entrypoints/content.ts 接的那一层)", 
 
     await Promise.resolve();
     expect(sendResponse).not.toHaveBeenCalled();
+  });
+});
+
+describe("页面会话 id(从地址里抠出来那一段)", () => {
+  it("真机存证里那条会话链接:末段就是它,拿整条地址也认得出", () => {
+    // 存证里的 href 是原件,不许手抄 -- 这里只读它,判断仍旧交给实现.
+    const captured = evidenceFile()
+      .entries.map((entry) => entry.outerHTML ?? "")
+      .join("\n");
+    const hrefs = [...captured.matchAll(/href="(\/a\/chat\/s\/[^"]+)"/g)].map((match) => match[1]);
+    expect(hrefs.length, "存证里没找到 /a/chat/s/ 那条链接").toBeGreaterThan(0);
+    for (const href of hrefs) {
+      const id = href.split("/").pop() ?? "";
+      expect(id, "存证里的 href 末段不该是空的").not.toBe("");
+      expect(pageSessionIdOf(`https://chat.deepseek.com${href}`)).toBe(id);
+    }
+  });
+
+  it("同一条会话的几副面孔取到同一段:query / 尾斜杠 / 更深一层 / 锚点", () => {
+    const url = "https://chat.deepseek.com/a/chat/s/abc123";
+    expect(pageSessionIdOf(url)).toBe("abc123");
+    expect(pageSessionIdOf(`${url}?from=history`)).toBe("abc123");
+    expect(pageSessionIdOf(`${url}/`)).toBe("abc123");
+    expect(pageSessionIdOf(`${url}/deeper`)).toBe("abc123");
+    expect(pageSessionIdOf(`${url}#turn-3`)).toBe("abc123");
+  });
+
+  it("不是会话页就回 null:首页、少了 /s/、id 空着", () => {
+    expect(pageSessionIdOf("https://chat.deepseek.com/")).toBe(null);
+    expect(pageSessionIdOf("https://chat.deepseek.com/a/chat/abc123")).toBe(null);
+    expect(pageSessionIdOf("https://chat.deepseek.com/a/chat/s/")).toBe(null);
+    expect(pageSessionIdOf("")).toBe(null);
   });
 });
