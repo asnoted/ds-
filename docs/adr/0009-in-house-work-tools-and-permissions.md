@@ -115,7 +115,7 @@ JSON-RPC 码, 页面动作码分属三套, 不混; 码写进正文(`out-of-root(
 uv run pytest tests/test_work.py tests/test_work_permissions.py -q
 
 # 红: 把 dsb/permissions.py 里那条 `Rule("*.env", "deny")` 改成 allow,
-# tests/test_work_permissions.py 当场 6 条红(112 条里 6 条; 含大小写两组绕过与 grep 那两条).
+# tests/test_work_permissions.py 当场 6 条红(那条命令 112 条里 6 条; 含大小写两组绕过与 grep 那两条).
 ```
 
 权限那层在测试里用真文件做过一轮(含符号链接与大小写两组绕过), 判据是"临时 root 里带标记串的

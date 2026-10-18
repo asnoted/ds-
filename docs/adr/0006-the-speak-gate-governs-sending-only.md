@@ -73,7 +73,7 @@ pnpm vitest run src/lib/gate.test.ts src/lib/run.test.ts src/lib/registry.test.t
 uv run pytest tests/test_probe_send_page.py -q
 
 # 红: 把 src/lib/armed.ts 的 planContinuation 改成一律 `{ action: "arm-and-send" }`(闸关了
-# 也照发), run.test.ts 当场 4 条红(48 条里 4 条, 头一条就是"闸关时只落草稿"); 把某个发送原语
+# 也照发), run.test.ts 当场 4 条红(那条命令 94 条里 4 条, 头一条就是"闸关时只落草稿"); 把某个发送原语
 # 行上的 `speak` 翻成 false, registry.test.ts 那条"发送原语都受闸"当场红 -- 那条是 2026-10-18
 # 补的: 补之前翻这个标志谁都拦不住(闸名单是从标志派生的, 自洽照旧).
 # 红(ADR-0006 决定 10 那两条写动作): 把 composer.type 行上的 `backoff` 翻成 false, action.test.ts 里

@@ -80,7 +80,8 @@ pnpm vitest run src/lib/action.test.ts src/lib/page.test.ts src/lib/localtools.t
 uv run pytest tests/test_fixtures.py -q
 
 # 红: 把 protocol/fixtures/action.json 里一条错误码改一个字符(`page-changed` 改成 page_changed),
-# fixtures.test.ts 那条"失败带册子上的码"与 pytest 那条"用例自洽"同时红(15 条里 1 条); 反过来
+# fixtures.test.ts 那条"失败带册子上的码"与 pytest 那条"用例自洽"同时红(pytest 那半
+# `tests/test_fixtures.py` 15 条里 1 条); 反过来
 # 只改 src/lib/action.ts 里那个常量值, 那条"TS 的值就是册子里那八条(两向)"当场红 -- 这条两向
 # 对拍是 2026-10-18 补的: 补之前改常量值全仓 818 条照旧绿, 而 channel.ts 那句
 # `actionErrorCodes().includes(error.code)` 会当场认不出那个码.

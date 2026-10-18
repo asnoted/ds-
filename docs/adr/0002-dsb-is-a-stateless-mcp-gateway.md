@@ -75,7 +75,7 @@ pnpm relay:test
 scripts/env-up.sh --status        # 本机这一半: ping + tools/list
 
 # 红: 把 dsb/mcp.py 的 DEFAULT_PROTOCOL_VERSION 改成一个别的值, 不带参数开口就回默认版本
-# 那 1 条当场红(tests/test_mcp_server.py, 51 条里 1 条).
+# 那 1 条当场红(tests/test_mcp_server.py; 那条命令 51 条里 1 条).
 ```
 
 真机那一半: 图标三态与悬停(扩展侧无外露探针面).
