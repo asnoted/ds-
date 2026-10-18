@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from dsb.said import SaidLog
 
 
@@ -36,3 +38,12 @@ def test_a_bad_add_is_marked_failed_with_the_codebook_payload() -> None:
     payload, failed = SaidLog().tool_add({"text": 42})
     assert failed is True
     assert payload == {"status": "error", "error": "unexpected-response"}
+
+
+def test_read_hands_over_a_json_ready_list() -> None:
+    """交出去的是 ``list``: 这条载荷要过 JSON-RPC 那一步, 换成 ``deque`` 就在那里炸."""
+    log = SaidLog()
+    log.tool_add({"text": "一句"})
+    payload, failed = log.tool_read({})
+    assert failed is False
+    assert [item["text"] for item in json.loads(json.dumps(payload))["said"]] == ["一句"]

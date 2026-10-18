@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import signal
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -429,6 +430,14 @@ def test_edit_with_an_empty_old_string_is_no_match(tmp_path: Path) -> None:
     assert code_of(exc) == ERROR_EDIT_NO_MATCH
 
 
+def test_edit_on_a_directory_is_not_a_file(tmp_path: Path) -> None:
+    """指着目录说"改这里"要回 not-a-file: 落到 io-failed 就把"路径不对"说成了"改坏了"."""
+    (tmp_path / "d").mkdir()
+    with pytest.raises(WorkError) as exc:
+        edit_text(tmp_path, "d", "a", "b")
+    assert code_of(exc) == ERROR_NOT_A_FILE
+
+
 def test_edit_missing_file_is_not_found(tmp_path: Path) -> None:
     with pytest.raises(WorkError) as exc:
         edit_text(tmp_path, "nope.txt", "a", "b")
@@ -501,6 +510,15 @@ def test_grep_stops_at_the_hit_limit(tmp_path: Path, monkeypatch: pytest.MonkeyP
     lines = grep_tree(tmp_path, "x").splitlines()
     assert lines[0] == "f.txt:1: x"
     assert "已截断" in lines[-1]
+
+
+def test_grep_keeps_exactly_the_hit_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """上限是**含**那一条: 说"达上限 N"时手里就得正好 N 行--多给一行, 那句脚注就成了假话."""
+    monkeypatch.setattr("dsb.work.WORK_GREP_LIMIT", 3)
+    (tmp_path / "f.txt").write_text("\n".join("x" for _ in range(10)), encoding="utf-8")
+    lines = grep_tree(tmp_path, "x").splitlines()
+    assert lines[:-1] == [f"f.txt:{index + 1}: x" for index in range(3)]
+    assert lines[-1] == "...(命中数达上限 3,已截断)"
 
 
 def test_grep_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -583,6 +601,28 @@ def test_grep_gives_up_on_exponential_backtracking(
         grep_tree(tmp_path, "(a+)+b")
     assert code_of(exc) == ERROR_PATTERN_TOO_SLOW
     assert time.monotonic() - started < 5
+
+
+def test_the_wall_clock_is_disarmed_when_the_search_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """墙钟收工要撤: 不撤, 这一次搜索的闹铃过几秒会砸在**别人**头上(平白一件 pattern-too-slow).
+
+    闹铃是一次性的(``ITIMER_REAL``): 这一次搜得比墙钟快, 不走那一下撤掉它, 它就在几秒后
+    落在当前正在跑的随便哪件事上. 这里先自己装一个只记数的处理器--于是"没撤"当场看得见,
+    而不是把测试进程整个送走(装过处理器也是 ``_deadline`` 会还原的那一个).
+    """
+    monkeypatch.setattr("dsb.work.WORK_GREP_DEADLINE", 0.2)
+    rang: list[bool] = []
+    previous = signal.signal(signal.SIGALRM, lambda *_args: rang.append(True))
+    try:
+        (tmp_path / "f.txt").write_text("hit\n", encoding="utf-8")
+        assert grep_tree(tmp_path, "hit") == "f.txt:1: hit"
+        time.sleep(0.5)
+        assert rang == []
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def test_grep_missing_path_is_not_found(tmp_path: Path) -> None:
@@ -681,6 +721,16 @@ def test_missing_root_is_reported_clearly(tmp_path: Path) -> None:
     payload, failed = tool_by_name(missing, "read").handler({"path": "a.txt"})
     assert failed is True
     assert payload["text"].startswith(ERROR_BAD_PATH)
+
+
+@pytest.mark.parametrize("field", ["offset", "limit"])
+def test_a_bool_is_not_an_integer_for_the_page_arguments(tmp_path: Path, field: str) -> None:
+    """``true`` 在 Python 里是 int 的子类: 收下它等于把"翻下一页"当成 ``offset=1``."""
+    (tmp_path / "f.txt").write_text("a\n", encoding="utf-8")
+    payload, failed = tool_by_name(tmp_path, "read").handler({"path": "f.txt", field: True})
+    assert failed is True
+    assert payload["text"].startswith(ERROR_BAD_PATH)
+    assert field in payload["text"]
 
 
 def test_grep_tool_reports_a_pattern_that_blew_up(
