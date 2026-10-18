@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,6 +107,37 @@ def test_content_scripts_stay_pinned_to_the_site() -> None:
         matches = re.search(r"matches:\s*\[(.*?)\]", text, re.S)
         assert matches is not None, name
         assert re.findall(r'"([^"]+)"', matches.group(1)) == ["https://chat.deepseek.com/*"], name
+
+
+def test_the_site_name_is_one_and_the_same_in_all_four_places() -> None:
+    """四处硬编码的站点名要对得上,谁也不许单独换.
+
+    钉 `matches` 的两处,认标签页的 `DEEPSEEK_HOST`,认站请求的 `SITE_ORIGIN`:分开钉的时候
+    谁也不红.站点换地址那天,内容脚本跟着换了家,认标签页那句忘了换--认出来的标签页上
+    根本没有内容脚本,动作投过去只回一句认不出的失败.`SITE_ORIGIN` 还兼着相对地址的
+    基准,漂了连站自己的出站请求都认不出(注入静默失效,页面上不报错).
+    """
+    host = re.search(
+        r'DEEPSEEK_HOST\s*=\s*"([^"]+)"',
+        (ROOT / "src" / "lib" / "action.ts").read_text(encoding="utf-8"),
+    )
+    assert host is not None, "src/lib/action.ts 里找不到 DEEPSEEK_HOST"
+    origin = re.search(
+        r'SITE_ORIGIN\s*=\s*"([^"]+)"',
+        (ROOT / "src" / "lib" / "inject.ts").read_text(encoding="utf-8"),
+    )
+    assert origin is not None, "src/lib/inject.ts 里找不到 SITE_ORIGIN"
+
+    hosts = {host.group(1), urlsplit(origin.group(1)).hostname}
+    for name in ("entrypoints/content.ts", "entrypoints/inject.content.ts"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        matches = re.search(r"matches:\s*\[(.*?)\]", text, re.S)
+        assert matches is not None, name
+        entries = re.findall(r'"([^"]+)"', matches.group(1))
+        assert len(entries) == 1, f"{name}: {entries}"
+        hosts.add(urlsplit(entries[0]).hostname)
+
+    assert len(hosts) == 1, sorted(str(one) for one in hosts)
 
 
 def test_the_site_address_only_lives_in_a_handful_of_known_places() -> None:
