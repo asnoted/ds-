@@ -133,6 +133,18 @@ describe("parseMcpResponse / 响应 → 载荷", () => {
     expect(payload.status === "ok" && payload.answer).toBe('{"content":[],"tools":[]}');
   });
 
+  it("文本块全是空串也算没有文本块--空串交出去等于把结果丢了", () => {
+    const payload = parseMcpResponse(
+      200,
+      reply({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "" }] } }),
+      id,
+    );
+    expect(payload.status).toBe("ok");
+    expect(payload.status === "ok" && payload.answer).toBe(
+      '{"content":[{"type":"text","text":""}]}',
+    );
+  });
+
   it("非 2xx / 认不出的响应体 → 意外响应(不进对话流)", () => {
     const unexpected = { status: "error" as const, error: FAILURE_UNEXPECTED_RESPONSE };
     expect(parseMcpResponse(500, reply({ jsonrpc: "2.0", id, result: {} }), id)).toEqual(
@@ -210,6 +222,9 @@ describe("parseToolsList / 工具表", () => {
   it("认不出返回 null(调用方沿用上一份,不拿坏数据换)", () => {
     expect(parseToolsList(200, JSON.stringify({ jsonrpc: "2.0", id, result: {} }), id)).toBeNull();
     expect(parseToolsList(200, body([{ description: "没有名字" }]), id)).toBeNull();
+    expect(parseToolsList(200, body([{ name: "" }]), id)).toBeNull();
+    // 表里混进一条认不出的:整份都不收--挑着收会让那件工具静默从目录里消失.
+    expect(parseToolsList(200, body([{ name: "ping_now" }, "不是对象"]), id)).toBeNull();
     expect(parseToolsList(500, body([]), id)).toBeNull();
     expect(parseToolsList(200, "不是 JSON", id)).toBeNull();
     expect(parseToolsList(200, body([]), "别的号")).toBeNull();
@@ -243,6 +258,14 @@ describe("joinCallAnswers / 一轮多块的结果拼装", () => {
     expect(joinCallAnswers([{ tool: "fs_read_file", text: "第一行\n第二行" }])).toBe(
       "第一行\n第二行",
     );
+  });
+
+  it("一块也按这一轮的额度砍(原样交只管抬头,不管绕过额度)", () => {
+    const joined = joinCallAnswers([
+      { tool: "fs_read_file", text: "z".repeat(MAX_RESULT_CHARS * 3) },
+    ]);
+    expect(joined.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
+    expect(joined).toContain("工具结果已截断");
   });
 
   it("多块:每块前面写上是哪件工具,块之间空一行", () => {
