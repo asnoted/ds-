@@ -232,6 +232,28 @@ describe("坏围栏回提示", () => {
   });
 });
 
+describe("多块都成时按围栏的次序攒", () => {
+  it("两块各自带答案:先排的那块抬头在前(同一个工具排两次时,次序是唯一的区分)", async () => {
+    const h = harness();
+    h.relayAnswer = async () => ({
+      payload: okPayload(h.relayCalls[h.relayCalls.length - 1] ?? ""),
+      cause: null,
+    });
+
+    const { payload } = await createFenceRound(h.deps).handle(
+      [callJson("read"), callJson("write")],
+      1,
+    );
+
+    expect(payload.status).toBe("ok");
+    if (payload.status !== "ok") return;
+    const first = payload.answer.indexOf("工具 read:");
+    const second = payload.answer.indexOf("工具 write:");
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(second).toBeGreaterThan(first);
+  });
+});
+
 describe("超 8 块截断附一句", () => {
   it("排 10 块:只打前 8 块网关,正文末尾说明还有 2 块没执行", async () => {
     const h = harness();
