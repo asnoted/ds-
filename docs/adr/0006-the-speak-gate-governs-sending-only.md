@@ -67,13 +67,16 @@
 ## 判据(怎么自己复现)
 
 ```sh
-pnpm vitest run src/lib/gate.test.ts src/lib/run.test.ts src/lib/registry.test.ts
+pnpm vitest run src/lib/gate.test.ts src/lib/run.test.ts src/lib/registry.test.ts \
+  src/lib/action.test.ts
 uv run pytest tests/test_probe_send_page.py -q
 
 # 红: 把 src/lib/armed.ts 的 planContinuation 改成一律 `{ action: "arm-and-send" }`(闸关了
 # 也照发), run.test.ts 当场 4 条红(48 条里 4 条, 头一条就是"闸关时只落草稿"); 把某个发送原语
 # 行上的 `speak` 翻成 false, registry.test.ts 那条"发送原语都受闸"当场红 -- 那条是 2026-10-18
 # 补的: 补之前翻这个标志谁都拦不住(闸名单是从标志派生的, 自洽照旧).
+# 红(ADR-0006 决定 10 那两条写动作): 把 composer.type 行上的 `backoff` 翻成 false, action.test.ts 里
+# "禁言中:写动作回 backing-off"那 2 条当场红(上面四个文件 94 条里 2 条).
 ```
 
 真机那几半(闸关着时写作框压着 `agent:\n继续` 不动 / 闸开着时没人按它也自己续完 /
