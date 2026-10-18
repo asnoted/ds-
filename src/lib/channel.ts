@@ -594,8 +594,10 @@ export function actionRequestMessage(frame: ActionFrame): ActionRequest {
 
 /**
  * 认动作信封:type 对得上,帧的字段都合线协议才收.
- * id / action 必须非空字符串,target 是字符串或 null,params 是对象(缺省当空,
- * 与 dsb 的 `parse_action_request` 一个脾气)--认不出就 null,收信那层因此不响应.
+ * id / action 必须非空字符串,target 是字符串或 null,params 是对象(缺省当空;
+ * 当年并排的是 dsb 的 `parse_action_request`,它随 ADR-0002 那刀一起撤了
+ * (2026-10-18 核),今天收动作的只剩这一处,这条口径的落点也就只剩这里)
+ * --认不出就 null,收信那层因此不响应.
  */
 export function parseActionRequest(data: unknown): ActionRequest | null {
   if (!isPlainObject(data)) return null;

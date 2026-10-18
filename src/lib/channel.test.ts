@@ -478,6 +478,14 @@ describe("background ↔ 内容脚本的动作信封", () => {
     expect(parseActionRequest(request)?.frame).toEqual(ACTION_FRAME);
   });
 
+  it('params 缺省当空对象收下(缺省那一条与"不是对象就作废"是两码事)', () => {
+    const withoutParams: Record<string, unknown> = { ...ACTION_FRAME };
+    delete withoutParams["params"];
+    expect(parseActionRequest({ type: ACTION_MESSAGE_TYPE, frame: withoutParams })).toEqual(
+      actionRequestMessage({ ...ACTION_FRAME, params: {} }),
+    );
+  });
+
   it("缺字段 / 错 type / 形状不对的一律 null", () => {
     expect(parseActionRequest(undefined)).toBeNull();
     expect(parseActionRequest({ type: "ds-/send", id: "1", question: "q" })).toBeNull();
@@ -562,6 +570,13 @@ describe("内容脚本的动作收信(entrypoints/content.ts 接的那一层)", 
     expect(actionErrorCodes()).toContain("composer-absent"); // 册子里确实有这三个
     expect(actionErrorCodes()).toContain("backing-off"); // 退避闸的码也在册
     expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: "tab-gone" });
+  });
+
+  it("名册是普通对象:原型上的键(toString 这种)不算有这件动作", async () => {
+    const sendResponse = await respond({}, requestFor("toString"));
+
+    expect(sendResponse).toHaveBeenCalledTimes(1);
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: "unknown-action" });
   });
 
   it("认不出的消息不响应(不抢 send 的消息,不回 undefined 当结果)", async () => {

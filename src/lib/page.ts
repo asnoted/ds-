@@ -105,7 +105,11 @@ export function readComposerPresent(): boolean {
   return document.querySelector(COMPOSER_SELECTOR) !== null;
 }
 
-/** 名字对齐 dsb 名册里的 `page.state`(`dsb/actions.py:59-61`).`frame` 不用:读的就是本标签页. */
+/**
+ * 名字对齐共享规格里的 `page.state`(`protocol/fixtures/action.json` 的"page.state 成功"一例;
+ * 当年并排的是 dsb 的 `actions.py:59-61`,它随 ADR-0002 那刀一起撤了--2026-10-18 核).
+ * `frame` 不用:读的就是本标签页.
+ */
 export function readPageState(_frame: ActionFrame): PageState {
   const composerPresent = readComposerPresent();
   return {
