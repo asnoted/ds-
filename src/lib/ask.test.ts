@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASK_BADGE_TEXT,
+  ASKS_STORAGE_KEY,
   clearPendingAsk,
   describePendingAsks,
   hasPendingAsk,
@@ -40,6 +41,13 @@ describe("recordPendingAsk", () => {
     const once = recordPendingAsk({}, "sid-1", "问题", AT);
     expect(recordPendingAsk(once, "sid-1", "问题", AT)).toBe(once);
   });
+
+  it("同一问题但时刻变了:换成新的一笔(时刻得跟着走)", () => {
+    const once = recordPendingAsk({}, "sid-1", "问题", AT);
+    expect(recordPendingAsk(once, "sid-1", "问题", AT + 1)).toEqual({
+      "sid-1": { question: "问题", at: AT + 1 },
+    });
+  });
 });
 
 describe("clearPendingAsk", () => {
@@ -52,6 +60,11 @@ describe("clearPendingAsk", () => {
   it("清别的会话不动这笔", () => {
     const once = recordPendingAsk({}, "sid-1", "问题", AT);
     expect(clearPendingAsk(once, "sid-2")).toBe(once);
+  });
+
+  it("清一笔只清那一笔:别的会话还挂着", () => {
+    const both = recordPendingAsk(recordPendingAsk({}, "sid-1", "甲", AT), "sid-2", "乙", AT + 1);
+    expect(clearPendingAsk(both, "sid-1")).toEqual({ "sid-2": { question: "乙", at: AT + 1 } });
   });
 
   it("没挂过也不报错,原样返回", () => {
@@ -76,6 +89,14 @@ describe("readPendingAsks", () => {
     expect(readPendingAsks(raw)).toEqual({
       "sid-1": { question: "甲", at: AT },
     });
+  });
+
+  it("时刻不是有限数也丢(坏输入里的 NaN / Infinity 一样不认)", () => {
+    const raw = {
+      "sid-1": { question: "甲", at: Number.NaN },
+      "sid-2": { question: "乙", at: Number.POSITIVE_INFINITY },
+    };
+    expect(readPendingAsks(raw)).toEqual({});
   });
 
   it("记过再读回来,分表原样", () => {
@@ -110,5 +131,11 @@ describe("describePendingAsks", () => {
 
   it('角标字是"人"', () => {
     expect(ASK_BADGE_TEXT).toBe("人");
+  });
+});
+
+describe("存储键", () => {
+  it("值与版本绑死:改名等于把挂着的等人回丢在旧键里", () => {
+    expect(ASKS_STORAGE_KEY).toBe("ds-/asks");
   });
 });
