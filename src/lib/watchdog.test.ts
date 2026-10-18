@@ -283,6 +283,30 @@ describe("回灌落地 / 路过动静 / 收活", () => {
     });
   });
 
+  it("收着尾时路过动静:不借它开活(#104 的要害)", () => {
+    const { silenceMs } = DEFAULT_WATCHDOG_CONFIG;
+    const closed = armedState({ taskOpen: false, lastActivityAt: 1 });
+    const next = watchdogSeenPassing(closed, 5_000);
+    expect(next.taskOpen).toBe(false);
+    expect(watchdogDecision(next, { tabUrl: SESSION_URL, now: 5_000 + silenceMs }).act).toEqual({
+      kind: "nothing",
+    });
+  });
+
+  it("封是一封到底:干净收尾不解封(解封只有总开关关一次)", () => {
+    const { silenceMs } = DEFAULT_WATCHDOG_CONFIG;
+    const sealed = armedState({ sealed: true, nudgedTasks: 3 });
+    const next = watchdogTaskClosed(sealed);
+    expect(next.sealed).toBe(true);
+    expect(next.nudgedTasks).toBe(0);
+    expect(
+      watchdogDecision(
+        { ...next, taskOpen: true, lastActivityAt: 1 },
+        { tabUrl: SESSION_URL, now: 1 + silenceMs },
+      ).act,
+    ).toEqual({ kind: "nothing" });
+  });
+
   it("收活结账:本笔活的连催与停手清零,回催过的笔数记进连续", () => {
     const state = armedState({
       nudges: DEFAULT_WATCHDOG_CONFIG.maxNudges,
@@ -353,5 +377,9 @@ describe("readWatchdogConfig", () => {
     expect(readWatchdogConfig({ maxNudges: 0 })).toEqual(DEFAULT_WATCHDOG_CONFIG);
     expect(readWatchdogConfig({ maxNudges: 2.5 })).toEqual(DEFAULT_WATCHDOG_CONFIG);
     expect(readWatchdogConfig({ nudgeText: "   " })).toEqual(DEFAULT_WATCHDOG_CONFIG);
+    // 非有限:写进去就成了"永不静默",看门狗静默地不再催办--也得落回默认.
+    expect(readWatchdogConfig({ silenceMs: Number.POSITIVE_INFINITY })).toEqual(
+      DEFAULT_WATCHDOG_CONFIG,
+    );
   });
 });
