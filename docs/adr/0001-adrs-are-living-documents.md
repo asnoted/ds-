@@ -122,5 +122,5 @@ uv run scripts/audit-issues.py --citations   # 仓外那些票里的旧号(信�
 
 # 红(它真是这些撑着的): 手改 docs/adr/README.md 里的一个字, 第一条当场红;
 # 在仓根塞第四份 .md(随手起个名字), 第二条里那条"根目录只许三份"当场红
-# (tests/test_adr_corpus.py, 25 条里 1 条).
+# (tests/test_adr_corpus.py, 28 条里 1 条).
 ```

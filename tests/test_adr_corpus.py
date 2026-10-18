@@ -22,7 +22,9 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   所以在这里对着仓核一遍. 拿 `-k` 筛用例的也要核: 筛词得真在那些文件的用例名里, 用例改了名
   而筛词没改, 那条命令会**一个用例都不收**而退出码照旧 0(这个夜里真发生过两次:
   `-k token` 收到的是别的用例, `-k blows_up` 那条其实叫 `blew_up`). 核的是**存不存在 /
-  收不收得到**, 不是"跑起来对不对"(那要真跑).
+  收不收得到**, 不是"跑起来对不对"(那要真跑). 跑脚本的那条还核命令行本身: `--参数` 与第一个
+  非参数词(子命令)得真在那个脚本的 argparse 里 -- 脚本改了名 / 删了参数而判据没改, 那句命令
+  当场 `invalid choice` 退出码 2, 同样是"只有真去跑的人才会发现".
 - **来历有没有人点**: `docs/evidence/` 那些一次性实测, ADR 正文里留一句点名才走得过去;
   一份没人点的文件就是孤儿, 而多出来的文件不会有谁觉得碍事. 这一条是**两向**的: 开头那句
   指路牌指着哪篇, 那篇就得点到它 -- 指错门的文件把人带到别的主题去, 与孤儿一样算漏.
@@ -38,6 +40,7 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
 
 from __future__ import annotations
 
+import ast
 import re
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
@@ -384,6 +387,65 @@ def judge_paths(text: str) -> Iterator[tuple[int, str]]:
                 yield lineno, token
 
 
+#: 判据里跑脚本的那条: `uv run scripts/foo.py [--参数] [子命令] ...`. 点着的**文件**在不在, 上面
+#: 那条守卫管了; 这里管"跑不跑得起来": 子命令名与 `--参数` 得真在那个脚本的 argparse 里.
+#: 脚本改了名(或参数删了)而判据没改, 那句命令当场 `invalid choice` / `unrecognized arguments`
+#: 退出码 2 -- 而"命令跑不起来"只有真去跑的人才会发现, 所以在这里对着 argparse 核一遍.
+SCRIPT_ARGV = re.compile(r"scripts/([\w.-]+\.py)")
+#: 参数名长这样; `-3` / `--keys=...` / 引号里那些值都不匹配, 于是不核.
+FLAG = re.compile(r"^--?[A-Za-z][\w-]*$")
+#: 粗略的词切分: 成对引号里的一整段算一个词(值里有空格也不会被拆开).
+SHELL_TOKEN = re.compile(r"'[^']*'|\"[^\"]*\"|\S+")
+
+
+def argparse_names(text: str) -> tuple[set[str], set[str]]:
+    """一个脚本声明过的 (`--参数` 名, 子命令名);静态扫 `add_argument` / `add_parser`.
+
+    嵌套子命令(`storage get` 的 `get`)也在内 -- 它们同样是 `add_parser` 报出来的.
+    """
+    flags: set[str] = set()
+    subs: set[str] = set()
+    for node in ast.walk(ast.parse(text)):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in {"add_argument", "add_parser"}:
+            continue
+        bucket = flags if node.func.attr == "add_argument" else subs
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                bucket.add(arg.value)
+    return flags, subs
+
+
+def script_command_problems(files: Iterable[Path] | None = None) -> list[str]:
+    """返回"判据里那条命令行跟脚本的 argparse 对不上"的清单;空列表 = 条条跑得起来.
+
+    只核两处: 命令行里出现的 `--参数`(一个个都得声明过), 与**第一个**非参数词(脚本有子命令
+    时它得是个子命令). 后头的词是子命令的**值**(`send button.get` 的 `button.get` 是动作名,
+    `--keys '[...]'` 后面是 JSON), 拿它们去核 argparse 只会误伤.
+    """
+    out: list[str] = []
+    seen: dict[str, tuple[set[str], set[str]]] = {}
+    for path in named_files() if files is None else files:
+        for lineno, line in sh_commands(path.read_text(encoding="utf-8")):
+            for matched in SCRIPT_ARGV.finditer(line):
+                name = matched.group(1)
+                target = ROOT / "scripts" / name
+                if not target.is_file():
+                    continue  # 文件没了是上面那条守卫的事, 这里不重复报
+                if name not in seen:
+                    seen[name] = argparse_names(target.read_text(encoding="utf-8"))
+                flags, subs = seen[name]
+                rest = SHELL_TOKEN.findall(line[matched.end() :])
+                for token in rest:
+                    if token.startswith("-") and FLAG.match(token) and token not in flags:
+                        out.append(f"{path.name}:{lineno} scripts/{name} 里没有参数 {token}")
+                first = next((token for token in rest if not token.startswith("-")), None)
+                if subs and first is not None and first not in subs:
+                    out.append(f"{path.name}:{lineno} scripts/{name} 里没有子命令 {first}")
+    return out
+
+
 def case_names_by_file() -> dict[str, set[str]]:
     """每个测试文件里的用例名: pytest 的 `test_*` 函数, vitest 的 `it` / `test` 首参."""
     out: dict[str, set[str]] = {}
@@ -539,6 +601,20 @@ def test_the_scanned_docs_are_the_advertised_ones() -> None:
         )
 
 
+def test_the_corpus_suites_own_size_in_adr_0001_is_current() -> None:
+    """ADR-0001 判据里那句"tests/test_adr_corpus.py, N 条里 1 条"的 N, 得是这套自己的条数.
+
+    这个文件每长一条用例, 那句读数就旧了, 而没有任何编译器会管 -- 2026-10-18 一天里漏过两次
+    (补一条用例后 24 该改 25, 又补两条该改 27, 都是补完才想起来的). 拿这个文件当真值, 两边对拍.
+    """
+    matched = re.search(r"tests/test_adr_corpus\.py, (\d+) 条里", adr_text("0001"))
+    assert matched is not None, "ADR-0001 判据里那句数自己条数的读数不见了"
+    here = (ROOT / "tests" / "test_adr_corpus.py").read_text(encoding="utf-8")
+    assert int(matched.group(1)) == len(re.findall(r"^def test_", here, re.M)), (
+        "ADR-0001 判据里那句 N 条与本文件的用例数对不上了(加了用例就把它一起改)"
+    )
+
+
 #: ADR-0001 决定 6 / AGENTS.md 的"文档"一节: 根目录只许这三份 `.md`, 别的文档一律进 `docs/`.
 #: 多出来的一份今天不让任何守卫出声(它只是没人读), 但"只许三份"是明写的规矩.
 ROOT_MARKDOWN = frozenset({"AGENTS.md", "README.md", "GLOSSARY.md"})
@@ -621,6 +697,34 @@ def test_every_judge_path_exists() -> None:
         "sh 块里点到的路径在仓里找不到(那些命令是给人照着跑的, 路径没了那句就是空话):\n"
         + "\n".join(problems)
     )
+
+
+def test_every_judge_command_has_its_flags_and_subcommands() -> None:
+    """判据里跑脚本的命令: `--参数` 与第一个非参数词(子命令)得真在那个脚本的 argparse 里."""
+    problems = script_command_problems()
+    assert not problems, (
+        "判据里的命令行跟脚本的 argparse 对不上(脚本改了名 / 删了参数而判据没改, "
+        "那句命令当场跑不起来):\n" + "\n".join(problems)
+    )
+
+
+def test_script_command_check_fires(tmp_path: Path) -> None:
+    """编的参数 / 编的子命令各咬一口; 真命令与"子命令的值"都不咬."""
+    note = tmp_path / "note.md"
+    note.write_text(
+        "```sh\n"
+        "uv run scripts/adrs-index.py --check\n"
+        "uv run scripts/adrs-index.py --nope\n"
+        "uv run scripts/page-action.py read\n"
+        "uv run scripts/page-action.py red\n"
+        "uv run scripts/page-action.py send button.get\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    problems = script_command_problems([note])
+    assert len(problems) == 2, problems
+    assert any("--nope" in problem for problem in problems), problems
+    assert any("red" in problem for problem in problems), problems
 
 
 def test_every_judge_k_filter_bites() -> None:
