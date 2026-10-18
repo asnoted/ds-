@@ -34,6 +34,10 @@
 
 带调试口的环境是 `scripts/env-up.sh --debug`(会顺带跑 `toggles-off`).
 
+两张表都是手维护的, 所以 `tests/test_probe_docs.py` 两头对拍: 子命令表对
+`scripts/page-action.py` 的 argparse 定义, 探针脚本表对 `scripts/*probe*.py` 的文件名 --
+加了子命令 / 加了探针脚本忘了补表, 或者表里的名字仓里已经没了, 都会红.
+
 ## 逆向结论的去处
 
 - **站点自己的上限,配置,请求体长什么样,结论在 [`dsweb/FINDINGS.md`](../dsweb/FINDINGS.md)**.
