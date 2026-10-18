@@ -204,6 +204,28 @@ def test_transient_codes_come_from_the_page_book_or_the_probe_local_whitelist() 
     )
 
 
+def test_transient_error_only_recognizes_our_own_codes() -> None:
+    """重试判据只认白名单里的码; 别的码(哪怕长得像)一律不重试."""
+    page_action = load_page_action()
+    assert page_action.transient_error('{"ok":false,"error":"read-failed"}') == "read-failed"
+    assert page_action.transient_error({"ok": False, "error": "tab-gone"}) is None
+    assert page_action.transient_error({"ok": False, "error": "read-failed-v2"}) is None
+
+
+def test_transient_error_wants_a_failure_not_wrapped_in_ok() -> None:
+    """`ok: true` 就是成了, 即便回包里还挂着个瞬时代码 -- 别把成了的当失败重发一遍."""
+    page_action = load_page_action()
+    assert page_action.transient_error({"ok": True, "error": "read-failed"}) is None
+    # 没写 `ok` 的按"没成"算: 拿不准就往安全那边倒.
+    assert page_action.transient_error({"error": "read-failed"}) == "read-failed"
+
+
+def test_transient_error_of_junk_is_none_not_an_exception() -> None:
+    page_action = load_page_action()
+    for raw in ("解不开的一段", 7, None, ["read-failed"], {"ok": False, "error": 7}):
+        assert page_action.transient_error(raw) is None, raw
+
+
 def test_transient_code_check_fires() -> None:
     """页面码改名 -> 红; 白名单里留一个已经收掉的 -> 红; 真码加本地码 -> 绿."""
     ghost = "read-" + "failed-v2"
