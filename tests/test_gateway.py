@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import queue
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,7 @@ from dsb.gateway import (
     MAX_RESULT_CHARS,
     MAX_TOOLS_PER_SERVER,
     Gateway,
+    StdioServer,
     cap_result,
     command_of,
     load_config,
@@ -37,18 +40,30 @@ import json, os, signal, subprocess, sys, time
 # 只有真的 kill 才收得动. pid 写文件, 好让测试看它到底死没死.
 PID_FILE = os.environ.get("FAKE_PID_FILE")
 
+# 起一次就往这儿追一行自己的 pid: "已经活着就别再起一个"那条判据得数得起过几回.
+START_FILE = os.environ.get("FAKE_START_FILE")
+if START_FILE:
+    with open(START_FILE, "a", encoding="utf-8") as handle:
+        print(os.getpid(), file=handle)
+
 # 孙子: 一样睡, 一样无视 SIGTERM. `npx` 形状里直接孩子是壳, 真在跑的是它 --
 # 壳一死孙子就没了爹, 于是"收摊"必须够得着整间会话(2026-10-18 真机上量到过).
 CHILD = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(3600)"
 
 # 工具件数可配:单服务工具数上限那条判据要拿一张超长的表来试(第一件恒叫 echo).
+# 名字也可配(FAKE_TOOL_NAMES):归一后撞名那条判据要拿一张刻意撞上的表.
+NAMES = os.environ.get("FAKE_TOOL_NAMES")
+GENERATED = [
+    "echo" if index == 0 else "echo%d" % index
+    for index in range(int(os.environ.get("FAKE_TOOL_COUNT", "1")))
+]
 TOOLS = [
     {
-        "name": "echo" if index == 0 else "echo%d" % index,
+        "name": name,
         "description": "回声",
         "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}},
     }
-    for index in range(int(os.environ.get("FAKE_TOOL_COUNT", "1")))
+    for name in (NAMES.split(",") if NAMES else GENERATED)
 ]
 
 for line in sys.stdin:
@@ -72,6 +87,12 @@ for line in sys.stdin:
         reply = {"jsonrpc": "2.0", "id": rid, "result": {"tools": TOOLS}}
     elif method == "tools/call":
         text = str(msg.get("params", {}).get("arguments", {}).get("text", ""))
+        # 转发进来的工具名可以回显: "对外归一、对内原样"那条判据要看它走的到底是哪个名字.
+        shown = (
+            "%s:%s" % (msg.get("params", {}).get("name", ""), text)
+            if os.environ.get("FAKE_ECHO_NAME")
+            else text
+        )
         if text == "hang":
             time.sleep(60)
             continue
@@ -100,7 +121,7 @@ for line in sys.stdin:
             }}
         else:
             reply = {"jsonrpc": "2.0", "id": rid, "result": {
-                "content": [{"type": "text", "text": text}], "isError": False,
+                "content": [{"type": "text", "text": shown}], "isError": False,
             }}
     else:
         reply = {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "no"}}
@@ -211,6 +232,27 @@ def test_gateway_starts_the_server_and_lists_prefixed_tools(gateway: Gateway) ->
     assert tools[0].input_schema["type"] == "object"
 
 
+def test_tools_normalizes_the_outside_name_and_keeps_the_raw_one_inside(
+    fake_script: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """对外归一(opencode 同款: 点、空格折 `_`), 对内转发**原名**;归一后撞名的后到者让位.
+
+    两件都在这条里:名字带点的 server 照样能用,而转发出去的是它自己认的那个名字--
+    归一后的名字只活在我们这一侧。
+    """
+    gate = make_gateway(
+        fake_script, env={"FAKE_TOOL_NAMES": "echo.1,echo_1", "FAKE_ECHO_NAME": "1"}
+    )
+    try:
+        tools = gate.tools()
+        assert [tool.name for tool in tools] == ["fake_echo_1"]  # echo_1 与 echo.1 归一后撞上
+        payload, failed = tools[0].handler({"text": "嗨"})
+        assert (payload["text"], failed) == ("echo.1:嗨", False)  # 发出去的是原名
+        assert "tool-clash" in caplog.text
+    finally:
+        gate.stop()
+
+
 def test_call_is_forwarded_and_text_passes_through(gateway: Gateway) -> None:
     payload, failed = gateway.tools()[0].handler({"text": "你好"})
     assert payload == {"text": "你好"}
@@ -294,6 +336,67 @@ def test_stop_reaps_the_grandchild_not_just_the_shim(fake_script: Path, tmp_path
         assert ERROR_TIMEOUT in payload["text"] and failed
         kid = int(read_child_pid(Path(f"{pid_file}.child")))
         assert wait_until_gone(kid), f"孙子 {kid} 还活着(该跟着壳一起收)"
+    finally:
+        gate.stop()
+
+
+def test_a_dead_thread_only_collects_its_own_life() -> None:
+    """重启后旧线程的 EOF 不许碰新挂账(ADR-0003): 碰了, 新一代正在跑的那件会被平白判成不在.
+
+    收摊 / 重启都把 `_proc` 换了人, 而旧孩子的读口那头还要过一会儿才见 EOF--那一声
+    `_fail_all(旧孩子)` 只该收旧孩子的场。
+    """
+    server = StdioServer("fake", ["true"])
+    mine, theirs = object(), object()
+    server._proc = mine
+    box: queue.Queue[Any] = queue.Queue(1)
+    server._pending["fake-1"] = box
+    server._fail_all(theirs)
+    assert server._pending == {"fake-1": box}  # 一个都不许动
+    assert box.empty()
+    server._fail_all(mine)
+    assert box.get_nowait() is None
+    assert server._pending == {}
+
+
+def test_start_on_a_live_server_does_not_spawn_a_second_child(
+    fake_script: Path, tmp_path: Path
+) -> None:
+    """已经活着就直接回: 再起一个会多留一个没人接手的孩子, 还把 `_proc` 指到新的那个.
+
+    并发来的两件工具都用 `if not alive: start()` 叫它, 这一句就是那道闸。
+    """
+    starts = tmp_path / "starts.txt"
+    server = StdioServer(
+        "fake", [sys.executable, str(fake_script)], env={"FAKE_START_FILE": str(starts)}
+    )
+    try:
+        server.start()
+        server.start()
+        assert server.alive
+        assert len(starts.read_text(encoding="utf-8").split()) == 1
+    finally:
+        server.stop()
+
+
+def test_stop_wakes_the_calls_still_in_flight(fake_script: Path) -> None:
+    """收摊要把挂着的叫醒: 不然那件工具一路等到自己的超时, 用户白等两分钟(ADR-0003).
+
+    孩子被收掉时读口那头也会叫一声, 但收摊先清了 `_proc`, 那一声认不出自己的场--
+    所以这里量的正是 `stop` 亲自叫的那一声。
+    """
+    gate = make_gateway(fake_script, timeout=2.0)
+    handler = gate.tools()[0].handler
+    result: list[tuple[dict[str, Any], bool]] = []
+    thread = threading.Thread(target=lambda: result.append(handler({"text": "hang"})))
+    try:
+        thread.start()
+        time.sleep(0.5)  # 等这一件真的挂上去
+        gate.stop()
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+        payload, failed = result[0]
+        assert ERROR_NOT_RUNNING in payload["text"] and failed
     finally:
         gate.stop()
 
