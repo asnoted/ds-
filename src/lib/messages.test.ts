@@ -812,9 +812,10 @@ describe("不可见页面:一屏也要扫得完", () => {
 });
 
 describe("预算:params.timeout 一份,就绪与扫描共用", () => {
-  it("就绪花掉的时间从扫描里扣(最坏恒等于预算,不顶中继的锁)", async () => {
-    // 曾经的坑:就绪 5s + 扫描 25s = 30s,正顶着中继 30s 的锁 → 真原因被吞成 timeout.
-    // 现在一份预算:deadline 算一次,两段共用.
+  it("就绪花掉的时间从扫描里扣(最坏恒等于预算)", async () => {
+    // 曾经的坑:就绪 5s + 扫描 25s = 30s,当时正顶着中继那道 30s 的锁 →
+    // 真原因被吞成 timeout;锁随 ADR-0002 废 POST /action 没了(2026-10-18 核).
+    // 现在一份预算:deadline 算一次,两段共用(tests/test_wait_budget.py 扫源码看着).
     const view = virtualScreens([
       [keyRow(1, "user")],
       [keyRow(2, "assistant")],

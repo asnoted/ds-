@@ -59,7 +59,7 @@ export type ActionOutcome =
 
 /** 失败码:与 `protocol/fixtures/action.json` 的 `errorCodes` 同一份. */
 export const ACTION_ERROR_DISABLED = "disabled";
-/** 名册有,扩展还没实现的动作:当场说"不认这个名字",别让中继等满 30s 判 timeout. */
+/** 名册有,扩展还没实现的动作:当场说"不认这个名字",别让调用方等满一整个预算才听说. */
 export const ACTION_ERROR_UNKNOWN = "unknown-action";
 /** 目标标签页不在 / 这一跳没走通(target 认不出,没接执行口,消息没送到内容脚本). */
 export const ACTION_ERROR_TAB_GONE = "tab-gone";
