@@ -28,8 +28,9 @@
 - `--citations`: 票里引的 `ADR-NNNN` 在当前语料里指不到哪一篇. 2026-10-17 那次重编号(28 篇
   并 13 篇)留下的旧号正落在这一类; 人拍板之后, 票的正文与评论**已按那张映射改齐**
   (2026-10-18, 见 `docs/evidence/numbering.md`), 这件工具留着盯**将来**再出的漂移.
-  两个盲区照旧: 只扫正文(评论那一半得另跑), 以及号码落在当前 13 篇之内,当时指的却是
-  别的篇的 -- 这次真靠它报的话只会报 15 张, 实际 31 张.
+  两个盲区: 号码落在当前 13 篇之内,当时指的却是别的篇的 -- 这次真靠它报的话只会报 15 张,
+  实际 31 张; 另一处(只扫正文, 评论那半得另跑)2026-10-18 已补上 -- 重编号那次改的 42 条
+  评论里的号, 现在这条也看得见.
 - `--paths`: 票里点的 `docs/adr/` 与 `docs/evidence/` 篇路径在仓里找不到的. 2026-10-18 补:
   上一轮只对齐了 `ADR-NNNN` 那个**号**, 篇路径是另一类漏网(旧号 0012 / 0014 / 0031 那几处
   的路径当时没跟着换), 就是靠这条揪出来的. 它扫**正文与评论**: 评论那一半的正文
@@ -187,20 +188,26 @@ def check_trace(issues: list[dict]) -> list[str]:
 
 
 def check_citations(issues: list[dict], known: set[str]) -> list[str]:
-    """信息级: 正文引的 `ADR-NNNN` 在当前语料里指不到哪一篇(重编号后的旧号多是这样).
+    """信息级: 票里引的 `ADR-NNNN` 在当前语料里指不到哪一篇(重编号后的旧号多是这样).
 
-    只查正文, 不查评论: 评论也会带旧号, 但 `gh issue list --json` 只给正文那一份字符串,
-    为这个再去逐个拉评论不值. 号码落在当前篇数之内却指的是别的篇的, 这里查不出.
+    正文与评论都扫(2026-10-18 补): 上一轮重编号实际动过 42 条评论里的号, 而那时这条只读
+    `gh issue list --json` 给的那份正文 -- 评论那半靠人肉另跑一遍. 号码落在当前篇数之内却
+    指的是别的篇的, 这里查不出.
     """
     out = []
     for issue in issues:
-        body = issue.get("body") or ""
-        ghosts = {
-            num for run in CITE.findall(body) for num in CITE_SPLIT.split(run) if num not in known
-        }
-        if ghosts:
-            refs = ", ".join(f"ADR-{num}" for num in sorted(ghosts))
-            out.append(f"  #{issue['number']} 引不到 {refs}: {issue['title'][:36]}")
+        sides = [("", issue.get("body") or "")]
+        sides += [(" 评论", c.get("body") or "") for c in issue.get("comments") or []]
+        for side, text in sides:
+            ghosts = {
+                num
+                for run in CITE.findall(text)
+                for num in CITE_SPLIT.split(run)
+                if num not in known
+            }
+            if ghosts:
+                refs = ", ".join(f"ADR-{num}" for num in sorted(ghosts))
+                out.append(f"  #{issue['number']}{side} 引不到 {refs}: {issue['title'][:36]}")
     return out
 
 
@@ -289,7 +296,8 @@ def main() -> None:
         known = current_adr_numbers()
         found = check_citations(issues, known)
         print(
-            f"{TAG} [信息] 正文引了当前语料里没有的 ADR 编号(现共 {len(known)} 篇): {len(found)} 张"
+            f"{TAG} [信息] 正文/评论引了当前语料里没有的 ADR 编号(现共 {len(known)} 篇): "
+            f"{len(found)} 张"
         )
         for line in found:
             print(line)

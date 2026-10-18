@@ -1,7 +1,8 @@
-"""对拍: `audit-issues.py` 那条信息级检查的口径(票正文里的 ADR 引用).
+"""对拍: `audit-issues.py` 那两条信息级检查的口径(票里的 ADR 引用与语料路径).
 
-它不判失败(信息级), 所以更不能量错: 报多了是噪音, 报少了等于没报 -- 2026-10-17 那次
-重编号之后, 关着的票里留的旧号就是靠它才能看见的.
+它们不判失败(信息级), 所以更不能量错: 报多了是噪音, 报少了等于没报 -- 2026-10-17 那次
+重编号之后, 关着的票里留的旧号就是靠它才能看见的; 2026-10-18 补的两处(评论那半、
+`docs/adr` 篇路径)也是.
 """
 
 from __future__ import annotations
@@ -77,6 +78,16 @@ def test_the_corpus_numbers_come_from_the_adr_directory() -> None:
         path.stem[:4] for path in (ROOT / "docs" / "adr").glob("*.md") if path.name != "README.md"
     }
     assert numbers == on_disk
+
+
+def test_a_ghost_number_in_a_comment_is_also_reported() -> None:
+    """评论那半以前靠人肉另跑(上一轮 42 条评论里的号就是这么核的), 现在工具自己扫."""
+    module = load_audit()
+    issue = ticket(3, "正文没引用.")
+    issue["comments"] = [{"body": f"接着按 {ghost('0030')} 办."}]
+    found = module.check_citations([issue], {"0010"})
+    assert len(found) == 1
+    assert "#3 评论" in found[0] and ghost("0030") in found[0]
 
 
 def test_a_dead_corpus_path_is_reported_and_a_live_one_is_not() -> None:

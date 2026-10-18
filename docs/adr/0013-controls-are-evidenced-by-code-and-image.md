@@ -82,5 +82,6 @@ uv run pytest tests/test_evidence.py -q     # CI 对拍: 用例不许手抄
 pnpm vitest run src/lib/evidence.test.ts
 ```
 
-真机对账的读数(最近一轮 2026-10-18 凌晨, 与 2026-10-11 那一轮同形: 一致 13 / 未比 6 /
-过时 0)与"6 颗未比各自为什么不是'算了当一致'"见 `docs/evidence/controls.md`.
+真机对账的读数(2026-10-18 上午两轮: 侧栏展开一轮与收起一轮, 都是 一致 13 / 未比 6 / 过时 0,
+但**侧栏那四颗两轮合起来各比过一次, 四颗全一致**)与"剩下的四颗未比各自为什么不是'算了当
+一致'"见 `docs/evidence/controls.md`.

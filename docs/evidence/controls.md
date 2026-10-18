@@ -63,4 +63,21 @@ ADR-0013 开篇说的"同形,无文字,无从分辨"的四颗, 它们对得上�
   `ds-loading`, 活页此刻没有.
 - `code.block`: 差在代码块正文(存证是 `{"tool": "ls", ...}`, 活页是当前会话里的那段).
 - `sidebar.chat-row`: 差在会话 UUID.
-- `sidebar.topbar.collapsed` / `sidebar.toggle.collapsed`: 探针返回 null(活页侧栏是展开的).
+- `sidebar.topbar.collapsed` / `sidebar.toggle.collapsed`: 那一轮探针返回 null(活页侧栏是展开的)
+  -- 把它们各自的态调出来再比, 两颗逐字一致, 见下面一段.
+
+**侧栏两态各比一轮**: 收起态那两颗控件只在侧栏收起时存在, 而侧栏是页面状态. 用页面动作把它
+收起(`sidebar.set {collapsed:true}`, 写动作, 不进 `speak` 闸), 再跑一轮:
+
+```
+一致 13 / 未比 6 / 过时 0
+[evidence] sidebar.topbar.collapsed 一致(2026-10-07 留档)
+[evidence] sidebar.toggle.collapsed 一致(2026-10-07 留档)
+[evidence] sidebar.topbar.expanded 未比(2026-10-07 留档)
+[evidence] sidebar.toggle.expanded 未比(2026-10-07 留档)
+```
+
+两轮合起来才是这四颗的完整账: **每一颗都在它自己那一态里比过一次, 四颗逐字一致**; 单看任何
+一轮, 总有另外两颗"当前页面没有". 跑完把侧栏开回原样. 未比的从此只剩四颗, 而且都不是"找不到
+控件", 是同**一颗控件在不同相 / 不同内容**下的快照: `circle.stop` 与 `circle.spinner`(生成期
+那两相),`code.block`(代码块正文),`sidebar.chat-row`(会话 UUID).
