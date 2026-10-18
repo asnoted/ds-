@@ -329,6 +329,22 @@ def test_cap_result_keeps_short_text_and_names_the_original_length_of_a_long_one
     assert f"原文 {MAX_RESULT_CHARS + 5} 字" in capped
 
 
+def test_the_cap_keeps_the_head_not_the_tail() -> None:
+    """脚注写的是"这里是前 N 字":留成尾巴, 这句话就是假的, 丢的还正是开头那几行."""
+    head = "开头的第一行\n"
+    tail = "\n结尾的最后一行"
+    capped = cap_result(head + "x" * MAX_RESULT_CHARS + tail)
+    assert head in capped
+    assert tail not in capped
+    assert f"这里是前 {MAX_RESULT_CHARS} 字" in capped
+
+
+def test_a_text_exactly_at_the_limit_is_left_alone() -> None:
+    """恰好等于上限不截: `<=` 写成 `<` 会啃掉尾巴一个字, 还附一句"前 N 字"的鬼话."""
+    text = "y" * MAX_RESULT_CHARS
+    assert cap_result(text) == text
+
+
 def test_resolve_seconds_prefers_the_process_then_the_env_file_then_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
