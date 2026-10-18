@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from dsb.work import (
+    ERROR_OUT_OF_ROOT,
     ERROR_PROTECTED,
     WorkError,
     edit_text,
@@ -102,6 +103,33 @@ class Test大小写与绕过:
         link = root / "link.json"
         link.symlink_to(root / "mcp.json")
         assert code_of(lambda: read_text(root, "link.json")) == ERROR_PROTECTED
+
+    def test_名字以_root_开头的兄弟目录不算在_root_内(self, root: Path) -> None:
+        """``<root>-evil`` 的字符串前缀就是 root--"前缀法"那种判法会把它当成 root 里.
+
+        这不是假想:沙箱边界就一句判断,改成前缀比对一样能跑通既有的越界用例
+        (``/etc/passwd`` 那种),只有**兄弟目录**才把它照出来.
+        """
+        sibling = root.parent / f"{root.name}-evil"
+        sibling.mkdir()
+        (sibling / "secret.txt").write_text(SECRET, encoding="utf-8")
+        assert code_of(lambda: read_text(root, str(sibling / "secret.txt"))) == ERROR_OUT_OF_ROOT
+
+
+class Test根写法:
+    """root 递进来是**别的写法**时,护栏不许静默放行."""
+
+    def test_root_是符号链接写法时保护文件照样拒(self, root: Path) -> None:
+        """``/var`` 与 ``/private/var`` 是同一个目录的两种写法(macOS).
+
+        判定要拿 ``resolve()`` 之后的两侧比:少了这一步,``relative_to`` 抛错就被折成
+        "不在 root 内",而 :func:`dsb.work.is_protected` 把 ``None`` 当**不保护**--
+        于是 ``.env``(它能改 ``DSB_WORK_ROOT``,把沙箱自己撑开)反倒读写都放行.
+        """
+        alias = root.parent / f"{root.name}-link"
+        alias.symlink_to(root, target_is_directory=True)
+        assert code_of(lambda: read_text(alias, "mcp.json")) == ERROR_PROTECTED
+        assert code_of(lambda: write_text(alias, ".env", "DSB_WORK_ROOT=/\n")) == ERROR_PROTECTED
 
 
 class Test绝对路径:
