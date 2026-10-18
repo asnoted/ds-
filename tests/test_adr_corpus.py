@@ -15,7 +15,8 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   那之前有五处, 都在 `docs/evidence/` 里).
 - **点名的东西**: 篇里反引号点着的路径与标识符(`dsb/work.py`, `cap_result`,
   `MAX_RESULT_CHARS` 这类)是给读者当**指路牌**用的; 代码里改了名、文件挪了家, 牌还在原地
-  指着空地 -- 旧语料写着的 `MAX_RESULT_CHARS = 2000` 就是这么来的.
+  指着空地 -- 旧语料写着的 `MAX_RESULT_CHARS = 2000` 就是这么来的. `名字 = 值` 那种写法左边
+  那个名字也算(2026-10-18 才补上: 在那之前这一族整片没被核过).
 - **判据里点的路径**: `## 判据` 那些 ```sh 块是让人照着跑的(ADR-0001 决定 3: 判据要真的会
   咬). 块里点着的文件没了, 那句判据就成了空话 -- 而"命令跑不起来"只有真去跑的人才会发现,
   所以在这里对着仓核一遍. 拿 `-k` 筛用例的也要核: 筛词得真在那些文件的用例名里, 用例改了名
@@ -100,6 +101,11 @@ SUFFIXED = "py|ts|tsx|json|jsonc|md|sh|yaml|yml|toml|txt|svg|html|cfg|ini|lock|e
 PATHISH = re.compile(rf"^[\w.-]+(?:/[\w.-]+)+$|^[\w.-]+\.(?:{SUFFIXED})$")
 #: 标识符: 全大写常量 / snake_case / camelCase.
 NAMEISH = re.compile(r"^(?:[A-Z][A-Z0-9_]{3,}|[a-z_][a-z0-9_]{3,}|[a-z][a-z0-9]*[A-Z]\w*)$")
+#: `名字 = 值` 这种写法 -- 篇里点常量最常见的形式. 它整块不匹配 `NAMEISH`, 等号左边那个名字
+#: 于是**一直没被核过**(2026-10-18 才发现的: 把 `MAX_TOOLS_PER_SERVER = 128` 改成
+#: `MAX_TOOLS_PER_SERVER_TYPO = 128`, 24 条全绿). 这里把左边的名字摘出来, 交给同一条规矩核.
+#: 只认**两边都有空格**的写法: `grace=0` / `background=True` 那种是参数片段, 不是点名字.
+ASSIGNED = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s+=\s+\S")
 #: 编号本身交给上面那两道守卫, 别在这里重复报.
 CITATIONISH = re.compile(r"^ADR|^\d")
 
@@ -136,6 +142,7 @@ NOT_IN_REPO = {
     "__ds_remote_feature_store_model": "站点 localStorage 的键",
     "__ds_remote_feature_store_provider": "站点 localStorage 的键",
     "model_configs": "站点配置里的字段",
+    "normal_history_and_file_token_limit": "站点配置里的 token 预算上限(抓包读出来的)",
     "resume_stream": "站点接口里的开关",
     "sse_auto_resume_timeout": "站点接口里的超时",
     "chrome.debugger": "浏览器 API(Considered Options 里否决的退路)",
@@ -307,6 +314,15 @@ def named_files() -> list[Path]:
     ]
 
 
+def assigned_name(token: str) -> str | None:
+    """`名字 = 值` 里等号左边那个标识符(不合这个形状就 None)."""
+    matched = ASSIGNED.match(token)
+    if matched is None:
+        return None
+    name = matched.group(1)
+    return name if NAMEISH.match(name) else None
+
+
 def named_problems(files: Iterable[Path] | None = None) -> list[str]:
     """返回"点名了、仓里却没有"的清单;空列表 = 点名的都在."""
     names, bodies = repo_index()
@@ -330,6 +346,9 @@ def named_problems(files: Iterable[Path] | None = None) -> list[str]:
                     if probe in names or ROOT.joinpath(probe).exists():
                         continue
                     out.append(f"{token} <- {where}(仓里没这个路径)")
+                elif (named := assigned_name(token)) is not None:
+                    if named not in bodies:
+                        out.append(f"{token} <- {where}(等号左边那个名字代码里没有)")
                 elif NAMEISH.match(token) and token not in bodies:
                     out.append(f"{token} <- {where}(代码里没这个名字)")
     return out
@@ -493,6 +512,20 @@ def test_every_named_thing_exists() -> None:
         "ADR 里点名的路径 / 标识符在仓里找不到(改了名 / 挪了家就把篇里那句一起改; "
         "真在仓外的往 NOT_IN_REPO 里加并写清理由):\n" + "\n".join(problems)
     )
+
+
+def test_renamed_constant_in_an_assignment_fires(tmp_path: Path) -> None:
+    """`名字 = 值` 那族的咬: 等号左边改个名字要报, 真名字 / 参数片段都不报."""
+    fake = "MAX_RESULT_CHARS_" + "TYPO"  # 拆开写: 整串落在本文件里, 守卫就"找得到"了
+    note = tmp_path / "note.md"
+    note.write_text(
+        f"封顶 `MAX_RESULT_CHARS = 64 * 1024`, 名字真在;另有一句 `{fake} = 64 * 1024` 是编的."
+        " `grace=0` 这种参数片段不管.\n",
+        encoding="utf-8",
+    )
+    problems = named_problems([note])
+    assert len(problems) == 1, problems
+    assert fake in problems[0] and "note.md:1" in problems[0]
 
 
 def test_the_scanned_docs_are_the_advertised_ones() -> None:

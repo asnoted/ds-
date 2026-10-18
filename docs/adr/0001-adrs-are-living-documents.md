@@ -64,7 +64,8 @@
    牌就得跟着换 -- 否则读者按它去翻会翻空. **有守卫**: 同一道(`tests/test_adr_corpus.py`)
    扫 13 篇加 `README.md` / `GLOSSARY.md` / `docs/CODING_STANDARDS.md` / `docs/probe.md` /
    `docs/setup.md` / `docs/page-actions.md` 这六份写当前口径的, 每一处路径 / 常量 / 标识符
-   都核, 连 pytest 的节点号写法也一起看(换面 / 加面要连着这一句一起改 -- 有个用例盯着这两处
+   都核(`名字 = 值` 那种写法核等号左边那个名字 -- 2026-10-18 才发现这一族整片漏扫), 连
+   pytest 的节点号写法也一起看(换面 / 加面要连着这一句一起改 -- 有个用例盯着这两处
    一致). 真在仓外的东西(站点端点与 localStorage 键, MCP 协议字段, 用户本机的 `mcp.json`,
    Considered Options 里被否决的目录)进一条**显式白名单**, 每条写清为什么; 白名单以外缺一个
    就红 -- 常量被改名的那种漏, 这一条专治. `docs/evidence/` 不在扫面里: 那些是来历, 旧名字是
@@ -121,5 +122,5 @@ uv run scripts/audit-issues.py --citations   # 仓外那些票里的旧号(信�
 
 # 红(它真是这些撑着的): 手改 docs/adr/README.md 里的一个字, 第一条当场红;
 # 在仓根塞第四份 .md(随手起个名字), 第二条里那条"根目录只许三份"当场红
-# (tests/test_adr_corpus.py, 24 条里 1 条).
+# (tests/test_adr_corpus.py, 25 条里 1 条).
 ```

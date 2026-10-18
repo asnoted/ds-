@@ -82,5 +82,5 @@ scripts/env-up.sh --status        # 本机这一半: ping + tools/list
 
 ## 已知洞
 
-- **`tools/list` 的缓存没有过期判据**: 隔离世界 60s 来取一次是节流, 不是新鲜度承诺;
+- **`tools/list` 的缓存没有过期判据**: 隔离世界 `TOOLS_SYNC_INTERVAL_MS = 60_000` 来取一次是节流, 不是新鲜度承诺;
   本机换工具表后最长 60s 内, 页面模型看到的仍是旧目录.
