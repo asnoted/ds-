@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { ACTION_ERROR_PAGE_CHANGED, ACTION_ERROR_READ_FAILED } from "./action";
+import { ACTION_ERROR_PAGE_CHANGED, ACTION_ERROR_READ_FAILED, PageError } from "./action";
 import type { ActionFrame } from "./action";
 import { evidenceHtml } from "./evidence";
 import { parseWaitSeconds } from "./wait-budget";
 import {
+  conversation,
   conversationList,
   lastMessage,
   listMessages,
@@ -159,6 +160,51 @@ describe("一行 → 一条消息", () => {
       text: '先看这个:\n\n```send\n{"tool": "ls", "arguments": {}}\n```\n\n跑完再来.',
     });
   });
+
+  it("代码块外框里直接挂的文字(不是元素)也不算正文--外框里除了 <pre> 一律不算", () => {
+    document.body.innerHTML = `
+      <div class="ds-virtual-list">
+        <div data-virtual-list-item-key="1">
+          <div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content">
+            <div class="md-code-block">send<pre>{"tool": "ls"}</pre></div>
+          </div></div>
+        </div>
+      </div>`;
+    const row = document.querySelector("[data-virtual-list-item-key]") as Element;
+
+    expect(readRow(row)?.text).toBe('```send\n{"tool": "ls"}\n```');
+  });
+
+  it("行内的 <br> 是换行:得自己补,不然前后两截粘成一个词", () => {
+    document.body.innerHTML = `
+      <div class="ds-virtual-list">
+        <div data-virtual-list-item-key="1">
+          <div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content">
+            <p>甲<br>乙</p>
+          </div></div>
+        </div>
+      </div>`;
+    const row = document.querySelector("[data-virtual-list-item-key]") as Element;
+
+    expect(readRow(row)?.text).toBe("甲\n乙");
+  });
+
+  it("行尾空白清掉(markdown 的硬换行就是两空格 + 换行,别把它读进正文)", () => {
+    // 两个空格是正文的一部分,不能在源码里当行尾空白写--用拼的.
+    const hardBreak = "  ";
+    document.body.innerHTML = `
+      <div class="ds-virtual-list">
+        <div data-virtual-list-item-key="1">
+          <div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content">
+            <p>甲${hardBreak}
+乙</p>
+          </div></div>
+        </div>
+      </div>`;
+    const row = document.querySelector("[data-virtual-list-item-key]") as Element;
+
+    expect(readRow(row)?.text).toBe("甲\n乙");
+  });
 });
 
 describe("messages.list / messages.last 执行器", () => {
@@ -260,6 +306,36 @@ describe("多条虚拟列表:挑对话那一条(#54)", () => {
     ]);
   });
 
+  it("写作框那一关单独管用:主列表没带 --printable,靠它就是主列表(其余两条都不中)", () => {
+    document.body.innerHTML = twoListsHtml(keylessRow("主列表那条")).replace(
+      "ds-virtual-list ds-virtual-list--printable ds-scroll-area--enabled",
+      "ds-virtual-list",
+    );
+
+    const list = conversationList(document);
+
+    expect(list?.querySelector("textarea")).not.toBeNull();
+    expect(list?.textContent).toContain("主列表那条");
+    expect(list?.textContent).not.toContain("面板里");
+  });
+
+  it("有行却三条判据都不中:conversation 自己也当场抛(不等就绪)", () => {
+    document.body.innerHTML = twoListsHtml(keylessRow("某条"))
+      .replace(
+        "ds-virtual-list ds-virtual-list--printable ds-scroll-area--enabled",
+        "ds-virtual-list",
+      )
+      .replace("<textarea></textarea>", "");
+    let code: string | undefined;
+    try {
+      conversation(document);
+    } catch (error) {
+      code = error instanceof PageError ? error.code : undefined;
+    }
+
+    expect(code).toBe(ACTION_ERROR_PAGE_CHANGED);
+  });
+
   it("三条判据都不中而页面上有行:当场 page-changed,一拍都不等", async () => {
     // 去掉写作框(①②)与 --printable(②),行里也没有 .ds-message(③)-- 认不出对话列表
     document.body.innerHTML = twoListsHtml(keylessRow("某条"))
@@ -341,6 +417,20 @@ describe("角色:渲染层(气泡)", () => {
     const row = bubbleRow(
       '<div data-bg="rgb(249, 250, 251)" data-radius="12px" data-left="0" data-right="752">' +
         '<pre>{"tool": "ls"}</pre></div>',
+    );
+    expect(roleOf(row, attributeProbe)).toBe("assistant");
+  });
+
+  it("助手:整宽带底色的圆角块也不算气泡(气泡判据是'不满宽 + 圆角')", () => {
+    const row = bubbleRow(
+      '<div data-bg="rgb(249, 250, 251)" data-radius="22px" data-left="0" data-right="752">整宽的块</div>',
+    );
+    expect(roleOf(row, attributeProbe)).toBe("assistant");
+  });
+
+  it("没画底色的圆角块不算气泡(透明圆角容器满地都是,颜色不作判据不等于不看有没有色)", () => {
+    const row = bubbleRow(
+      '<div data-bg="rgba(0, 0, 0, 0)" data-radius="22px" data-left="88" data-right="752">没底色</div>',
     );
     expect(roleOf(row, attributeProbe)).toBe("assistant");
   });
@@ -561,6 +651,38 @@ describe("虚拟列表:只有视口里的行在 DOM", () => {
     expect(result.messages).toHaveLength(2);
     expect(itemWrites).toEqual([]); // 一屏都看不见,写它等于每轮挪 1px
     expect(listWrites).toEqual([0, 100, 200, 0]);
+  });
+
+  it("内层 overflow:auto 但压根没溢出(scrollHeight 就这么多)→ 跳过它,用外层", async () => {
+    document.body.innerHTML = conversationHtml();
+    const itemWrites = stubLayer(document.querySelector(".ds-virtual-list-items")!, "auto", 300);
+    const listWrites = stubLayer(document.querySelector(".ds-virtual-list")!, "auto", 100);
+
+    await listMessages(frameOf("messages.list"));
+
+    // 撑着全部行却不溢出的那一层写它一动不动,真滚的是外层.
+    expect(itemWrites).toEqual([]);
+    expect(listWrites).toEqual([0, 100, 200, 0]);
+  });
+
+  it("内层 overflow-y:hidden 但真滚得动 → 就是它(overflow 三样里 hidden 也算)", async () => {
+    document.body.innerHTML = conversationHtml();
+    const itemWrites = stubLayer(document.querySelector(".ds-virtual-list-items")!, "hidden", 100);
+
+    await listMessages(frameOf("messages.list"));
+
+    expect(itemWrites).toEqual([0, 100, 200, 0]);
+  });
+
+  it("开局不在顶上:回顶后要等那一屏挂上,不然第一屏漏掉(顺序也就错)", async () => {
+    const screens = [[keyRow(1, "user")], [keyRow(2, "assistant")]];
+    const { view, settle } = laggingScreens(screens, 1);
+    view.scrollTop = 100; // 用户先前翻到第二屏,挂载慢一帧
+    await settle();
+
+    const result = await readMessages(view, settle);
+
+    expect(result.map((m) => m.text)).toEqual(["第 1 问", "第 2 答"]);
   });
 });
 
