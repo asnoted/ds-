@@ -8,6 +8,7 @@ import {
   hasReplyAnchor,
   isInjectableReply,
   isKnownFailureKind,
+  isReplyPayload,
   okPayload,
   parseReplyPayload,
   REPLY_ANCHOR,
@@ -92,6 +93,28 @@ describe("载荷同构", () => {
   });
 });
 
+describe("isReplyPayload / 线上正文的逆", () => {
+  // 认得出形状才让载荷进流程;正文那半由 `parseReplyPayload` 解,解出来的值经这儿再认一次.
+  it("ok 载荷:answer 得是字符串", () => {
+    expect(isReplyPayload({ status: "ok", answer: "答案" })).toBe(true);
+    expect(isReplyPayload({ status: "ok", answer: 42 })).toBe(false);
+    expect(isReplyPayload({ status: "ok" })).toBe(false);
+  });
+
+  it("error 载荷:error 得是字符串", () => {
+    expect(isReplyPayload({ status: "error", error: "relay-unreachable" })).toBe(true);
+    expect(isReplyPayload({ status: "error", error: 42 })).toBe(false);
+    expect(isReplyPayload({ status: "error" })).toBe(false);
+  });
+
+  it("认不出的形状整个作废", () => {
+    expect(isReplyPayload({ status: "loading" })).toBe(false);
+    expect(isReplyPayload(null)).toBe(false);
+    expect(isReplyPayload([])).toBe(false);
+    expect(isReplyPayload("agent:")).toBe(false);
+  });
+});
+
 describe("isInjectableReply / 失败不进对话流", () => {
   it("status: ok 才回灌进页面", () => {
     expect(isInjectableReply(okPayload("答案"))).toBe(true);
@@ -114,6 +137,13 @@ describe("hasReplyAnchor / 首行锚认领", () => {
     expect(hasReplyAnchor("开头一行\nagent:")).toBe(false);
     expect(hasReplyAnchor("agent 你好")).toBe(false);
     expect(hasReplyAnchor("")).toBe(false);
+  });
+
+  it("锚是**整行**,不是前缀", () => {
+    // 前缀式判定会把人在对话框里打的"agent: 你好"认成回灌 --
+    // 那 `wait.ts` 就会把人的消息当成"我灌的那条出来了",白判一次成功.
+    expect(hasReplyAnchor("agent:你好")).toBe(false);
+    expect(hasReplyAnchor("agent: 你好")).toBe(false);
   });
 });
 
