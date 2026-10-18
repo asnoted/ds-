@@ -79,6 +79,13 @@ describe("三道闸名单与限速名单回指到注册行(加动作忘归类当
       }
     }
   });
+
+  it("发送原语都受'代你发言'闸(受闸的是所有发送)", () => {
+    // 上两条对的是"名单与行上那个标志自洽", 名单又是从标志派生的, 所以标志本身翻掉谁都拦不住:
+    // `send.enter` 的 speak 改成 false, 三个闸名单照旧自洽, 而 agent 已经能不打招呼发言了.
+    const loose = [...SEND_PRIMITIVES].filter((name) => !SPEAK_GATED_ACTIONS.has(name));
+    expect(loose, `这些发送原语没受闸: ${loose.join(", ")}`).toEqual([]);
+  });
 });
 
 describe("标志是显式写出来的,不靠推断(ADR-0006 红线)", () => {
