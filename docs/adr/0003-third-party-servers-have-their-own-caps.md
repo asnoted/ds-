@@ -53,7 +53,8 @@
   进程(包已缓存; 真机上量到 1.7s), 对"手里有会话"的 server 是它自己的事(它反正没在时限内
   答上来).
 - **代价: 同一 server 上别的在飞请求会被一起叫醒成 `tool-not-running`**(`_fail_all` 的既有
-  语义). 扩展是一趟一块地打(ADR-0005), 这种并发本来罕见.
+  语义; 真机上量到过: 卡住那件 8.02s 到点, 2 秒后起的那件在同一刻收下 `tool-not-running`).
+  扩展是一趟一块地打(ADR-0005), 这种并发本来罕见.
 - **截断处写着原长**: 模型知道自己看的是前多少字, 会改问法, 而不是拿半截正文当全貌.
 - **限额是常量, 不当配置项**: 要调就改常量(有测试钉着), 免得一份 `.env` 把它们改成 0.
 
@@ -77,19 +78,6 @@ uv run pytest tests/test_gateway.py -q -k 'grandchild'
 限额那三条在 `tests/test_gateway.py` 与 `dsb/server.py` 的启动日志里; 60s 替身与逐刻读数见
 `docs/evidence/gateway-timeouts.md`.
 
-## 未验证项
-
-- ~~**真机上没制造过第三方 MCP server 卡死**: 这条是在替身 server 上量的. 真配着 `npx` 系
-  server 卡住时会怎样(重启要多久, 包里有没有要重下的东西)没量.~~ -- **已量(2026-10-18)**:
-  真配 `npx -y @modelcontextprotocol/server-filesystem` 一回(另指一份 `mcp.json`, 另起在
-  8799, 不动 env-up 那份): 冷启动 3.9s / 暖启动 1.7s(握手那档 30s 够用), 真卡死 20.02s 回
-  `tool-timeout`, 掐掉之后再要 1.70s 拿到答复(**包没重下**). 同一轮还揪出一个洞: 只杀直接
-  孩子会把 `node <包>` 那个孙子留在进程表上 -- 已改成收整间会话; 逐刻读数与那次进程表见
-  `docs/evidence/gateway-timeouts.md`.
-- **"并发那条代价"只在代码上读出来**: 扩展一趟一块地打, 造不出"别的在飞请求被一起打断"的
-  现场, 所以那条是读代码得出的, 不是实测.
-- ~~**"永不回头"没构造出来**: 替身是"睡 6 秒", 能自愈; 真正死锁的孩子没有替身.~~
-  -- **已构造(2026-10-17)**: 替身多一条 `stuck` 岔路(不答, 还把自己收到的 `SIGTERM` 设成
-  忽略, 同时写下自己的 pid), 于是"断掉"与"等它自己好"分得开; 判据是
-  `tests/test_gateway.py::test_a_deadlocked_child_is_killed_not_left_behind`(超时那一刻
-  那个 pid 从进程表上消失). 把 `self.stop(grace=0)` 拿掉, 它当场变红.
+挂过的三件未验证项 -- 真机上 `npx` 系 server 卡住与重启,同一 server 上别的在飞请求,"永不
+回头"的孩子 -- 2026-10-18 都量过了(替身那件是 2026-10-17 构造的); 读数与来历一并留在
+`docs/evidence/gateway-timeouts.md`.
