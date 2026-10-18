@@ -24,16 +24,25 @@ export function relayMcpUrl(): string {
 }
 
 /**
- * 一次 `tools/call` 的扩展侧兜底超时:dsb 侧等子进程的上限是 `DSB_TOOL_TIMEOUT`
- * (默认 120s,见 `dsb/gateway.py`),这里宽一个 HTTP 往返的量级--先到的必须是
- * 中继:扩展先 abort 报出来的只有没信息量的"中继不可达",还会白扔一次正在跑的
- * 调用.dsb 没挂时它自己会回 `tool-timeout`,那是有信息量的码.
+ * 一次 `tools/call` 的扩展侧兜底超时:中继等一次调用最坏走**两段**--子进程死了先重起
+ * 一次(`DSB_CONNECT_TIMEOUT`,默认 30s),再等工具自己(`DSB_TOOL_TIMEOUT`,默认
+ * 120s),见 `dsb/gateway.py` 的 `call_tool`.这里盖住两段之和再宽一点,因为先到的必须
+ * 是中继:扩展先 abort,报出来的只有没信息量的"中继不可达",还会白扔一次正在跑的调用;
+ * 中继自己会回 `tool-timeout`,那是有信息量的码.
+ *
+ * 用户把 `DSB_TOOL_TIMEOUT` 调得比这里还大时这条口径就破了--扩展没有输入面,读不到
+ * 中继的配置(这一条由 `tests/test_relay_contract.py` 盯着,别只改一边).
  */
-export const MCP_CALL_TIMEOUT_MS = 130_000;
+export const MCP_CALL_TIMEOUT_MS = 170_000;
 /** 探活(`ping`)只问在不在,快点回来. */
 export const MCP_PING_TIMEOUT_MS = 5_000;
-/** `tools/list`(工具表,喂给协议说明)同样只要个"在不在 + 表在不在". */
-export const MCP_LIST_TIMEOUT_MS = 10_000;
+/**
+ * `tools/list`(工具表,喂给协议说明)同样只要个"在不在 + 表在不在".这条路今天**不重起**
+ * 子进程(表在中继启动时一次拉好、留一份,见 `dsb/gateway.py` 的 `list_tools`),空表会
+ * 现拉一次,最坏是发现超时 `DSB_DISCOVERY_TIMEOUT`(默认 20s).这里仍按"起 + 发现"两段
+ * 留量:先 abort 的必须是中继,多等一条腿比让扩展抢在中继前面便宜.
+ */
+export const MCP_LIST_TIMEOUT_MS = 60_000;
 
 /** 网络层失败(没起,被拦,超时)折成的载荷:中继没有响应. */
 export const FAILURE_RELAY_UNREACHABLE = "relay-unreachable";

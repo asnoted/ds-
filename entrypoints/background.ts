@@ -473,7 +473,7 @@ export default defineBackground(() => {
 
   /**
    * MV3 的 service worker 闲置 30 秒就会被收走,而工具调用这一趟可能更久
-   * (`MCP_CALL_TIMEOUT_MS` 是 130s);在途时点一下扩展 API 把它按住,
+   * (`MCP_CALL_TIMEOUT_MS` 是 170s);在途时点一下扩展 API 把它按住,
    * 不改任何业务行为.
    */
   function keepAliveWhileSending(): () => void {
