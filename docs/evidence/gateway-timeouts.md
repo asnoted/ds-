@@ -61,8 +61,10 @@ uv run pytest tests/test_gateway.py -q -k 'hanging'
 
 ## 未验证项
 
-- **真机上没制造过第三方 MCP server 卡死**:这条是在替身 server 上量的.真配着 npx 系
-  server 卡住时会怎样(重启要多久,包里有没有要重下的东西)没量.
+- ~~**真机上没制造过第三方 MCP server 卡死**:这条是在替身 server 上量的.真配着 npx 系
+  server 卡住时会怎样(重启要多久,包里有没有要重下的东西)没量.~~ --
+  **已量(2026-10-18)**:见下面那一节;结论是 30s 握手档够用, 包不用重下, 但那一轮揪出了
+  "只杀壳,孙子留着"的洞, 已一并修掉.
 - **并发那条只在代码上读出来**:扩展一趟一块地打,造不出"别的在飞请求被一起打断"的现场,
   所以那条代价是读代码得出的,不是实测.
 - ~~**"永不回头"没构造出来**:替身是"睡 6 秒",能自愈;真正永不回头的孩子(死锁)没有替身,
@@ -70,3 +72,38 @@ uv run pytest tests/test_gateway.py -q -k 'hanging'
   `stuck` 岔路(不答 + 忽略 `SIGTERM` + 写下自己的 pid),判据见
   [ADR-0003 的 `## 判据`](../adr/0003-third-party-servers-have-their-own-caps.md);
   结论不变(超时就断,只有真的 `kill` 收得动它),但那一格现在是量出来的.
+
+## 真机上量一回(2026-10-18)
+
+这回不是替身:真配一个 npx 系第三方 server.为不动 env-up 那份环境,另写一份临时 mcp.json
+(`DSB_MCP_CONFIG` 指过去),中继另起在 8799(`DSB_PORT`),工作根是个空的临时目录.
+
+```json
+{
+  "mcpServers": {
+    "fs": { "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "<空目录>"] }
+  }
+}
+```
+
+| 量的是                          | 读数                                                  |
+| ------------------------------- | ----------------------------------------------------- |
+| 暖启动(包已在 npx 缓存里)       | 1.7s 起完 19 件工具(启动那行"限额"落地)               |
+| 冷启动(换一个没下过的包)        | 3.9s 起完(握手档 `DSB_CONNECT_TIMEOUT` 默认 30s,够)   |
+| 卡死那一下(读一根没人写的 FIFO) | 20.02s 回 `tool-timeout`(这一轮把调用档压到 20s 好等) |
+| 掐掉之后立刻再要一次            | 1.70s 拿到答复 -- 重起了孩子,**包没重下**(npx 缓存)   |
+| 再要一次(稳了)                  | 0.001s                                                |
+
+日志也是替身那套形状:`server-down tool=fs error=tool-timeout` 加
+`tool-fail tool=fs_read_file took_ms=20018`.
+
+**同一轮揪出的洞**:掐掉之后进程表上多了一个 `node .../mcp-server-filesystem`,父进程是 1.
+`npx -y` 的形状是三层 -- 中继 → `npm exec`(壳)→ `node <包>`(真在跑的那个);`stop()`
+只 `proc.kill()` 直接孩子,壳一死孙子换了爹照样转,正是这条 ADR 要绝掉的"还在转的孩子",
+只是换了一层.已改成收摊送整间会话(`start_new_session=True` 加 `os.killpg`),回归是
+`tests/test_gateway.py::test_stop_reaps_the_grandchild_not_just_the_shim`(把 `killpg`
+改回 `proc.kill()`,它当场变红).
+
+修完又量了一遍(同日,同一份配置):卡死收摊后进程表上一个都不剩(改前那一个父进程是 1 的
+`node` 不见了);重起 1.50s 拿到答复,链子是中继 → `npm exec` → `node`,一个不多一个不少;
+中继自己收摊(`SIGTERM` 走 `finally` 里那句 `gateway.stop()`)也一个不剩.

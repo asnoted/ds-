@@ -30,6 +30,7 @@ import json
 import os
 import queue
 import re
+import signal
 import subprocess
 import threading
 from collections.abc import Callable, Mapping
@@ -218,6 +219,8 @@ class StdioServer:
                 bufsize=1,
                 env={**os.environ, **self._env},
                 cwd=self._cwd,
+                # 自己的孩子开间自己的会话: 收摊时那道 SIGKILL 才够得着它的后代(ADR-0003).
+                start_new_session=True,
             )
         except OSError as exc:
             log_event("server-start-broke", tool=self.name, exc=exc)
@@ -245,10 +248,14 @@ class StdioServer:
             raise
 
     def stop(self, grace: float = STOP_GRACE) -> None:
-        """收摊:断 stdin 让它自己退,给 ``grace`` 秒;仍不走就杀.
+        """收摊:断 stdin 让它自己退,给 ``grace`` 秒;仍不走就杀 -- **连它的后代一起**.
 
         ``grace=0`` 是"信道卡住"那条路(:meth:`_request` 过线)用的:它多半没在读 stdin,
         体面退那几秒白等,还要算在用户头上--断掉就走,让下一次调用起个新的(ADR-0003).
+
+        只收直接孩子不够: ``npx`` 那类形状里直接孩子是壳(``npm exec``), 真在跑的是它的
+        孙子, 壳一死孙子就没了爹照样转 -- 2026-10-18 真机上量到过(见
+        `docs/evidence/gateway-timeouts.md`), 于是收摊走整间会话.
         """
         proc, self._proc = self._proc, None
         self._fail_all()
@@ -257,15 +264,24 @@ class StdioServer:
         with contextlib.suppress(OSError, ValueError):
             if proc.stdin is not None:
                 proc.stdin.close()
-        if grace <= 0:
-            with contextlib.suppress(OSError, ValueError):
-                proc.kill()
-                proc.wait()
+        if grace > 0:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=grace)
+        self._kill_tree(proc)
+        with contextlib.suppress(OSError, ValueError):
+            proc.wait()
+
+    def _kill_tree(self, proc: subprocess.Popen[str]) -> None:
+        """SIGKILL 整间会话(``start_new_session`` 保证那是孩子自己的那一间).
+
+        壳退了、孙子还在时, 进程组号仍是壳的 pid, ``killpg`` 照样够得着; 一个都不剩才抛
+        ``ProcessLookupError``, 那时退回直接孩子兜一下(它多半也已经没了).
+        """
+        with contextlib.suppress(OSError, ValueError):
+            os.killpg(proc.pid, signal.SIGKILL)
             return
-        try:
-            proc.wait(timeout=grace)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        with contextlib.suppress(OSError, ValueError):
+            proc.send_signal(signal.SIGKILL)
 
     # ---- 读口 ----
 

@@ -25,8 +25,10 @@
    件, 工具调用 ...s", 生效值一眼可查.
 5. **过了调用时限就断掉那个孩子**: `_request` 摘掉待收的队列项之后调
    `self.stop(grace=0)`, 再抛 `tool-timeout`. `grace=0` 是"不等它体面退"(先断 stdin,
-   再立刻 `kill` + `wait` 收尸) -- 卡住的孩子没在读 stdin, 默认那 3 秒(`STOP_GRACE`)
-   是白等, 还算在用户头上. 重启不用新代码: `call_tool` 那句"死了先试着重起一次"自然接上.
+   再立刻收尸 -- 收的是**整间会话**: `npx` 系 server 的直接孩子只是壳, 真在跑的是它的
+   孙子, 只杀壳等于没杀, 见 `docs/evidence/gateway-timeouts.md`) -- 卡住的孩子没在读
+   stdin, 默认那 3 秒(`STOP_GRACE`)是白等, 还算在用户头上. 重启不用新代码: `call_tool`
+   那句"死了先试着重起一次"自然接上.
 6. **不新增码, 不新增上报面**: 模型看到的还是 `tool-timeout`; 日志记一笔
    `server-down tool=... error=tool-timeout`(`dsb/log.py` 的册子里本来就有 `server-down`).
 
@@ -48,7 +50,8 @@
 - **重试即恢复**: 模型拿着 `tool-timeout` 再打一次就落在新孩子上(替身 server 实测:
   卡住期间重试由"再等一个超时"变成 0.0s 拿到答复).
 - **代价: 子 server 的暖状态丢掉** -- 下一次调用要重新握手. 对 `npx` 系 server 就是再起一次
-  进程(包已缓存), 对"手里有会话"的 server 是它自己的事(它反正没在时限内答上来).
+  进程(包已缓存; 真机上量到 1.7s), 对"手里有会话"的 server 是它自己的事(它反正没在时限内
+  答上来).
 - **代价: 同一 server 上别的在飞请求会被一起叫醒成 `tool-not-running`**(`_fail_all` 的既有
   语义). 扩展是一趟一块地打(ADR-0005), 这种并发本来罕见.
 - **截断处写着原长**: 模型知道自己看的是前多少字, 会改问法, 而不是拿半截正文当全貌.
@@ -63,8 +66,12 @@ uv run pytest tests/test_gateway.py -q -k 'hanging'
 # 绿: "永不回头"那一种(不答 + 无视 SIGTERM)也要真被 kill 收尸(替身写下自己的 pid)
 uv run pytest tests/test_gateway.py -q -k 'deadlocked'
 
+# 绿: 收摊收的是整间会话 -- 替身挂的那个孙子(壳死了它也没爹)也一起没(真机那笔的回归)
+uv run pytest tests/test_gateway.py -q -k 'grandchild'
+
 # 红(它真是这条决定撑着的): 把 dsb/gateway.py 里那句 `self.stop(grace=0)` 拿掉,
 # 上面那两条当场变红 -- 重试自己也会超时, 死锁那个孩子也还赖在进程表上.
+# 红(收摊那道 `os.killpg`): 把 `_kill_tree` 换回 `proc.kill()`, 第三条变红(孙子留下来).
 ```
 
 限额那三条在 `tests/test_gateway.py` 与 `dsb/server.py` 的启动日志里; 60s 替身与逐刻读数见
@@ -72,8 +79,13 @@ uv run pytest tests/test_gateway.py -q -k 'deadlocked'
 
 ## 未验证项
 
-- **真机上没制造过第三方 MCP server 卡死**: 这条是在替身 server 上量的. 真配着 `npx` 系
-  server 卡住时会怎样(重启要多久, 包里有没有要重下的东西)没量.
+- ~~**真机上没制造过第三方 MCP server 卡死**: 这条是在替身 server 上量的. 真配着 `npx` 系
+  server 卡住时会怎样(重启要多久, 包里有没有要重下的东西)没量.~~ -- **已量(2026-10-18)**:
+  真配 `npx -y @modelcontextprotocol/server-filesystem` 一回(另指一份 `mcp.json`, 另起在
+  8799, 不动 env-up 那份): 冷启动 3.9s / 暖启动 1.7s(握手那档 30s 够用), 真卡死 20.02s 回
+  `tool-timeout`, 掐掉之后再要 1.70s 拿到答复(**包没重下**). 同一轮还揪出一个洞: 只杀直接
+  孩子会把 `node <包>` 那个孙子留在进程表上 -- 已改成收整间会话; 逐刻读数与那次进程表见
+  `docs/evidence/gateway-timeouts.md`.
 - **"并发那条代价"只在代码上读出来**: 扩展一趟一块地打, 造不出"别的在飞请求被一起打断"的
   现场, 所以那条是读代码得出的, 不是实测.
 - ~~**"永不回头"没构造出来**: 替身是"睡 6 秒", 能自愈; 真正死锁的孩子没有替身.~~

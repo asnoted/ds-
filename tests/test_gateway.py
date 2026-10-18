@@ -31,11 +31,15 @@ from dsb.gateway import (
 
 #: 替身 MCP server:说标准 JSON-RPC over stdio.按 arguments.text 的暗号走几种岔路.
 FAKE_SERVER = """
-import json, os, signal, sys, time
+import json, os, signal, subprocess, sys, time
 
 # 真正死锁那一种(ADR-0003 未验证项里"永不回头"): 不答, 还无视 SIGTERM --
 # 只有真的 kill 才收得动. pid 写文件, 好让测试看它到底死没死.
 PID_FILE = os.environ.get("FAKE_PID_FILE")
+
+# 孙子: 一样睡, 一样无视 SIGTERM. `npx` 形状里直接孩子是壳, 真在跑的是它 --
+# 壳一死孙子就没了爹, 于是"收摊"必须够得着整间会话(2026-10-18 真机上量到过).
+CHILD = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(3600)"
 
 # 工具件数可配:单服务工具数上限那条判据要拿一张超长的表来试(第一件恒叫 echo).
 TOOLS = [
@@ -77,6 +81,9 @@ for line in sys.stdin:
             if PID_FILE:
                 with open(PID_FILE, "w", encoding="utf-8") as handle:
                     handle.write(str(os.getpid()))
+                kid = subprocess.Popen([sys.executable, "-c", CHILD])  # noqa: S603
+                with open(PID_FILE + ".child", "w", encoding="utf-8") as handle:
+                    handle.write(str(kid.pid))
             while True:
                 time.sleep(3600)
         if text == "die":
@@ -269,6 +276,24 @@ def test_a_deadlocked_child_is_killed_not_left_behind(fake_script: Path, tmp_pat
         assert ERROR_TIMEOUT in payload["text"] and failed
         pid = int(read_child_pid(pid_file))
         assert wait_until_gone(pid), f"孩子 {pid} 还活着(该被 kill 收尸)"
+    finally:
+        gate.stop()
+
+
+def test_stop_reaps_the_grandchild_not_just_the_shim(fake_script: Path, tmp_path: Path) -> None:
+    """真机那笔(2026-10-18)的回归: 直接孩子是壳时, 只 kill 壳会把孙子留在进程表上.
+
+    配着 `npx -y <包>` 的 server 卡死, 收摊杀掉的是 `npm exec` 那层壳, 真在跑的
+    `node <包>` 换了个爹继续转。替身现在也挂一个无视 SIGTERM 的孙子, 并把它的 pid 写进
+    `<pid 文件>.child`; 超时收摊之后两个都该没了。
+    """
+    pid_file = tmp_path / "child.pid"
+    gate = make_gateway(fake_script, timeout=0.4, env={"FAKE_PID_FILE": str(pid_file)})
+    try:
+        payload, failed = gate.tools()[0].handler({"text": "stuck"})
+        assert ERROR_TIMEOUT in payload["text"] and failed
+        kid = int(read_child_pid(Path(f"{pid_file}.child")))
+        assert wait_until_gone(kid), f"孙子 {kid} 还活着(该跟着壳一起收)"
     finally:
         gate.stop()
 
