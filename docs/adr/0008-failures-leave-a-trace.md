@@ -104,7 +104,12 @@
 pnpm vitest run src/lib/failureframe.test.ts src/lib/continuationfail.test.ts
 uv run scripts/page-action.py visible-capture     # 抓不抓得到
 uv run scripts/page-action.py frame-fail          # 抓不到时不影响原失败路径
+uv run pytest tests/test_log.py -q                # 事件名册子 ↔ 调用点 ↔ 篇里那张表
 uv run scripts/page-action.py storage get --keys '["ds-/failure-frames"]'   # 帧落没落, 多大(开发期)
+
+# 红: 把某个调用点的事件名打错一个字母(dsb/gateway.py 的 server-down → server-dow),
+# 那条"调用点对着册子核"当场红(11 条里 1 条); 只改 tests/test_log.py 里那份册子而不动篇,
+# 册子那两条一起红(同一次量到 2 条).
 ```
 
 `frame-fail` 那条负路的真机读数(痕照落, 帧没多, 跑完原样)与两个探针坑见

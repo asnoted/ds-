@@ -90,6 +90,9 @@
 ```sh
 pnpm vitest run src/lib/continuation.test.ts src/lib/armed.test.ts \
   src/lib/fenceround.test.ts src/lib/fencecalls.test.ts
+
+# 红: 把 src/lib/continuation.ts 的 CONTINUATION_MARKER 里那个词换一个字, armed.test.ts 里
+# 认短标记那 2 条当场红(52 条里 2 条; 首行锚与"手打的永远不等于标记"都咬着它).
 ```
 
 `continuation.test.ts` 里钉着"两边同数"那条不等式, 别让它悄悄回去. 一轮多块那笔额度在

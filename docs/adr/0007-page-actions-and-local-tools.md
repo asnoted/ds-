@@ -78,6 +78,10 @@
 pnpm vitest run src/lib/action.test.ts src/lib/page.test.ts src/lib/localtools.test.ts \
   src/lib/fenceround.test.ts
 uv run pytest tests/test_fixtures.py -q
+
+# 红: 把 protocol/fixtures/action.json 里一条错误码改一个字符(`page-changed` 改成 page_changed),
+# tests/test_fixtures.py 那条"用例自洽"当场红(15 条里 1 条). 反过来只改 src/lib/action.ts 里
+# 那个常量值, 这整排照旧绿 -- 两半不共读这份表: TS 那半的用例引常量.
 ```
 
 `send.page` 两步序与闸关着那一半的真机读数见 `docs/evidence/speak-gate.md`.

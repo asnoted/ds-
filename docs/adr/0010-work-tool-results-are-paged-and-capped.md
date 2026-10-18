@@ -169,6 +169,9 @@ uv run scripts/measure-result-forms.py grep --pattern 'ERROR_' --json
 
 # 量法(两条闸都看 _units(...) 与末行)
 #   render_page(["x" * 100] * 400, 1, 200)  /  cap_result(...)
+
+# 红: 把 dsb/work.py 的 WORK_READ_BYTES 从 16_000 改成 15_000, 那条"结果闸就是一页 read"
+# 当场红(tests/test_work.py, 84 条里 1 条).
 ```
 
 三档实测(每轮多少字), 那个真 bug(脚注总数多算一行), 单行标注与翻页脚注到模型手里的真机

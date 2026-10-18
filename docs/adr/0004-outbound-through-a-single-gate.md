@@ -79,6 +79,10 @@
 ```sh
 uv run pytest tests/test_send_pace.py -q          # 两半对拍同一份 send-pace.json
 pnpm vitest run src/lib/outbound.test.ts src/lib/gate.test.ts
+
+# 红(限速那格真是出站窗口撑着的): 把 src/lib/outbound.ts 抽样的那句改成 `const ratio = 0`,
+# outbound.test.ts 与 gate.test.ts 当场 12 条红(25 条里 12 条); 而 pytest 那半照旧绿 --
+# 它守的是两边共读那份 send-pace.json 的形状, 不是实现.
 ```
 
 统计形状由带种子的单测钉住(脊背单调涨到 6 秒两格再单调落下, 最高两格必须是紧贴 6 秒的

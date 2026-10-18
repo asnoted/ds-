@@ -80,6 +80,9 @@ ds-button--capsule ds-button--xs ds-button--icon-relative-l` + 同一个哈希 `
 uv run scripts/page-action.py evidence      # 真机对账: 留档与活页逐颗比
 uv run pytest tests/test_evidence.py -q     # CI 对拍: 用例不许手抄
 pnpm vitest run src/lib/evidence.test.ts
+
+# 红: 把 protocol/evidence/controls.json 里一颗的 svg 路径末几个字符砍掉(图形断头),
+# tests/test_evidence.py 里那颗的 test_every_entry_is_complete 当场红(24 条里 1 条).
 ```
 
 真机对账的读数(2026-10-18 上午两轮: 侧栏展开一轮与收起一轮, 都是 一致 13 / 未比 6 / 过时 0,

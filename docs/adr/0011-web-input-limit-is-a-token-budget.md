@@ -73,6 +73,9 @@ pnpm vitest run src/lib/continuation.test.ts   # 预算常量 90 万被钉住(�
 uv run pytest tests/test_readme_limits.py -q   # README 那张限额表里的 90 万与它同源
 uv run scripts/count-tokens.py --file <file>   # 离线数 token(要本机有那份分词器)
 uv run scripts/page-action.py sse --file <大输入>   # 真机: 按 finish_reason 判拒收
+
+# 红: 把 src/lib/continuation.ts 的 MAX_SAFE_INPUT_TOKENS 改成 800_000, continuation.test.ts 里
+# 钉常量那 1 条当场红(13 条里 1 条).
 ```
 
 一路踩的坑(全文搜残留渲染污染判据, 素材自带 AI 免责声明被误计成回复, `chat.new` 是 SPA 路由

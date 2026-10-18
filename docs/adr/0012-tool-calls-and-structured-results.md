@@ -76,6 +76,9 @@
 pnpm vitest run src/lib/fence.test.ts src/lib/fixtures.test.ts
 uv run scripts/measure-result-forms.py grep --pattern '续聊' --pattern 'WORK_' \
   --pattern 'send-failed' --pattern 'ADR-[0-9]' --pattern 'def ' --pattern '\.test\.ts'
+
+# 红: 把 src/lib/fence.ts 出口那句 `JSON.stringify(parsed)` 改成带缩进的
+# `JSON.stringify(parsed, null, 2)`, fence.test.ts 当场 7 条红(69 条里 7 条).
 ```
 
 样本由 **dsb 自己的 `grep`** 在本仓上跑出来, 不是照形状手写. 协议规范与 SDK 的原文引用,
