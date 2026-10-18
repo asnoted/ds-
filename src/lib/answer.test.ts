@@ -207,6 +207,40 @@ describe("detectToolCalls / 站点那条 OT 增量流", () => {
     expect(extractAssistantAnswer(onlyOps)).toBe("");
     expect(detectToolCalls(onlyOps)).toEqual([]);
   });
+
+  it("批处理包里的正文操作也递一遍(token 那样的旁路操作才不碰)", () => {
+    const raw = [
+      'data: {"v":{"response":{"fragments":[{"id":3,"type":"RESPONSE","content":"前半句"}]}}}',
+      'data: {"p":"response","o":"BATCH","v":[{"p":"response/fragments/-1/content","v":"后半句"}]}',
+      "",
+    ].join("\n");
+    expect(extractAssistantAnswer(raw)).toBe("前半句后半句");
+  });
+
+  it("一条回答排两片:正文直接接上,中间不塞东西", () => {
+    const raw = [
+      'data: {"v":{"response":{"fragments":[{"id":3,"type":"RESPONSE","content":"```send\\n仓库里"}]}}}',
+      'data: {"p":"response/fragments","o":"APPEND","v":[{"id":4,"type":"RESPONSE","content":"dsb 的入口在哪?\\n```"}]}',
+      "",
+    ].join("\n");
+    expect(detectToolCalls(raw)).toEqual(["仓库里dsb 的入口在哪?"]);
+  });
+
+  it("形状认得但接不上:不当成增量流,也不抛", () => {
+    const noFragments = [
+      'data: {"v":{"response":{"status":"WIP"}}}',
+      'data: {"choices":[{"delta":{"content":"普通回答"}}]}',
+      "",
+    ].join("\n");
+    expect(extractAssistantAnswer(noFragments)).toBe("普通回答");
+
+    const dangling = [
+      'data: {"v":{"response":{"fragments":[]}}}',
+      'data: {"p":"response/fragments/9/content","v":"没这一片"}',
+      "",
+    ].join("\n");
+    expect(extractAssistantAnswer(dangling)).toBe("");
+  });
 });
 
 describe("detectAskQuestion / 检测点(#26)", () => {
