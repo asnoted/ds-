@@ -111,6 +111,26 @@ describe("message.* 动作", () => {
     expect([...clicks.entries()]).toEqual([[`1.${position}`, 1]]);
   });
 
+  it("message.read 点的是带朗读锚的那一颗(表里那个数字不算数)", () => {
+    conversation(assistantRow(1, "答"));
+    const anchor = document.querySelector('[aria-label="朗读"]') as HTMLElement;
+    let clicked = 0;
+    anchor.addEventListener("click", () => {
+      clicked += 1;
+    });
+
+    expect(act("message.read", { index: -1 })).toEqual({});
+    expect(clicked).toBe(1);
+  });
+
+  it("认不出的行不占位(与 messages.list 同一个消息行口径)", () => {
+    document.body.innerHTML = `<div class="ds-virtual-list ds-virtual-list--printable"><div class="ds-virtual-list-items"><div class="ds-virtual-list-visible-items"><div data-virtual-list-item-key="0">分隔条</div>${assistantRow(1, "答")}</div></div></div>`;
+    const clicks = trackClicks();
+
+    expect(act("message.copy", { index: 0 })).toEqual({});
+    expect([...clicks.entries()]).toEqual([["1.1", 1]]);
+  });
+
   it("index:非负从头数,负数从末尾数", () => {
     conversation(
       userRow(1, "问一"),
@@ -151,6 +171,16 @@ describe("message.* 动作", () => {
     conversation(assistantRow(1, "答"));
     const toolbar = document.querySelector('[aria-label="朗读"]')?.parentElement as HTMLElement;
     toolbar.append(toolbar.children[0]?.cloneNode(true) as Node);
+    const clicks = trackClicks();
+
+    expect(thrownCode(() => act("message.like", { index: -1 }))).toBe(ACTION_ERROR_PAGE_CHANGED);
+    expect(clicks.size).toBe(0);
+  });
+
+  it("工具栏里有一颗不是 button:page-changed,不点(逐字节同形那条判据)", () => {
+    conversation(assistantRow(1, "答"));
+    const toolbar = document.querySelector('[aria-label="朗读"]')?.parentElement as HTMLElement;
+    toolbar.children[0]?.removeAttribute("role");
     const clicks = trackClicks();
 
     expect(thrownCode(() => act("message.like", { index: -1 }))).toBe(ACTION_ERROR_PAGE_CHANGED);
@@ -229,6 +259,14 @@ describe("code.* 动作", () => {
     act("code.copy", { index: 0 });
 
     expect(clicks.get("0.下载")).toBeUndefined();
+  });
+
+  it("代码块只数对话列表里的:列表外的同形块不占位", () => {
+    document.body.innerHTML = `${CODE_BLOCK}<div class="ds-virtual-list ds-virtual-list--printable"><div class="ds-virtual-list-items"><div class="ds-virtual-list-visible-items">${codeRow(1)}${codeRow(2)}</div></div></div>`;
+    const clicks = codeLabelClicks();
+
+    expect(act("code.copy", { index: 0 })).toEqual({});
+    expect([...clicks.entries()]).toEqual([["1.复制", 1]]);
   });
 
   it("块里找不到那个文字:page-changed,不点", () => {
