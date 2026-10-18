@@ -45,6 +45,8 @@ def logged_event_names(source: str) -> set[str]:
     """抽出 `log_event(...)` **第一个实参**里的事件名(三元里的两条都算).
 
     只看第一个实参: 后面的字段里也可能有字符串(`missing="command"`), 那些不是事件名.
+    第一个实参里的字符串一律算 -- 别按册子的形状(`[a-z-]`)筛: 名字里混进 `_` / 数字 /
+    大写时整个会溜出扫描, 而那正是"打错一个字"里最该逮住的一种(2026-10-18 量到).
     """
     found: set[str] = set()
     for match in re.finditer(r"log_event\(", source):
@@ -60,7 +62,7 @@ def logged_event_names(source: str) -> set[str]:
                 if depth == 0:
                     break
             at += 1
-        found |= set(re.findall(r'"([a-z][a-z-]*)"', source[match.end() : at]))
+        found |= set(re.findall(r'"([^"]+)"', source[match.end() : at]))
     return found
 
 
@@ -147,6 +149,16 @@ def test_the_event_names_are_the_catalogued_ones() -> None:
         used |= logged_event_names(path.read_text(encoding="utf-8"))
     assert used <= EVENT_NAMES, f"册子外的事件名: {sorted(used - EVENT_NAMES)}"
     assert used >= EVENT_NAMES, f"册子里已经没人用的: {sorted(EVENT_NAMES - used)}"
+
+
+def test_the_call_site_scan_also_reads_odd_shaped_names() -> None:
+    """名字里混进 `_` / 数字 / 大写也要读出来 -- 那种形状只会是打错, 正是要逮的.
+
+    窄成册子的形状(`[a-z-]`)时, 整个名字会溜出扫描: 改一个 `server-down` 写成 `server_down`,
+    两条用例照旧绿(2026-10-18 量到).
+    """
+    source = 'log_event("server_down", tool=x)\nlog_event("tool-fail" if bad else "tool-Fail")\n'
+    assert logged_event_names(source) == {"server_down", "tool-fail", "tool-Fail"}
 
 
 #: 篇里那张名单(ADR-0008 决定 4): 从"中继侧记失败与慢的那几条"到"扩展侧是"之间, 反引号里的
