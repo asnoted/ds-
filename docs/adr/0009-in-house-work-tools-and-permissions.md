@@ -123,3 +123,12 @@ uv run pytest tests/test_work.py tests/test_work_permissions.py -q
 权限那层在测试里用真文件做过一轮(含符号链接与大小写两组绕过), 判据是"临时 root 里带标记串的
 假 `mcp.json`, 用 MCP 入口调 `read` / `grep` / `write`, 读不到标记串, 也写不进去".
 `read` 与 `grep` 的数值上限与真机读数见 ADR-0010 与 `docs/evidence/read-pages.md`.
+
+## 已知洞
+
+- **入参那一半撞墙时的现场看不出来**: `write` 的 `content` 工具侧没有上限(直接给工具 1MB 也
+  照写), 但过中继时请求体有 `MAX_BODY_BYTES` 那道墙; 撞上去中继**不读正文**, 直接断开, 回的
+  是 JSON-RPC `-32700 parse error` -- 字面说的是"解析错误", 模型看不出是"太大了", 多半原样
+  重试. 实测(2026-10-18): 同一个 `ping`, 240KB 正常回 `result`, 300KB 就是那条 `-32700`.
+  五件工具的说明里也没写这道墙, 所以模型连试的方向都没有. 真要收拾时, 在那道墙上按
+  `Content-Length` 回一条说得清的错误就够; "不读剩下的字节"那半不用动.
