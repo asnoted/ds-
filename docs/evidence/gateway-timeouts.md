@@ -119,3 +119,7 @@ uv run pytest tests/test_gateway.py -q -k 'hanging'
 
 B 是 A 到点那一刻被一起叫醒的(它自己那 8s 还没到),与"同一 server 上别的在飞请求会被一起
 叫醒成 `tool-not-running`"那句一字不差.日志同刻两笔 `tool-fail`(5985ms 与 8022ms).
+
+**这条腿现在是个脚本**:`scripts/third-party-mcp-probe.py`(用法见 `docs/probe.md`) --
+自己起一份临时中继量启动 / 卡死 / 重起, 并按"命令行带着临时根,却不是中继后代"查孤儿;
+上面这些读数它一次跑得出来(2026-10-18 跑通: 1.8s / 8.02s / 0 个 / 1.71s, 退出码 0).

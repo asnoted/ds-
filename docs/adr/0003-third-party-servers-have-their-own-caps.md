@@ -75,6 +75,14 @@ uv run pytest tests/test_gateway.py -q -k 'grandchild'
 # 红(收摊那道 `os.killpg`): 把 `_kill_tree` 换回 `proc.kill()`, 第三条变红(孙子留下来).
 ```
 
+真机那半自成一条腿(要网络: `npx` 第一次得下包, 所以不进 `pnpm quality`): 起一份临时中继
+配一件真的第三方 server, 量启动 / 卡死 / 重起, 顺手按"命令行带着临时根,却不是中继后代"
+查孤儿 -- 2026-10-18 那个"只杀壳"的洞就是它这条路上量出来的.
+
+```sh
+uv run scripts/third-party-mcp-probe.py
+```
+
 限额那三条在 `tests/test_gateway.py` 与 `dsb/server.py` 的启动日志里; 60s 替身与逐刻读数见
 `docs/evidence/gateway-timeouts.md`.
 
