@@ -48,6 +48,10 @@ describe("isOutgoingChatRequest", () => {
       isOutgoingChatRequest("POST", "https://deepseek.com.evil.example/api/v0/chat/completion"),
     ).toBe(false);
   });
+
+  it("地址本身解不开也不抛:认不出就是不碰", () => {
+    expect(isOutgoingChatRequest("POST", "http://[bad/api/v0/chat/completion")).toBe(false);
+  });
 });
 
 describe("rewriteOutgoingBody", () => {
@@ -145,6 +149,13 @@ describe("rewriteOutgoingBody", () => {
     );
   });
 
+  it("说明首行出现在正文中间不算拼过:只有整段就顶在头上才跳过", () => {
+    const text = "引用一句:[ds 协议] 这几个字是我自己打的";
+    const rewritten = rewrite(JSON.stringify({ prompt: text }), TOOLS);
+    expect(rewritten).not.toBeNull();
+    expect(JSON.parse(rewritten ?? "")["prompt"]).toBe(prependInstructions(text, TOOLS));
+  });
+
   it("工具目录跟着说明一起拼进去(隔离世界广播下来那份)", () => {
     const catalog: readonly ToolInfo[] = [
       { name: "fs_read_file", description: "[fs] 读文件内容", params: ["path", "encoding?"] },
@@ -207,6 +218,24 @@ describe("recognizeOutgoingShape / 出站请求体的一次识别", () => {
       recognizeOutgoingShape(JSON.stringify({ messages: [{ role: "assistant", content: "x" }] }))
         .pendingText,
     ).toBeNull();
+  });
+
+  it("用法一 pendingText:末条 user 的 content 不是字串时越过它往前找", () => {
+    const shape = recognizeOutgoingShape(
+      JSON.stringify({
+        messages: [
+          { role: "user", content: "老消息" },
+          { role: "user", content: [{ type: "text", text: "结构化的正文" }] },
+        ],
+      }),
+    );
+
+    expect(shape.pendingText).toBe("老消息");
+    const replaced = JSON.parse(shape.replacePending("换掉") ?? "") as {
+      messages: { content: unknown }[];
+    };
+    expect(replaced.messages[0]?.content).toBe("换掉");
+    expect(replaced.messages[1]?.content).toEqual([{ type: "text", text: "结构化的正文" }]);
   });
 
   const CONTINUATION = "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
@@ -293,5 +322,18 @@ describe("recognizeOutgoingShape / 出站请求体的一次识别", () => {
     expect(
       recognizeOutgoingShape(JSON.stringify({ text: "别的字段" })).mapAllUserTexts((text) => text),
     ).toBeNull();
+  });
+
+  it("替换与映射各起一份:同一份形状用两次,后一次看到的还是原正文(#103 共用同一次识别)", () => {
+    const shape = recognizeOutgoingShape(JSON.stringify({ prompt: "原文" }));
+
+    expect(String(JSON.parse(shape.replacePending("甲") ?? "")["prompt"])).toBe("甲");
+    expect(String(JSON.parse(shape.mapAllUserTexts((text) => `乙:${text}`) ?? "")["prompt"])).toBe(
+      "乙:原文",
+    );
+    expect(String(JSON.parse(shape.mapAllUserTexts((text) => `丙:${text}`) ?? "")["prompt"])).toBe(
+      "丙:原文",
+    );
+    expect(String(JSON.parse(shape.replacePending("丁") ?? "")["prompt"])).toBe("丁");
   });
 });
