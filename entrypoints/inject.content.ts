@@ -192,8 +192,9 @@ export default defineContentScript({
      * 时刻,两边的节奏合成一条线.
      */
     async function paceSend<T>(send: () => Promise<T>, sent: (result: T) => boolean): Promise<T> {
+      const before = sendPace;
       const run = await runPaced({
-        pace: sendPace,
+        pace: before,
         readIntent: () => "send",
         execute: send,
         shouldRecord: sent,
@@ -204,7 +205,9 @@ export default defineContentScript({
       if (run.waitedMs > 0) {
         console.log(`[dsb] 发送限速:上一条刚发过,等 ${run.waitedMs}ms 再发`);
       }
-      if (run.pace !== sendPace) {
+      // 比出发前的快照: 等/发的时候另一侧世界的 send-note 可能已经并进来,
+      // 拿实时 sendPace 比会把那条更晚的时刻盖掉.
+      if (run.pace !== before) {
         sendPace = run.pace;
         window.postMessage(sendNoteMessage("main", sendPace.lastSentAt ?? 0), "*");
       }
