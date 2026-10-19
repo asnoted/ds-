@@ -163,7 +163,7 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
 
   const run = (clock: ReturnType<typeof fakeClock>, pace: SendPace) =>
     runPaced({
-      pace,
+      pace: () => pace,
       readIntent: () => "send",
       execute: () => undefined,
       shouldRecord: () => true,
@@ -216,11 +216,33 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     expect(clock.slept).toBe(0);
   });
 
+  it("等的时候另一侧报来更晚的时刻:按新的再等一段,不掉出合并后的线", async () => {
+    const clock = fakeClock();
+    const first = await run(clock, newSendPace()); // t=0 发, 间隔 3s
+    clock.advance(1000); // t=1s, 还差 2s
+    let pace = first.pace;
+    const result = await runPaced({
+      pace: () => pace,
+      readIntent: () => "send",
+      execute: () => undefined,
+      shouldRecord: () => true,
+      now: clock.now,
+      random: random0,
+      sleep: async (ms) => {
+        await clock.sleep(ms);
+        // 第一段等待里另一侧在 t=2.5s 也发了一条:合并后到期时刻变成 5.5s
+        pace = mergeSendPace(pace, 2500, random0);
+      },
+    });
+    expect(result.waitedMs).toBe(WINDOW_MIN_MS - 1000 + (WINDOW_MIN_MS - 500));
+    expect(result.pace.lastSentAt).toBe(5500);
+  });
+
   it('"停止"永不延迟:等 0,不记账(delay 一趟都不等)', async () => {
     const clock = fakeClock(1000);
     const pace = noteSend(newSendPace(), 1000, random0);
     const result = await runPaced({
-      pace,
+      pace: () => pace,
       readIntent: () => "stop",
       execute: () => undefined,
       shouldRecord: () => false,
@@ -238,7 +260,7 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     const pace = noteSend(newSendPace(), clock.now(), random0);
     clock.advance(10);
     const result = await runPaced({
-      pace,
+      pace: () => pace,
       readIntent: () => intent,
       execute: () => undefined,
       shouldRecord: (_result, atAction) => atAction !== "stop",
@@ -260,7 +282,7 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     clock.advance(10);
     let atAction: SendIntent | undefined;
     const result = await runPaced({
-      pace,
+      pace: () => pace,
       readIntent: () => intent,
       execute: () => {
         intent = "stop"; // 发送成功,站点进生成期:翻成停止是点击的结果
@@ -283,7 +305,7 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     const clock = fakeClock();
     const before = newSendPace();
     const result = await runPaced({
-      pace: before,
+      pace: () => before,
       readIntent: () => "send",
       execute: () => ({ sent: false }),
       shouldRecord: (outcome) => outcome.sent,
@@ -300,7 +322,7 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     const clock = fakeClock();
     const before = newSendPace();
     const result = await runPaced({
-      pace: before,
+      pace: () => before,
       readIntent: () => "send",
       execute: async () => ({ sent: true }),
       shouldRecord: (outcome) => outcome.sent,

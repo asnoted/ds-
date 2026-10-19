@@ -276,9 +276,8 @@ export default defineContentScript({
         const readIntent = (): SendIntent =>
           action === "button.click" ? readCircleIntent() : "send";
         paced[action] = async (frame: ActionFrame) => {
-          const before = sendPace;
           const result = await runPaced({
-            pace: before,
+            pace: () => sendPace,
             readIntent,
             execute: () => run(frame),
             // 动手前读到"停止"就不记账;另两种原语恒是发送.
@@ -287,7 +286,7 @@ export default defineContentScript({
             random: () => Math.random(),
             sleep: realSleep,
           });
-          if (result.pace !== before) {
+          if (result.recorded) {
             sendPace = mergeSendPace(result.pace, sendPace.lastSentAt, Math.random);
             window.postMessage(sendNoteMessage("isolated", result.pace.lastSentAt ?? 0), "*");
           }

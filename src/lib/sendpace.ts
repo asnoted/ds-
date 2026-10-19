@@ -144,6 +144,8 @@ export type PacedRun<T> = {
   readonly result: T;
   /** 这一趟实际等了多久(毫秒)--测试断言"两次相隔 ≥3 秒"靠它. */
   readonly waitedMs: number;
+  /** 这一趟有没有记一笔"最近一次发送". */
+  readonly recorded: boolean;
 };
 
 /**
@@ -154,13 +156,15 @@ export type PacedRun<T> = {
  * 于是"连续两次发送实际相隔 ≥3 秒"这种**时序**判据能被单测钉住(接线层闭包里的
  * 时候钉不住,`docs/CODING_STANDARDS.md` 第 1 条).
  *
+ * @param pace 读**实时**状态:等的时候另一侧世界可能报来更晚的时刻(`mergeSendPace`),
+ *   得按新的再等--拿出发前的快照等,对方等我们的时候我们却已经掉出合并后的线了.
  * @param readIntent 读两次:第一次只决定要不要等,第二次在**等完、动手前**,
  *   判这次动手到底是不是发送(圆键在等的时候可能变成了停止).
  * @param shouldRecord 发完之后判要不要记一笔,第二个参数是动手前那次意图;
  *   页面世界不看意图,只看这次有没有真发出去.
  */
 export async function runPaced<T>(options: {
-  readonly pace: SendPace;
+  readonly pace: () => SendPace;
   readonly readIntent: () => SendIntent;
   readonly execute: () => T | Promise<T>;
   readonly shouldRecord: (result: T, intent: SendIntent) => boolean;
@@ -168,15 +172,21 @@ export async function runPaced<T>(options: {
   readonly random: () => number;
   readonly sleep: Sleep;
 }): Promise<PacedRun<T>> {
-  const verdict = checkSendIntent(options.pace, options.now(), options.readIntent());
-  if (verdict.waitMs > 0) await options.sleep(verdict.waitMs);
+  // 每睡一段就重读一次;期间并进来的更晚时刻会把到期时刻往后推,于是再睡一段.
+  // 注入的 now 必须随 sleep 前进,否则这里空转(生产用真时钟,只有测试注入).
+  let waitedMs = 0;
+  for (;;) {
+    const verdict = checkSendIntent(options.pace(), options.now(), options.readIntent());
+    if (verdict.waitMs <= 0) break;
+    await options.sleep(verdict.waitMs);
+    waitedMs += verdict.waitMs;
+  }
   // 动手前再读一次:点完再读会被点击自己的效果带偏(发送成功会翻成停止).
   const intent = options.readIntent();
   const result = await options.execute();
-  const pace = options.shouldRecord(result, intent)
-    ? noteSend(options.pace, options.now(), options.random)
-    : options.pace;
-  return { pace, result, waitedMs: verdict.waitMs };
+  const recorded = options.shouldRecord(result, intent);
+  const pace = recorded ? noteSend(options.pace(), options.now(), options.random) : options.pace();
+  return { pace, result, waitedMs, recorded };
 }
 
 /**
