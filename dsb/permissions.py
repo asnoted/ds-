@@ -88,7 +88,8 @@ def decide(rules: tuple[Rule, ...], relative: str) -> Verdict:
 #:   (``.env.example``)显式放行.
 #:
 #: ``.git/`` 从"写死的特例"收进这张表:``.git/hooks`` 与 ``mcp.json`` 是同一类文件
-#: (不经人看就会执行),护栏的理由本来就一样(旧 0009).
+#: (不经人看就会执行),护栏的理由本来就一样(旧 0009).**两条写在最后**:最后一条赢,
+#: 放前面会被后面那条 ``*.env.example`` 的 allow 重新放行(``.git/x.env.example``).
 DEFAULT_RULES: dict[Operation, tuple[Rule, ...]] = {
     "read": (
         Rule(ALLOW_ALL, "allow"),
@@ -100,12 +101,13 @@ DEFAULT_RULES: dict[Operation, tuple[Rule, ...]] = {
     ),
     "edit": (
         Rule(ALLOW_ALL, "allow"),
-        Rule(".git", "deny"),
-        Rule(".git/*", "deny"),
         Rule("*.env", "deny"),
         Rule("*.env.*", "deny"),
         Rule("*.env.example", "allow"),
         Rule("mcp.json", "deny"),
+        # `.git/` 收口:里面没有一样东西该被写,放在最后才盖得住上面那些 allow.
+        Rule(".git", "deny"),
+        Rule(".git/*", "deny"),
     ),
 }
 

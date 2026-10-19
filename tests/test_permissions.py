@@ -98,6 +98,18 @@ class Test默认规则表:
         assert is_allowed("edit", ".git/config") is False
         assert is_allowed("edit", ".git/hooks/pre-commit") is False
 
+    def test_git_里叫_env_example_的也写不进去(self) -> None:
+        """最后一条赢的代价:`.git` 后面再有一条 allow,就会把里头重新放行.
+
+        `*.env.example` 那条 allow 是为了放样板块(给人看的模板),不是给 `.git/`
+        开的后门--表说 `.git/` 写不进去,就一条都不许.
+        """
+        assert is_allowed("edit", ".git/x.env.example") is False
+        assert is_allowed("edit", ".git/.env.example") is False
+        # 模板文件本身照旧放行(它在 `.git` 之外).
+        assert is_allowed("edit", "x.env.example") is True
+        assert is_allowed("edit", "sub/x.env.example") is True
+
     def test_子目录里的_env_也拒(self) -> None:
         # `*` 跨 `/`,所以任意深度的 .env 系都拒.
         assert is_allowed("edit", "a/b/.env") is False
