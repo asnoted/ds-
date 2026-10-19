@@ -327,4 +327,10 @@ describe("账号处境(#2)", () => {
     );
     expect(iconTitle("on-reachable")).not.toContain("账号");
   });
+
+  it("悬停:unknown 什么都不说,也不留一个空句子", () => {
+    expect(iconTitle("on-reachable", null, false, null, null, { kind: "unknown" })).toBe(
+      iconTitle("on-reachable"),
+    );
+  });
 });

@@ -110,10 +110,8 @@ export function iconTitle(
   // 在途与等人回只在"开着且可达"时才有意义:不可达时手里没有正经在途的东西.
   const waiting = state === "on-reachable" && inFlight ? "工具调用在途." : "";
   const ask = state === "on-reachable" && pendingAsk ? `${pendingAsk}.` : "";
-  const accountLine =
-    state === "on-reachable" && account !== null && account.kind !== "ready"
-      ? `${describeAccount(account)}.`
-      : "";
+  const accountNote = state === "on-reachable" && account !== null ? describeAccount(account) : "";
+  const accountLine = accountNote === "" ? "" : `${accountNote}.`;
   if (state === "on-reachable") {
     const history = lastFailure ? `${lastFailure}.` : "";
     return `dsb:总开关已开,中继可达.${accountLine}${waiting}${ask}${history}${CLICK_HINT}`;
