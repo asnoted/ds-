@@ -96,6 +96,43 @@ def test_sigterm_takes_the_same_door_as_ctrl_c(monkeypatch: pytest.MonkeyPatch) 
     assert stopped == ["stop"]
 
 
+def test_main_stops_started_servers_when_the_listener_cannot_bind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """端口被占时 make_server 抛 OSError: from_config 已经拉起的子进程必须收掉(2026-10-20).
+
+    收摊原来只在 `with make_server(...)` 里, 绑定失败就走不到, 一整套 MCP 子进程成了孤儿.
+    """
+    previous = signal.getsignal(signal.SIGTERM)
+    stopped: list[str] = []
+
+    class FakeGateway:
+        servers: dict[str, object] = {}
+
+        @staticmethod
+        def from_config(*_args: object, **_kwargs: object) -> FakeGateway:
+            return FakeGateway()
+
+        def stop(self) -> None:
+            stopped.append("stop")
+
+    def cannot_bind(*_args: object, **_kwargs: object) -> object:
+        raise OSError("Address already in use")
+
+    monkeypatch.setattr(server, "Gateway", FakeGateway)
+    monkeypatch.setattr(server, "load_config", lambda _path: {})
+    monkeypatch.setattr(server, "build_tools", lambda _gateway, _said, _root: [])
+    monkeypatch.setattr(server, "SaidLog", lambda: object())
+    monkeypatch.setattr(server, "make_server", cannot_bind)
+    try:
+        with pytest.raises(OSError):
+            server.main()
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+    assert stopped == ["stop"]
+
+
 def test_main_says_out_loud_what_will_bite_later(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

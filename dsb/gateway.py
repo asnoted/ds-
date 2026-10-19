@@ -461,27 +461,36 @@ class Gateway:
     ) -> Gateway:
         """配置 → 起好子进程的网关;起不来的 server 记一笔,跳过(别的照常)."""
         servers: dict[str, StdioServer] = {}
-        for name, entry in config.items():
-            argv = command_of(entry)
-            if argv is None:
-                log_event("config-broke", path=name, missing="command")
-                continue
-            env = entry.get("env")
-            cwd = entry.get("cwd")
-            server = StdioServer(
-                name,
-                argv,
-                env={str(k): str(v) for k, v in env.items()} if isinstance(env, Mapping) else None,
-                cwd=cwd if isinstance(cwd, str) else None,
-                start_timeout=start_timeout,
-                discovery_timeout=discovery_timeout,
-            )
-            try:
-                server.start()
-            except GatewayError:
-                log_event("server-down", tool=name, error=ERROR_NOT_RUNNING)
-                continue
-            servers[name] = server
+        try:
+            for name, entry in config.items():
+                argv = command_of(entry)
+                if argv is None:
+                    log_event("config-broke", path=name, missing="command")
+                    continue
+                env = entry.get("env")
+                cwd = entry.get("cwd")
+                server = StdioServer(
+                    name,
+                    argv,
+                    env={str(k): str(v) for k, v in env.items()}
+                    if isinstance(env, Mapping)
+                    else None,
+                    cwd=cwd if isinstance(cwd, str) else None,
+                    start_timeout=start_timeout,
+                    discovery_timeout=discovery_timeout,
+                )
+                try:
+                    server.start()
+                except GatewayError:
+                    log_event("server-down", tool=name, error=ERROR_NOT_RUNNING)
+                    continue
+                servers[name] = server
+        except BaseException:
+            # 中途被打断(SIGTERM 走 SystemExit / Ctrl-C):前面已经起来的先收掉,
+            # 不然 main() 的 finally 还没接上,它们就成了孤儿.
+            for started in servers.values():
+                started.stop()
+            raise
         return cls(servers, timeout=timeout)
 
     @property

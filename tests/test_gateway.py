@@ -185,6 +185,32 @@ def test_load_config_reads_mcp_servers_and_tolerates_the_missing(tmp_path: Path)
     assert load_config(broken) == {}
 
 
+def test_from_config_stops_started_servers_when_startup_is_interrupted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """起第二个 server 时被 Ctrl-C / SIGTERM 打断: 第一个已经起来的必须收掉(2026-10-20).
+
+    原来 `from_config` 只接 `GatewayError`; BaseException 一穿就带着半套子进程退场.
+    """
+    stopped: list[str] = []
+
+    class FakeStdio:
+        def __init__(self, name: str, _argv: list[str], **_kwargs: object) -> None:
+            self.name = name
+
+        def start(self) -> None:
+            if self.name == "b":
+                raise KeyboardInterrupt
+
+        def stop(self) -> None:
+            stopped.append(self.name)
+
+    monkeypatch.setattr("dsb.gateway.StdioServer", FakeStdio)
+    with pytest.raises(KeyboardInterrupt):
+        Gateway.from_config({"a": {"command": "x"}, "b": {"command": "y"}})
+    assert stopped == ["a"]
+
+
 def test_normalize_folds_everything_odd() -> None:
     assert normalize("文件系统") == "____"
     assert normalize("fs_read-file") == "fs_read-file"

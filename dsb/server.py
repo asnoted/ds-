@@ -266,36 +266,39 @@ def main() -> None:
         start_timeout=resolve_seconds(env_text, CONNECT_TIMEOUT_ENV_KEY, START_TIMEOUT),
         discovery_timeout=resolve_seconds(env_text, DISCOVERY_TIMEOUT_ENV_KEY, DISCOVERY_TIMEOUT),
     )
-    service = McpService(build_tools(gateway, SaidLog(), root))
-    names = ", ".join(service.tool_names) or "(空)"
-    print(
-        f"[dsb] MCP 网关已启动:http://{DEFAULT_HOST}:{port}{MCP_PATH}"
-        f"(工具:{names};工作目录:{root})",
-        flush=True,
-    )
-    if not root.is_dir():
+    # 拉起之后到真正服务之间任何一步失败(最现实的是端口被占)也得收摊:
+    # 子进程是 from_config 起的,进程一退它们就成了没人收的孤儿.
+    try:
+        service = McpService(build_tools(gateway, SaidLog(), root))
+        names = ", ".join(service.tool_names) or "(空)"
         print(
-            f"[dsb] 工作目录不存在(看 {WORK_ROOT_ENV_KEY} 或 .env):{root};"
-            "工作工具调用时会回 bad-path.",
-            file=sys.stderr,
+            f"[dsb] MCP 网关已启动:http://{DEFAULT_HOST}:{port}{MCP_PATH}"
+            f"(工具:{names};工作目录:{root})",
+            flush=True,
         )
-    print(
-        f"[dsb] 限额:单次结果 {MAX_RESULT_CHARS} 字,单服务工具 {MAX_TOOLS_PER_SERVER} 件,"
-        f"工具调用 {resolve_timeout(env_text):g}s",
-        flush=True,
-    )
-    if not gateway.servers:
+        if not root.is_dir():
+            print(
+                f"[dsb] 工作目录不存在(看 {WORK_ROOT_ENV_KEY} 或 .env):{root};"
+                "工作工具调用时会回 bad-path.",
+                file=sys.stderr,
+            )
         print(
-            f"[dsb] 没配 MCP server(看 {config_path}):tools/list 只剩工作工具与自家的 said_*.",
-            file=sys.stderr,
+            f"[dsb] 限额:单次结果 {MAX_RESULT_CHARS} 字,单服务工具 {MAX_TOOLS_PER_SERVER} 件,"
+            f"工具调用 {resolve_timeout(env_text):g}s",
+            flush=True,
         )
-    with make_server(service, port=port) as server:
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            print("\n[dsb] 已停止")
-        finally:
-            gateway.stop()  # 收摊:配好的子进程一起退
+        if not gateway.servers:
+            print(
+                f"[dsb] 没配 MCP server(看 {config_path}):tools/list 只剩工作工具与自家的 said_*.",
+                file=sys.stderr,
+            )
+        with make_server(service, port=port) as server:
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                print("\n[dsb] 已停止")
+    finally:
+        gateway.stop()  # 收摊:配好的子进程一起退
 
 
 if __name__ == "__main__":
