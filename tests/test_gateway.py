@@ -253,6 +253,25 @@ def test_tools_normalizes_the_outside_name_and_keeps_the_raw_one_inside(
         gate.stop()
 
 
+def test_routes_by_the_whole_external_name_not_by_prefix(fake_script: Path) -> None:
+    """server 叫 ``a`` 与 ``a_b`` 时,``a_b_echo`` 该走 ``a_b``;按前缀扫会先撞上更短的 ``a_``."""
+    command = [sys.executable, str(fake_script)]
+    gate = Gateway.from_config(
+        {
+            "a": {"command": command, "env": {"FAKE_TOOL_NAMES": "echo"}},
+            # 只有 a_b 那个进程设了 FAKE_ECHO_NAME:回显工具名就证明这条转发到了它.
+            "a_b": {"command": command, "env": {"FAKE_TOOL_NAMES": "echo", "FAKE_ECHO_NAME": "1"}},
+        }
+    )
+    try:
+        tools = {tool.name: tool for tool in gate.tools()}
+        assert set(tools) == {"a_echo", "a_b_echo"}
+        payload, failed = tools["a_b_echo"].handler({"text": "嗨"})
+        assert (payload["text"], failed) == ("echo:嗨", False)
+    finally:
+        gate.stop()
+
+
 def test_call_is_forwarded_and_text_passes_through(gateway: Gateway) -> None:
     payload, failed = gateway.tools()[0].handler({"text": "你好"})
     assert payload == {"text": "你好"}

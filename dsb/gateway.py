@@ -426,7 +426,9 @@ class Gateway:
                 log_event("tool-clash", tool=prefix)
                 continue
             self._prefixes[prefix] = name
-        self._tool_names: dict[str, str] = {}  # 对外名 → 底层工具名(原样)
+        #: 对外名 → (服务器名, 底层工具名).按**整名**认路由,不靠前缀扫:server 叫 ``a`` 与
+        #: ``a-b`` 时,``a_b_echo`` 会先撞上更短的前缀 ``a_``,按前缀选就转发错了 server.
+        self._routes: dict[str, tuple[str, str]] = {}
 
     @classmethod
     def from_config(
@@ -488,7 +490,7 @@ class Gateway:
                     log_event("tool-clash", tool=external)
                     continue
                 seen.add(external)
-                self._tool_names[external] = raw_name
+                self._routes[external] = (server_name, raw_name)
                 tools.append(
                     Tool(
                         name=external,
@@ -517,15 +519,12 @@ class Gateway:
         return handle
 
     def _route(self, external: str) -> tuple[StdioServer, str]:
-        for prefix, server_name in self._prefixes.items():
-            head = f"{prefix}_"
-            if external.startswith(head):
-                child = self._tool_names.get(external)
-                if child is None:
-                    # 表是 tools() 一边建一边填的,走到这儿说明表自己不自洽--按意外收场.
-                    raise GatewayError(ERROR_UNEXPECTED)
-                return self._servers[server_name], child
-        raise GatewayError(ERROR_UNEXPECTED)
+        route = self._routes.get(external)
+        if route is None:
+            # 表是 tools() 一边建一边填的,走到这儿说明表自己不自洽--按意外收场.
+            raise GatewayError(ERROR_UNEXPECTED)
+        server_name, child = route
+        return self._servers[server_name], child
 
     def stop(self) -> None:
         """收摊:所有子进程退掉."""
