@@ -157,6 +157,18 @@ def test_list_dir_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.Monk
     assert len(result) <= 100
 
 
+def test_capped_note_counts_lines_by_the_same_rule_as_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """末句里那个"共 N 行"也得跟 `read` 同口径:``\\x0c`` 不算换行,否则模型读到的是个错的数.
+
+    这条末句进对话, 模型会照抄它(旧 0010 那次 625 / 624 就是这么来的).
+    """
+    monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 200)
+    row = "A" * 19 + "\x0c"
+    text = "\n".join([row] * 20)  # 20 个物理行;按 str.splitlines() 会数成 39
+    result = cap_result(text, "收窄")
+    assert "共 20 行" in result
+
+
 # ---- read_text ----
 
 
@@ -483,6 +495,26 @@ def test_grep_returns_relative_path_line_and_text(tmp_path: Path) -> None:
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "f.txt").write_text("第一行\n命中这行\n", encoding="utf-8")
     assert grep_tree(tmp_path, "命中", ".") == "sub/f.txt:2: 命中这行"
+
+
+def test_grep_counts_lines_by_the_same_rule_as_read(tmp_path: Path) -> None:
+    """行号与 `read` 同一条口径(只认 ``\\n``)--模型照 grep 的行号去 read 得落在同一行.
+
+    ``str.splitlines()`` 把 ``\\x0c`` / ``\\x85`` / ``\\u2028`` 这些也算换行,`read` 那边
+    (:func:`work.splitlines`)只认 ``\\n``,与人的编辑器一致. 差一行, 模型读的就是别处.
+    """
+    (tmp_path / "f.txt").write_text("第一行\n第二行\x0c还是第二行\n第三行\n", encoding="utf-8")
+    assert grep_tree(tmp_path, "第三行") == "f.txt:3: 第三行"
+    assert grep_tree(tmp_path, "还是第二行") == "f.txt:2: 第二行\x0c还是第二行"
+    # 同一个文件, `read` 的脚注也是 3 行:两处同数才算同一个口径.
+    assert read_text(tmp_path, "f.txt").endswith("(文件读完:共 3 行)")
+
+
+def test_grep_still_matches_end_of_line_in_crlf_files(tmp_path: Path) -> None:
+    """行尾的 ``\\r`` 仍从行里摘掉:CRLF 文件里 ``模式$`` 得命中(这是换行口径之外的另一件事)."""
+    (tmp_path / "f.txt").write_text("alpha\r\nbeta\r\n", encoding="utf-8")
+    assert grep_tree(tmp_path, "alpha$") == "f.txt:1: alpha"
+    assert grep_tree(tmp_path, "beta") == "f.txt:2: beta"
 
 
 def test_grep_without_matches_says_so(tmp_path: Path) -> None:

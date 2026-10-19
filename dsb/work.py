@@ -285,7 +285,7 @@ def cap_result(text: str, hint: str) -> str:
     """
     if _units(text) <= WORK_RESULT_CHARS:
         return text
-    rows = text.splitlines()
+    rows = splitlines(text)
     # 末句也占这笔额度:不算它,整条(正文 + 末句)就会越过扩展那道 16000,被扩展从
     # 尾巴上截--截掉的正好是"怎么续"(旧 0010).
     room = _units(_result_note(len(rows), len(rows), hint))
@@ -671,7 +671,10 @@ def _grep_scan(root: Path, pattern: str, raw: str) -> str:
         except UnicodeDecodeError:
             continue
         relative = _relative_to_root(root, resolved)
-        for number, line in enumerate(text.splitlines(), start=1):
+        for number, row in enumerate(splitlines(text), start=1):
+            # 行号与 `read` 同一条口径(只认 `\n`,见 `splitlines`):模型照这里的行号去 `read`
+            # 得落在同一行. 行尾的 `\r` 照旧摘掉--CRLF 文件里 `模式$` 仍要命中.
+            line = row.removesuffix("\r")
             if not regex.search(line):
                 continue
             hits.append(f"{relative}:{number}: {line[:WORK_LINE_LIMIT]}")
