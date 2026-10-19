@@ -62,9 +62,11 @@
     `chat.deepseek.com`); 中继仍走 host 直连免 CORS(ADR-0002).
 15. **改名留下的旧键要搬一次**: 扩展从 `ds-` 改叫 `dsb` 时, 四个挂在 `storage.local` 里的
     跨会话状态(失败痕 / 现场帧 / 等人回 / 看门狗配置)换了键名. 启动与 `onInstalled` 时按
-    `src/lib/migrate.ts` 的 `RENAMED_STORAGE_KEYS` 搬一遍: **只搬新键缺席的那几个**, 新键一旦
-    有值就说明这份安装已经在用新名字写, 旧键只是陈的, 覆盖会把当前状态换回改名前的快照;
-    搬完删旧键. 空迁移不写, 别为一个空对象惊动 `storage.onChanged`.
+    `src/lib/migrate.ts` 的 `RENAMED_STORAGE_KEYS` 搬一遍: **新键缺席才搬值** -- 新键一旦
+    有值就说明这份安装已经在用新名字写, 拿旧值覆盖会把当前状态换回改名前的快照.
+    **旧键无论在哪种情况下都删**: 留着陈键, 等新键日后被清空(问题回了 / 失败痕清了),
+    下一次 service worker 醒来就会把旧快照复活回来; 删掉才是一次性,会收敛的迁移.
+    空迁移不写, 别为一个空对象惊动 `storage.onChanged`.
 
 ## Considered Options
 
@@ -107,7 +109,7 @@
 
 ```sh
 pnpm vitest run src/lib/failureframe.test.ts src/lib/continuationfail.test.ts
-pnpm vitest run src/lib/migrate.test.ts            # 旧键搬迁: 只搬新键缺席的, 新键有值不覆盖
+pnpm vitest run src/lib/migrate.test.ts            # 旧键搬迁: 新键缺席才搬值, 旧键一律删净
 uv run scripts/page-action.py visible-capture     # 抓不抓得到
 uv run scripts/page-action.py frame-fail          # 抓不到时不影响原失败路径
 uv run pytest tests/test_log.py -q                # 事件名册子 ↔ 调用点 ↔ 篇里那张表

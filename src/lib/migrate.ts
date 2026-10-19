@@ -4,8 +4,10 @@
  * 不搬的话,升级那一刻看门狗配置落回默认 15 分钟、挂着的"等人回"消失、失败痕断代 --
  * 而这些键里存的是**跨会话要活下来**的东西(README 之外没有任何提示).
  *
- * 只搬**新键缺席**的那几个:新键一旦有值,说明这份安装已经在用新名字写,旧键就是陈的;
- * 拿它去覆盖会把当前状态换回改名前的快照.
+ * 新键缺席才搬值:新键一旦有值,说明这份安装已经在用新名字写,旧键就是陈的,
+ * 拿它去覆盖会把当前状态换回改名前的快照.但陈键**照样删** -- 留着它,等新键
+ * 日后被清空(问题回了、失败痕清了),下一次 service worker 醒来就会把改名前的
+ * 旧快照复活回来.删掉才是一次性、会收敛的迁移.
  */
 
 /** 旧键 → 新键. 旧名字只在这张表里出现,别处一律用各模块导出的常量. */
@@ -35,9 +37,9 @@ export function planStorageMigration(stored: Readonly<Record<string, unknown>>):
   const write: Record<string, unknown> = {};
   const remove: string[] = [];
   for (const [oldKey, newKey] of Object.entries(RENAMED_STORAGE_KEYS)) {
-    if (!(oldKey in stored) || newKey in stored) continue;
-    write[newKey] = stored[oldKey];
+    if (!(oldKey in stored)) continue;
     remove.push(oldKey);
+    if (!(newKey in stored)) write[newKey] = stored[oldKey];
   }
   return { write, remove };
 }

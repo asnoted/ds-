@@ -908,7 +908,7 @@ export default defineBackground(() => {
     if (isEmptyMigration(plan)) return;
     await browser.storage.local.set({ ...plan.write });
     await browser.storage.local.remove([...plan.remove]);
-    console.log(`[dsb] 搬了 ${plan.remove.length} 个旧存储键:${plan.remove.join(", ")}`);
+    console.log(`[dsb] 清掉 ${plan.remove.length} 个旧存储键:${plan.remove.join(", ")}`);
   }
 
   browser.storage.onChanged.addListener((changes, areaName) => {

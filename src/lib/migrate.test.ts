@@ -28,14 +28,24 @@ describe("planStorageMigration", () => {
     expect(isEmptyMigration(plan)).toBe(false);
   });
 
-  it("新键已有值时旧键不覆盖它", () => {
+  it("新键已有值时旧键不覆盖它,但旧键要删掉", () => {
     const plan = planStorageMigration({
       "ds-/watchdog": { silenceMs: 1000 },
       "dsb/watchdog": { silenceMs: 900000 },
     });
     expect(plan.write).toEqual({});
-    expect(plan.remove).toEqual([]);
-    expect(isEmptyMigration(plan)).toBe(true);
+    expect(plan.remove).toEqual(["ds-/watchdog"]);
+    expect(isEmptyMigration(plan)).toBe(false);
+  });
+
+  it("删掉旧键后,新键日后被清空也不会把旧快照复活", () => {
+    const first = planStorageMigration({
+      "ds-/asks": { sid: { question: "拍个板", at: 1 } },
+      "dsb/asks": {},
+    });
+    expect(first.remove).toEqual(["ds-/asks"]);
+    const afterCleanup: Record<string, unknown> = { "dsb/asks": {} };
+    expect(planStorageMigration(afterCleanup).write).toEqual({});
   });
 
   it("旧键值为假(0 / false / 空串)也照搬,不当缺席", () => {
