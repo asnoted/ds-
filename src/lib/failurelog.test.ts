@@ -69,6 +69,30 @@ describe("readFailureLog / 存储是外部输入", () => {
     expect(records).toEqual([healthFailure(1), healthFailure(6)]);
   });
 
+  it("数组里混进 null 也只是跳过,不能把读取器打崩", () => {
+    expect(readFailureLog([null, healthFailure(1)])).toEqual([healthFailure(1)]);
+  });
+
+  it("五个环节名都能从存储读回来:判据与 FailureWhere 逐字对齐", () => {
+    const where = ["health", "call", "watchdog", "rounds", "continuation"] as const;
+    const records = where.map((name, at) => ({ at, where: name, cause: "x" }));
+    expect(readFailureLog(records).map((record) => record.where)).toEqual([...where]);
+  });
+
+  it("原因只有空白、或根本不是字串,都不算一条", () => {
+    expect(readFailureLog([{ at: 1, where: "health", cause: "   " }])).toEqual([]);
+    expect(readFailureLog([{ at: 1, where: "health", cause: 42 }])).toEqual([]);
+  });
+
+  it("恢复时刻是 NaN / Infinity 也当坏数据丢掉", () => {
+    expect(
+      readFailureLog([
+        { at: 1, where: "health", cause: "x", recoveredAt: Number.NaN },
+        { at: 2, where: "health", cause: "x", recoveredAt: Number.POSITIVE_INFINITY },
+      ]),
+    ).toEqual([]);
+  });
+
   it("恢复时刻在场就整条留下,不在场也不硬造一个", () => {
     const recovered = { ...healthFailure(1), recoveredAt: 9 };
     expect(readFailureLog([recovered])).toEqual([recovered]);
@@ -108,6 +132,16 @@ describe("rememberFailure / 记一笔", () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.at).toBe(0);
   });
+
+  it("反复红-恢复也只留最近二十笔", () => {
+    let records: FailureRecord[] = [];
+    for (let at = 0; at < FAILURE_LOG_CAP + 5; at += 1) {
+      records = rememberFailure(records, healthFailure(at));
+      records = markLastFailureRecovered(records, at);
+    }
+    expect(records).toHaveLength(FAILURE_LOG_CAP);
+    expect(records[0]?.at).toBe(FAILURE_LOG_CAP + 4);
+  });
 });
 
 describe("markLastFailureRecovered / 收尾", () => {
@@ -138,10 +172,25 @@ describe("时间文案", () => {
     expect(formatAgo(now + 5_000, now)).toBe("0 秒前"); // 时钟拨快了也别报负数
   });
 
+  it("分档边界:59 秒还是秒,60 秒进分钟,59 分钟还是分钟", () => {
+    const now = localTime(14, 0, 0);
+    expect(formatAgo(now - 59_000, now)).toBe("59 秒前");
+    expect(formatAgo(now - 60_000, now)).toBe("1 分钟前");
+    expect(formatAgo(now - 90_000, now)).toBe("2 分钟前");
+    expect(formatAgo(now - 3_540_000, now)).toBe("59 分钟前");
+    expect(formatAgo(now - 3_600_000, now)).toBe("1 小时前");
+  });
+
   it("持续多久:不足一分钟报秒,再往上报分钟", () => {
     expect(formatDuration(0)).toBe("1 秒");
     expect(formatDuration(30_000)).toBe("30 秒");
     expect(formatDuration(240_000)).toBe("4 分钟");
+  });
+
+  it("时长分档:59 秒还是秒,60 秒整进分钟", () => {
+    expect(formatDuration(59_000)).toBe("59 秒");
+    expect(formatDuration(60_000)).toBe("1 分钟");
+    expect(formatDuration(90_000)).toBe("2 分钟");
   });
 });
 
