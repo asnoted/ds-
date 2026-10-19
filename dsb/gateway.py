@@ -342,6 +342,13 @@ class StdioServer:
             return GatewayError(ERROR_NOT_RUNNING)
         line = json.dumps(message, ensure_ascii=False)
         try:
+            line.encode("utf-8")  # 探一次:孤立代理字符该在这儿露出来,别等写进管道
+        except UnicodeEncodeError:
+            # 模型写坏的半个 emoji 落不成 UTF-8. 退回全转义形态:孩子收到的 JSON 语义
+            # 不变. 不拦的话那个编码错会被下面当成 ValueError=子进程没了,回一个张冠
+            # 李戴的 tool-not-running.
+            line = json.dumps(message)
+        try:
             with self._write_guard:
                 proc.stdin.write(line + "\n")
                 proc.stdin.flush()

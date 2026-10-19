@@ -278,6 +278,13 @@ def test_call_is_forwarded_and_text_passes_through(gateway: Gateway) -> None:
     assert failed is False
 
 
+def test_arguments_with_a_lone_surrogate_still_reach_the_child(gateway: Gateway) -> None:
+    """模型写坏的半个 emoji(孤立代理字符)不该被误报成 tool-not-running:
+    这一行退回全转义形态,孩子照旧收到这次调用."""
+    payload, failed = gateway.tools()[0].handler({"text": "a\ud800b"})
+    assert (payload["text"], failed) == ("a\ud800b", False)
+
+
 def test_a_child_is_error_flows_through_as_failed(gateway: Gateway) -> None:
     _payload, failed = gateway.tools()[0].handler({"text": "iserr"})
     assert failed is True
