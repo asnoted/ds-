@@ -419,15 +419,23 @@ export default defineContentScript({
         body?: Document | XMLHttpRequestBodyInit | null,
       ): void {
         const target = xhrTargets.get(this);
-        if (target !== undefined && !watchingXhrs.has(this)) {
+        if (target === undefined) {
+          originalSend.call(this, body);
+          return;
+        }
+        if (!watchingXhrs.has(this)) {
           watchingXhrs.add(this);
           this.addEventListener("loadend", () => {
-            if (!isOutgoingChatRequest(target.method, target.url)) return;
+            // 同一个 XHR 被复用(再 open 再 send)时,这一趟是不是出站请求要看**最新**
+            // 那次 open;拿首次 send 那一刻记下的目标(a)会把别的响应当成模型回答,
+            // (b)会漏掉真的那条.
+            const latest = xhrTargets.get(this);
+            if (latest === undefined || !isOutgoingChatRequest(latest.method, latest.url)) return;
             const raw = readXhrResponse(this);
             if (raw !== null) detect(raw);
           });
         }
-        if (target !== undefined && typeof body === "string") {
+        if (typeof body === "string") {
           const nextBody = rewriteBody(body, target.method, target.url);
           if (nextBody !== null) {
             originalSend.call(this, nextBody);
