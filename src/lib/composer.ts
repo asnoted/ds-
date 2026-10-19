@@ -234,9 +234,15 @@ export const CIRCLE_WAIT_MS = 1200;
  * 换),点下去就是替用户中断一次生成--比这条发不出去坏得多.认不出(思考期环形
  * spinner)同样不点:宁可作废,也不赌那一下是发送.
  */
-export async function triggerSend(element: HTMLElement, clock: Clock): Promise<boolean> {
+export async function triggerSend(
+  element: HTMLElement,
+  clock: Clock,
+  own?: string,
+): Promise<boolean> {
   pressEnter(element);
   if (await awaitCleared(() => read(element), { timeoutMs: ENTER_WAIT_MS, clock })) return true;
+  // 框里已经不是这一份(人在这段等待里打了字):别点,那一下会替人发掉他的草稿.
+  if (own !== undefined && !sameText(read(element), own)) return false;
 
   const button = findButton();
   if (button === null || readIntent(button) !== "send") return false;
@@ -261,7 +267,7 @@ export async function send(
   const before = read(element);
   const staged = stage(element, message);
   if (staged !== "written") return staged;
-  if (await triggerSend(element, clock)) return "sent";
+  if (await triggerSend(element, clock, message)) return "sent";
   // 只在框里仍是这一份时还原:人在这段等待里补打的字不能被回滚冲掉.
   if (sameText(read(element), message)) write(element, before);
   return "failed";
