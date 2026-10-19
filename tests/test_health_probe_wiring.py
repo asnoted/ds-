@@ -62,6 +62,24 @@ def test_a_sweep_that_outlives_the_alarm_does_not_nudge_twice() -> None:
     assert "sweeping = false" in body
 
 
+def test_a_sweep_rechecks_the_decision_after_the_observation() -> None:
+    """判读那几秒里可能有新动静(回灌落地 / 围栏出门)或收了活: 按当下的账再判一次(2026-10-20).
+
+    只看 `tracked.taskOpen` 挡不住这一路: 新动静只顺延窗口、不收活, 账看着还是"该催".
+    往刚有动静的会话里插一句"继续"正是 #104 要避免的.
+    """
+    text = BACKGROUND.read_text(encoding="utf-8")
+    start = text.find("async function watchdogSweep(")
+    end = text.find("browser.storage.onChanged", start)
+    assert start >= 0 and end > start, "background.ts 里找不到 watchdogSweep"
+    body = text[start:end]
+    observe = body.find("await observedOutput(")
+    tracked = body.find("const tracked = watches.get(tabId);", observe)
+    recheck = body.find("watchdogDecision(tracked", tracked)
+    deliver = body.find("deliverNudge(", recheck)
+    assert 0 <= observe < tracked < recheck < deliver, "判读之后、投递之前要按当下的账再判一次"
+
+
 def test_a_sweep_drops_its_work_if_the_switch_cleared_the_watches() -> None:
     """判读/投递那几秒里总开关可能关过: 账已清, 不许再催, 也不许写回(2026-10-20).
 

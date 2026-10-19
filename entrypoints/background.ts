@@ -652,26 +652,35 @@ export default defineBackground(() => {
           // 判读那几拍只顺延窗口,活与预算原样(这几拍里可能刚好收活,
           // 别把旧账写回去):输出多半是催办惹来的回复,连预算一起清就成了
           // 催办喂活自己的动静源(#104).
-          watches.set(tabId, watchdogSeenPassing(tracked, now));
+          watches.set(tabId, watchdogSeenPassing(tracked, Date.now()));
           console.log(`[dsb] 看门狗:标签页 ${tabId} 正在生成,本轮不催,静默窗口顺延`);
-        } else if (!tracked.taskOpen) {
-          // 判读那几秒里模型正好干净收尾:活没了,没资格催(任务门).
-          console.log(`[dsb] 看门狗:标签页 ${tabId} 刚才收了活,本轮不催`);
-        } else {
-          // 判读那几秒里闸也可能被关:投递前现读一次,别拿旧 context 替人开口.
-          const delivered = await deliverNudge(tabId, act.text, await actionContext());
-          // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
-          // 投递途中可能刚好收活 / 关开关,按当下的账记,别把已清掉的账写回来.
-          const latest = watches.get(tabId);
-          if (latest !== undefined) {
-            watches.set(tabId, delivered && latest.taskOpen ? watchdogNudged(latest, now) : latest);
-          }
-          console.log(
-            delivered
-              ? `[dsb] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
-              : "[dsb] 看门狗:催办没送出去(闸拦着或标签页答不上),不算催",
+          continue;
+        }
+        // 判读那几秒里可能有新动静(回灌落地 / 围栏出门)或收了活:按当下的账再判一次,
+        // 仍该催才催--新动静只顺延窗口不收活,只看 taskOpen 会把"刚有动静"当"该催"(#104).
+        if (
+          watchdogDecision(tracked, { tabUrl: tab.url, now: Date.now() }, config).act.kind !==
+          "nudge"
+        ) {
+          console.log(`[dsb] 看门狗:标签页 ${tabId} 判读期间状态变了,本轮不催`);
+          continue;
+        }
+        // 判读那几秒里闸也可能被关:投递前现读一次,别拿旧 context 替人开口.
+        const delivered = await deliverNudge(tabId, act.text, await actionContext());
+        // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
+        // 投递途中可能刚好收活 / 关开关,按当下的账记,别把已清掉的账写回来.
+        const latest = watches.get(tabId);
+        if (latest !== undefined) {
+          watches.set(
+            tabId,
+            delivered && latest.taskOpen ? watchdogNudged(latest, Date.now()) : latest,
           );
         }
+        console.log(
+          delivered
+            ? `[dsb] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
+            : "[dsb] 看门狗:催办没送出去(闸拦着或标签页答不上),不算催",
+        );
       } else if (act.kind === "stand-down") {
         console.log(`[dsb] 看门狗:本笔活连催 ${config.maxNudges} 次无动静,停手`);
         recordFailure("watchdog", `本笔活连催 ${config.maxNudges} 次无动静`);
