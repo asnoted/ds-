@@ -266,6 +266,70 @@ def test_post_over_the_wire_round_trips(service: McpService) -> None:
             thread.join(timeout=5)
 
 
+def test_a_cross_site_simple_post_cannot_run_a_tool(tmp_path: Path) -> None:
+    """网页的"简单请求"带不了 `application/json`(带就触发预检,而预检拿不到允许头).
+
+    所以跨站页面塞进来的 `text/plain` 必须在门口死掉:不进服务,不碰工作目录.
+    """
+    import threading
+    import urllib.error
+    import urllib.request
+
+    service = McpService(work_tools(tmp_path))
+    body = rpc_request(
+        1, "tools/call", {"name": "write", "arguments": {"path": "pwned.txt", "content": "x"}}
+    )
+    with make_server(service, port=0) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        try:
+            request = urllib.request.Request(base + MCP_PATH, data=body, method="POST")
+            request.add_header("Content-Type", "text/plain")
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(request, timeout=5)
+            assert caught.value.code == 415
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+    assert not (tmp_path / "pwned.txt").exists()
+
+
+def test_a_request_addressed_to_another_host_is_refused(tmp_path: Path) -> None:
+    """DNS 重绑定:页面拿自己的域名指到 loopback,请求就成"同源",不再有预检.
+
+    Host 因此也得认:只收 `127.0.0.1` / `localhost`,且端口对得上.
+    """
+    import threading
+    import urllib.error
+    import urllib.request
+
+    service = McpService(work_tools(tmp_path))
+    body = rpc_request(
+        1, "tools/call", {"name": "write", "arguments": {"path": "pwned.txt", "content": "x"}}
+    )
+    with make_server(service, port=0) as server:
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{port}"
+        wrong_port = port + 1 if port < 65535 else port - 1
+        try:
+            for host in (f"evil.example:{port}", f"127.0.0.1:{wrong_port}"):
+                request = urllib.request.Request(base + MCP_PATH, data=body, method="POST")
+                request.add_header("Content-Type", "application/json")
+                request.add_header("Host", host)
+                with pytest.raises(urllib.error.HTTPError) as caught:
+                    urllib.request.urlopen(request, timeout=5)
+                assert caught.value.code == 403, host
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+    assert not (tmp_path / "pwned.txt").exists()
+
+
 # ---- 工作工具(旧 0009) ----
 
 

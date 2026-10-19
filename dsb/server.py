@@ -10,7 +10,8 @@
 - ``/mcp`` 上别的方法 → 405,别的路径 → 404(都在册的 ``{"status": "error", ...}`` 载荷).
 
 **一条 CORS 头都不下发**:网页的跨域预检拿不到允许头,撞死;扩展(host_permissions)
-与本机进程不受预检约束,照旧放行.
+与本机进程不受预检约束,照旧放行.预检管不到的"简单请求"(`text/plain` 之类)另有一道闸:
+`POST /mcp` 只认 `application/json`.Host 也认--DNS 重绑定能把别的域名送进 loopback.
 
 失败与慢另外留痕(:mod:`dsb.log`):``bad-request`` / ``mcp-broke``;工具层的
 ``tool-fail`` / ``tool-slow`` 在 :mod:`dsb.mcp` 里记.入参与结果正文都进不来--签名里就
@@ -55,6 +56,7 @@ MAX_BODY_BYTES = 256 * 1024
 Payload = dict[str, Any]
 #: 认不出的东西一律回这个在册形状(错误码不在这儿编,归 :mod:`dsb.mcp` 与 :mod:`dsb.gateway`).
 ERROR_PAYLOAD: Payload = {"status": "error", "error": "unexpected-response"}
+ERROR_BODY = json.dumps(ERROR_PAYLOAD, ensure_ascii=False).encode("utf-8")
 
 
 def said_tools(said: SaidLog) -> list[Tool]:
@@ -99,10 +101,10 @@ def route(
             return service.post(body)
         if method == "DELETE":
             return 205, None, {}
-        return 405, json.dumps(ERROR_PAYLOAD, ensure_ascii=False).encode("utf-8"), {}
+        return 405, ERROR_BODY, {}
     if method in {"GET", "POST"}:
-        return 404, json.dumps(ERROR_PAYLOAD, ensure_ascii=False).encode("utf-8"), {}
-    return 405, json.dumps(ERROR_PAYLOAD, ensure_ascii=False).encode("utf-8"), {}
+        return 404, ERROR_BODY, {}
+    return 405, ERROR_BODY, {}
 
 
 def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
@@ -130,13 +132,19 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
 
         def _respond(self, method: str) -> None:
             started = time.monotonic()
+            refusal = self._refusal(method)
             try:
-                status, data, extra = route(method, self.path, self._body(), service)
+                if refusal is None:
+                    status, data, extra = route(method, self.path, self._body(), service)
+                else:
+                    # 正文没读,连接不能再复用(同 `_body` 里超长那条).
+                    self.close_connection = True
+                    status, data, extra = refusal, ERROR_BODY, {}
             except Exception as exc:  # route 该兜的都兜了:漏到这儿的是真故障
                 took_ms = (time.monotonic() - started) * 1000
                 # 接住而不是放着断连:裸断连对扩展来说长得像"网关死了",日志里却一个字没有.
                 log_event("mcp-broke", path=urlsplit(self.path).path, exc=exc, took_ms=took_ms)
-                self._send(500, json.dumps(ERROR_PAYLOAD, ensure_ascii=False).encode("utf-8"))
+                self._send(500, ERROR_BODY)
                 return
             took_ms = (time.monotonic() - started) * 1000
             if status >= 400:
@@ -147,6 +155,26 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
                     took_ms=took_ms,
                 )
             self._send(status, data, extra)
+
+        def _refusal(self, method: str) -> int | None:
+            """进服务前就挡下的两类请求(只看头,不看正文).
+
+            跨站页面绕得过 CORS 的只有"简单请求"(`text/plain` 之类),那类设不了
+            `application/json`--设了就触发预检,而预检拿不到允许头.重绑定则是把
+            自己的域名指到 loopback,请求顺势成了"同源",Host 遂不是本机名.
+            扩展(host_permissions)与 curl 两条闸都不碰.
+            """
+            name, _, stated_port = (self.headers.get("Host") or "").lower().partition(":")
+            if name not in {"127.0.0.1", "localhost"}:
+                return 403
+            # 端口写没写都要对得上(http 的 80 会被浏览器省掉).
+            if stated_port and stated_port != str(self.server.server_address[1]):
+                return 403
+            if method == "POST" and urlsplit(self.path).path == MCP_PATH:
+                content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip()
+                if content_type.lower() != "application/json":
+                    return 415
+            return None
 
         def _body(self) -> bytes:
             length = int(self.headers.get("Content-Length") or 0)
