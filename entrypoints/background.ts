@@ -88,6 +88,7 @@ import {
   type ReplyPayload,
 } from "../src/lib/reply";
 import { SAID_ADD_TOOL } from "../src/lib/said";
+import { isEmptyMigration, planStorageMigration } from "../src/lib/migrate";
 import { readSpeak, readToggle, SPEAK_STORAGE_KEY, TOGGLE_STORAGE_KEY } from "../src/lib/toggle";
 import {
   ASKS_STORAGE_KEY,
@@ -901,6 +902,15 @@ export default defineBackground(() => {
     if (state === "on-reachable" && recoverFailure()) await paintIcon();
   }
 
+  /** 把 `ds-` 时代留下的挂起状态搬到 `dsb/` 名下,只搬一次(搬完旧键就删). */
+  async function migrateLegacyStorage(): Promise<void> {
+    const plan = planStorageMigration(await browser.storage.local.get(null));
+    if (isEmptyMigration(plan)) return;
+    await browser.storage.local.set({ ...plan.write });
+    await browser.storage.local.remove([...plan.remove]);
+    console.log(`[dsb] 搬了 ${plan.remove.length} 个旧存储键:${plan.remove.join(", ")}`);
+  }
+
   browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
     if (!(TOGGLE_STORAGE_KEY in changes)) return;
@@ -997,7 +1007,8 @@ export default defineBackground(() => {
 
   browser.runtime.onInstalled.addListener(() => {
     console.log("[dsb] installed, first message id:", nextMessageId("install"));
+    void migrateLegacyStorage();
   });
 
-  void syncFromStorage();
+  void migrateLegacyStorage().then(() => syncFromStorage());
 });
