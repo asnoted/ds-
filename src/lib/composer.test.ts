@@ -421,6 +421,16 @@ describe("把这条发出去:生成期绝不点圆键", () => {
     expect(textarea().value).toBe("");
   });
 
+  it("send:发不出去,人在这段等待里补打字 → 回滚不冲掉他的字", async () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    mountCircle(STOP_HTML);
+    const { clock } = fakeClock();
+    textarea().addEventListener("keydown", () => (textarea().value = "要发的话我要补充"));
+
+    expect(await send(textarea(), "要发的话", clock)).toBe("failed");
+    expect(textarea().value).toBe("要发的话我要补充");
+  });
+
   it("send:框里有用户正在打的字 → 不覆盖,回 draft,一个键都不按(自动续聊不吃草稿)", async () => {
     document.body.innerHTML = "<textarea></textarea>";
     mountCircle(SEND_READY_HTML, () => (textarea().value = ""));

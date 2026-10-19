@@ -262,6 +262,7 @@ export async function send(
   const staged = stage(element, message);
   if (staged !== "written") return staged;
   if (await triggerSend(element, clock)) return "sent";
-  if (read(element).includes(message)) write(element, before);
+  // 只在框里仍是这一份时还原:人在这段等待里补打的字不能被回滚冲掉.
+  if (sameText(read(element), message)) write(element, before);
   return "failed";
 }
