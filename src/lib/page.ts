@@ -12,6 +12,7 @@ import {
   pressEnter as pressEnterKey,
   read,
   readIntent,
+  sameText,
   write,
   COMPOSER_SELECTOR,
   type Intent,
@@ -181,6 +182,21 @@ export function readButton(_frame: ActionFrame): { readonly pressed: Intent } {
 export function isGenerating(result: unknown): boolean {
   if (typeof result !== "object" || result === null) return false;
   return (result as { pressed?: unknown }).pressed === "stop";
+}
+
+/**
+ * `composer.read` 回话 → 框里有没有**别人**正在打的东西(不是我们这一催自己要写的正文).
+ *
+ * 催办写框之前先过这一道(#93 顶草稿那条代价):自动催办与"落草稿"那一支同一条原则--
+ * 框里有别人的字就不覆盖,宁可少一催.上次写进去、`send.enter` 没成的那句不算别人的字:
+ * 下一扫还得能接着发,不能自己把自己挡住.**读不出来按"有人在打"处理**:宁可少一催,
+ * 也不覆盖.
+ */
+export function hasForeignDraft(result: unknown, own: string): boolean {
+  const text =
+    typeof result === "object" && result !== null ? (result as { text?: unknown }).text : undefined;
+  if (typeof text !== "string") return true;
+  return text.trim() !== "" && !sameText(text, own);
 }
 
 /** 在写作框上按回车(站点自己也接这条路);键码补法那一份在 `composer.ts`. */

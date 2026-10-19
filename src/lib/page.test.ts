@@ -7,6 +7,7 @@ import { fixtureCases, type ActionCase } from "./fixtures";
 import {
   buttonClick,
   clearComposer,
+  hasForeignDraft,
   isAccountState,
   isGenerating,
   listChats,
@@ -544,6 +545,21 @@ describe("那个圆键:button.get / button.click", () => {
   it("isGenerating:回话形状不对一律不算(看不见就别拿它拦催办)", () => {
     for (const result of [{}, { pressed: 1 }, { pressed: null }, null, undefined, "stop"]) {
       expect(isGenerating(result)).toBe(false);
+    }
+  });
+
+  it("hasForeignDraft:只有别人正在打的字才算(自己的那句不算)", () => {
+    expect(hasForeignDraft({ text: "我打到一半的话" }, "继续")).toBe(true);
+    expect(hasForeignDraft({ text: "" }, "继续")).toBe(false);
+    expect(hasForeignDraft({ text: " \n " }, "继续")).toBe(false); // 只剩空白 = 空框
+    // 上次写进去、`send.enter` 没成的那句:自己的字,下一扫还要能接着发
+    expect(hasForeignDraft({ text: "继续" }, "继续")).toBe(false);
+    expect(hasForeignDraft({ text: "继续\r\n" }, "继续")).toBe(false);
+  });
+
+  it("hasForeignDraft:读不出来的回话按有人在打处理(宁可少一催,也不覆盖)", () => {
+    for (const result of [{}, { text: 1 }, null, undefined, "继续"]) {
+      expect(hasForeignDraft(result, "继续")).toBe(true);
     }
   });
 

@@ -204,7 +204,7 @@ export type StageOutcome = "written" | "draft" | "unwritable";
  * 受控输入在换行与首尾空白上与我们写进去的不完全一致),两处都由用例钉着:这里钉
  * "上一轮落的短标记再落一次不算别人的字",`armed.test.ts` 钉"用户手打的话永远不等于标记".
  */
-function sameText(left: string, right: string): boolean {
+export function sameText(left: string, right: string): boolean {
   return normalizeText(left) === normalizeText(right);
 }
 

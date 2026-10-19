@@ -63,7 +63,7 @@ import {
 } from "../src/lib/icon";
 import { nextMessageId } from "../src/lib/id";
 import type { LocalTool, LocalToolEnv } from "../src/lib/localtools";
-import { type AccountState, isGenerating } from "../src/lib/page";
+import { type AccountState, hasForeignDraft, isGenerating } from "../src/lib/page";
 import {
   FAILURE_RELAY_UNREACHABLE,
   MCP_CALL_TIMEOUT_MS,
@@ -525,6 +525,10 @@ export default defineBackground(() => {
    * **"代你发言"闸关着时整个跳过**(#52):催办是"写 + 发"成对的动作,只写不发
    * 会在用户的输入框里留下半截"继续".跳过即不算催(计数不动),下扫再试.
    * 写步本身现在不受 speak 闸管(#52:只管发),所以这个判断必须在这里显式做.
+   *
+   * **框里有别人正在打的字时也整个跳过**(#93 顶草稿的落点,与落草稿那一支同一条
+   * 原则):催办是自动的,没人按着它,没理由替人吃掉打到一半的话.写步
+   * (`composer.type`)本身就会覆盖草稿--这是它的明写取舍,所以挡在这里.
    */
   async function deliverNudge(
     tabId: number,
@@ -542,6 +546,12 @@ export default defineBackground(() => {
       params,
       target: String(tabId),
     });
+    const draft = await runAction(frame("composer.read", {}), context);
+    if (!draft.ok) return false;
+    if (hasForeignDraft(draft.result, text)) {
+      console.log("[dsb] 看门狗:写作框里有人正在打的东西,这一催跳过(不覆盖草稿)");
+      return false;
+    }
     if (!(await runAction(frame("composer.type", { text }), context)).ok) {
       return false;
     }
