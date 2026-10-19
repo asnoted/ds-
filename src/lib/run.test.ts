@@ -47,6 +47,26 @@ describe("放行那一刻才武装(AC①:入队不武装)", () => {
   });
 });
 
+describe("单槽:一个窗口里只排一条标记", () => {
+  it("窗口到点前又到一份结果:不排第二条标记,放行时也就没有裸标记", () => {
+    const first = decide(turnOn(true), { type: "result", payload: PAYLOAD });
+    const second = decide(first.state, { type: "result", payload: PAYLOAD });
+    // 标记是内容无关的:队列里已经有一条,第二份结果只更新正文,不再排队.
+    expect(second.state.queued).toBe(buildContinuation(PAYLOAD));
+    expect(second.effects).toEqual([]);
+
+    // 放行只有一条:那条裸标记(没有正文可换、会被当成用户自己发的话)不会出现.
+    const released = decide(second.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+    });
+    expect(released.effects).toEqual([
+      { kind: "send", message: CONTINUATION_MARKER, continuation: true },
+    ]);
+  });
+});
+
 describe("闸关时只落草稿(AC②:stage-only 结构里没有发送步)", () => {
   it("放行那一刻闸关着:挂 pending,裁决清单里整张都没有发送步(#52)", () => {
     const queued = decide(turnOn(false), { type: "result", payload: PAYLOAD });

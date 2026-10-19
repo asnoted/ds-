@@ -159,9 +159,11 @@ function onResult(state: RunState, payload: ReplyPayload): RunDecision {
       },
     ]);
   }
-  return step({ ...state, rounds: verdict.next, queued: buildContinuation(payload) }, [
-    { kind: "enqueue" },
-  ]);
+  // 上一个窗口到点前又到一份结果:队列里的短标记与正文无关,再排一条只会在放行时多放出
+  // 一条没有正文可换的**裸标记**(裸标记会被当成用户自己发的话,还吃下协议说明).
+  // 单槽记着最新那份,标记照旧只有一条.
+  const effects: RunEffect[] = state.queued === null ? [{ kind: "enqueue" }] : [];
+  return step({ ...state, rounds: verdict.next, queued: buildContinuation(payload) }, effects);
 }
 
 /**
