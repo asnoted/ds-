@@ -216,6 +216,9 @@ class StdioServer:
                 stderr=subprocess.DEVNULL,
                 text=True,
                 encoding="utf-8",
+                # 一个坏字节不许把整条读口带走: 解成 U+FFFD 的那行不是 JSON, 跳过即可.
+                # 严格解码会抛 UnicodeDecodeError, 读线程退场, 挂着的请求陪到自己的超时.
+                errors="replace",
                 bufsize=1,
                 env={**os.environ, **self._env},
                 cwd=self._cwd,

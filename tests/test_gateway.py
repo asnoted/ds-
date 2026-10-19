@@ -93,6 +93,11 @@ for line in sys.stdin:
             if os.environ.get("FAKE_ECHO_NAME")
             else text
         )
+        if text == "garbage":
+            # 一个坏字节: 严格 UTF-8 的读口曾因此整条退场, 挂着的请求陪到超时(2026-10-20).
+            sys.stdout.flush()
+            sys.stdout.buffer.write(b"\\xff\\xfe bad bytes\\n")
+            sys.stdout.buffer.flush()
         if text == "hang":
             time.sleep(60)
             continue
@@ -327,6 +332,18 @@ def test_a_hanging_server_is_dropped_so_a_retry_gets_a_fresh_one(fake_script: Pa
         payload, failed = handler({"text": "又活了"})
         assert (payload["text"], failed) == ("又活了", False)
         assert time.monotonic() - started < 3
+    finally:
+        gate.stop()
+
+
+def test_one_bad_byte_on_stdout_does_not_kill_the_reader(fake_script: Path) -> None:
+    """读口是严格 UTF-8 解码: 一个坏字节曾带着 `UnicodeDecodeError` 把读线程整个带走,
+    挂着的请求陪到自己的超时(120 秒), 报 `tool-timeout` 而不是"孩子不在了"(2026-10-20).
+    """
+    gate = make_gateway(fake_script, timeout=1.0)
+    try:
+        payload, failed = gate.tools()[0].handler({"text": "garbage"})
+        assert (payload["text"], failed) == ("garbage", False)
     finally:
         gate.stop()
 
