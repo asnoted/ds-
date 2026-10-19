@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -58,6 +59,36 @@ def test_page_action_shares_the_extension_names() -> None:
     probe = load_page_action()
     for probe_name, filename, ts_name in SHARED:
         assert getattr(probe, probe_name) == ts_string(filename, ts_name), probe_name
+
+
+def ts_string_literal(filename: str, name: str) -> str:
+    """`export const NAME = "...";` 的字面量, 按 TS 字符串语义解出(`\\n` 是真换行).
+
+    与 :func:`ts_string` 分开: 那个只认单行简单串(给键名用), 这条要处理转义.
+    """
+    match = re.search(
+        rf'^export const {name} = ("(?:[^"\\]|\\.)*");$',
+        (LIB / filename).read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert match is not None, f"src/lib/{filename} 里没找到 {name}"
+    return json.loads(match.group(1))
+
+
+def test_page_action_shares_the_continuation_marker() -> None:
+    """短标记也归共享契约: 探针按它认"续聊那一轮发出来了", 漂了探针的判据就是假的."""
+    probe = load_page_action()
+    assert ts_string_literal("continuation.ts", "CONTINUATION_MARKER") == probe.CONTINUATION_MARKER
+
+
+def test_page_action_shares_the_button_icon_prefixes() -> None:
+    """圆键图标前缀(发送 / 停止): 探针的停止相判据, 扩展的意图读面各存一份, 对拍."""
+    composer = (LIB / "composer.ts").read_text(encoding="utf-8")
+    prefixes = re.findall(r'\["([^"]+)", "(?:send|stop)"\]', composer)
+    assert prefixes, "src/lib/composer.ts 里没找到按钮图标前缀"
+    probe = probe_source("page_action")
+    for prefix in prefixes:
+        assert prefix in probe, f"scripts/page-action.py 里没找到图标前缀 {prefix!r}"
 
 
 def test_watchdog_probe_uses_the_extension_names() -> None:
