@@ -3,7 +3,7 @@ import { defineConfig } from "wxt";
 export default defineConfig({
   manifest: {
     name: "dsb",
-    description: "Browser extension built with WXT",
+    description: "在 DeepSeek 网页里直接调用本机 MCP 工具",
     // 站点范围在装的那一刻定死,运行期不接受任何切换;总开关不参与站点判定.
     // `<all_urls>` 是唯一的例外,只解锁一件事:失败当场抓一帧(ADR-0008,#106).
     // `captureVisibleTab` 的硬要求就是 `<all_urls>` 或 activeTab,站点级 host 权限
