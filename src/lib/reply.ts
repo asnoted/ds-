@@ -50,6 +50,21 @@ export function isReplyPayload(value: unknown): value is ReplyPayload {
 }
 
 /**
+ * 交给 TOON 编码前,把**不成对**的代理项折成替换字符.
+ *
+ * TOON 库见到孤立代理项直接抛 TypeError(它不替我们决定),而这段编码在 `decide`
+ * 里跑:抛出去就是这一轮的结果整条丢--围栏已经认领,回灌却没排上,模型永远等不到.
+ * 折成 U+FFFD 是唯一能上线的形态(站点按 UTF-8 送,半个代理项本来也送不出别的);
+ * 成对的星平面字原样留.
+ */
+function encodableText(text: string): string {
+  // 按码点走:成对的代理项出来是一个两单元的串,单单元又落在代理区里的才是落单的.
+  return [...text]
+    .map((char) => (char.length === 1 && char >= "\uD800" && char <= "\uDFFF" ? "\uFFFD" : char))
+    .join("");
+}
+
+/**
  * 组装一条回灌消息:首行锚 + TOON 载荷(TOON 编码只发生在这里).
  *
  * 多行正文走 TOON 的 tabular form(SPEC §9.3)--一行正文一条 row:
@@ -68,10 +83,12 @@ export function isReplyPayload(value: unknown): value is ReplyPayload {
  */
 export function buildReply(payload: ReplyPayload): string {
   if (payload.status === "ok") {
-    const answer = payload.answer.split("\n").map((text) => ({ text }));
+    const answer = encodableText(payload.answer)
+      .split("\n")
+      .map((text) => ({ text }));
     return `${REPLY_ANCHOR}\n${encode({ status: "ok", answer })}`;
   }
-  return `${REPLY_ANCHOR}\n${encode(payload)}`;
+  return `${REPLY_ANCHOR}\n${encode({ status: "error", error: encodableText(payload.error) })}`;
 }
 
 /**

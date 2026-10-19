@@ -54,6 +54,23 @@ describe("buildReply", () => {
     expect(message).toContain('"# 注释"');
     expect(message).not.toMatch(/\\n/);
   });
+
+  it("孤立代理字符折成替换字符:TOON 编不出来也不能把整条回灌丢掉", () => {
+    // 工具结果里会有半个代理项:第三方 MCP server 回话里的 `\ud800`(dsb 那边
+    // 故意用全转义带上线,解回来还是同一个串),或模型自己写坏的半个 emoji 转义
+    // 被错误回执原样回显(`bad-path(路径 x\ud800)`).TOON 的 encode 见到不成对的
+    // 代理项**抛 TypeError**,而这段编码在 `decide` 里跑--一抛,这一轮的结果就
+    // 整条丢:工具跑了,模型永远等不到回灌.
+    // 折法只动不成对的:星平面字(成对)原样留.
+    const message = buildReply(okPayload("路径 x\ud800 读不了,😀 照旧"));
+    expect(message).toContain("\uFFFD");
+    expect(message).toContain("😀");
+    expect(parseReplyPayload(message)).toEqual(okPayload("路径 x\uFFFD 读不了,😀 照旧"));
+    // 另一支也一样:这条编码只有一个出口,两支都得编得出来.
+    expect(parseReplyPayload(buildReply(errorPayload("code\ud800")))).toEqual(
+      errorPayload("code\uFFFD"),
+    );
+  });
 });
 
 describe("parseReplyPayload / buildReply 的逆", () => {

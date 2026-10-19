@@ -11,7 +11,7 @@ import {
   STOP_CONTINUATION_LIMIT,
   truncateResult,
 } from "./continuation";
-import { hasReplyAnchor, okPayload } from "./reply";
+import { hasReplyAnchor, okPayload, parseReplyPayload } from "./reply";
 
 describe("CONTINUATION_MARKER", () => {
   it("守首行锚(第一行恰好是 agent:),第二行才是那个词,总共两行", () => {
@@ -103,6 +103,13 @@ describe("buildContinuation", () => {
     const text = buildContinuation(okPayload("x".repeat(MAX_RESULT_CHARS + 5)));
     expect(text).toContain("已截断");
     expect(text).not.toContain("\\n");
+  });
+
+  it("工具结果里带半个代理项也编得出正文,这一轮不丢", () => {
+    // 这条是产品路径:结果到了就 `decide` → 这里 → `buildReply` 的 TOON 编码.
+    // 编码抛出去的话,`state.queued` 根本没写上,那半轮白跑(围栏已经认领掉了).
+    const text = buildContinuation(okPayload("bad-path(路径 \ud800)"));
+    expect(parseReplyPayload(text)).toEqual(okPayload("bad-path(路径 \uFFFD)"));
   });
 });
 
