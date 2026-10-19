@@ -142,6 +142,8 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
                     status, data, extra = refusal, ERROR_BODY, {}
             except Exception as exc:  # route 该兜的都兜了:漏到这儿的是真故障
                 took_ms = (time.monotonic() - started) * 1000
+                # 半路抛的可能还有正文没读:这条连接不能复用,否则正文被当成下一条请求.
+                self.close_connection = True
                 # 接住而不是放着断连:裸断连对扩展来说长得像"网关死了",日志里却一个字没有.
                 log_event("mcp-broke", path=urlsplit(self.path).path, exc=exc, took_ms=took_ms)
                 self._send(500, ERROR_BODY)
@@ -171,6 +173,9 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
             if stated_port and stated_port != str(self.server.server_address[1]):
                 return 403
             if method == "POST" and urlsplit(self.path).path == MCP_PATH:
+                if self.headers.get("Transfer-Encoding"):
+                    # 服务从不读 chunked: 411 断掉, 别把块里的字节当成下一条请求.
+                    return 411
                 content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip()
                 if content_type.lower() != "application/json":
                     return 415

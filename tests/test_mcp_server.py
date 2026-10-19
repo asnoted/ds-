@@ -336,6 +336,67 @@ def test_a_request_addressed_to_another_host_is_refused(tmp_path: Path) -> None:
     assert not (tmp_path / "pwned.txt").exists()
 
 
+def raw_exchange(server: Any, request: bytes) -> bytes:
+    """发一段原始字节, 一直读到对端关连接(HTTP/1.1 保活下关不关由服务端决定)."""
+    import socket
+
+    with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=5) as sock:
+        sock.sendall(request)
+        chunks = []
+        while chunk := sock.recv(4096):
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def test_a_chunked_body_is_refused_instead_of_read_as_a_new_request(service: McpService) -> None:
+    """chunked 服务从不读: 以前当成空体收下, 块里的字节接着被当成下一条请求(2026-10-20)."""
+    import threading
+
+    with make_server(service, port=0) as server:
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            answer = raw_exchange(
+                server,
+                (
+                    f"POST {MCP_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                    "Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n"
+                    "5\r\nhello\r\n0\r\n\r\n"
+                ).encode(),
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+    assert answer.startswith(b"HTTP/1.1 411")
+
+
+def test_a_body_that_cannot_be_read_closes_the_connection(service: McpService) -> None:
+    """Content-Length 读不成数会半路抛: 那条连接不许再复用, 否则正文被当成下一条请求."""
+    import threading
+
+    with make_server(service, port=0) as server:
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            answer = raw_exchange(
+                server,
+                (
+                    f"POST {MCP_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                    "Content-Type: application/json\r\nContent-Length: nope\r\n\r\n"
+                    '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+                ).encode(),
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+    assert answer.startswith(b"HTTP/1.1 500")
+    assert answer.count(b"HTTP/1.1 ") == 1
+
+
 # ---- 工作工具(旧 0009) ----
 
 
