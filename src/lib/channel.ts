@@ -649,10 +649,10 @@ export function actionListener(
 function failureCode(error: unknown): string {
   // 码得在册里才认:执行器自己编一个码出来照样折成 tab-gone,别让册子外的词漏到线上.
   if (error instanceof PageError && actionErrorCodes().includes(error.code)) {
-    console.warn("[ds] 动作做不到:", error.code, error.message);
+    console.warn("[dsb] 动作做不到:", error.code, error.message);
     return error.code;
   }
-  console.warn("[ds] 动作这一跳走不通:", error);
+  console.warn("[dsb] 动作这一跳走不通:", error);
   return ACTION_ERROR_TAB_GONE;
 }
 
