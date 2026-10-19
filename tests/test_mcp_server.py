@@ -168,6 +168,12 @@ def test_an_unknown_notification_stays_silent(service: McpService) -> None:
     assert service.post(json.dumps(message).encode()) == (202, None, {})
 
 
+def test_a_notifications_method_with_an_id_is_answered(service: McpService) -> None:
+    """带 id 的就是请求, 不是通知: 静默丢下会让客户端一直等这一条(2026-10-20)."""
+    error = error_of(call(service, 7, "notifications/whatever"))
+    assert error["code"] == METHOD_NOT_FOUND
+
+
 def test_a_batch_is_answered_item_by_item(service: McpService) -> None:
     batch = [
         {"jsonrpc": "2.0", "id": 1, "method": "ping"},

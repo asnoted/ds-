@@ -162,7 +162,10 @@ class McpService:
             if method == "initialize":
                 result = self._initialize(message.get("params"))
             elif method.startswith("notifications/"):
-                return None
+                # 带 id 的是请求, 不是通知: 一律静默丢下会让客户端永远等这一条.
+                if notification:
+                    return None
+                return _error(request_id, METHOD_NOT_FOUND, f"Method not found: {method}")
             elif method == "ping":
                 # 探活留痕:扩展每 30s 探一次(总开关开着才排班),记下来
                 # env-up 才能读"扩展最后探活距今多久".脚本自检走
