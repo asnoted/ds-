@@ -399,6 +399,32 @@ def test_a_chunked_body_is_refused_on_every_method(service: McpService) -> None:
     assert answer.count(b"HTTP/1.1 ") == 1
 
 
+def test_a_negative_content_length_does_not_reuse_the_connection(
+    service: McpService,
+) -> None:
+    """负的 Content-Length 不是 0 字节正文: 不读也不断, 后面的字节会被当成下一条请求(2026-10-20)."""
+    import threading
+
+    with make_server(service, port=0) as server:
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            answer = raw_exchange(
+                server,
+                (
+                    f"POST {MCP_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                    "Content-Type: application/json\r\nContent-Length: -1\r\n\r\n"
+                    f"GET {MCP_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
+                ).encode(),
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+    assert answer.count(b"HTTP/1.1 ") == 1
+
+
 def test_a_body_that_cannot_be_read_closes_the_connection(service: McpService) -> None:
     """Content-Length 读不成数会半路抛: 那条连接不许再复用, 否则正文被当成下一条请求."""
     import threading

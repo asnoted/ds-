@@ -183,7 +183,11 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
 
         def _body(self) -> bytes:
             length = int(self.headers.get("Content-Length") or 0)
-            if length <= 0:
+            if length < 0:
+                # 负数不是"0 字节正文":不知道要跳过多少,只能断开,否则后头的字节会被当成下一条请求.
+                self.close_connection = True
+                return b""
+            if length == 0:
                 return b""
             if length > MAX_BODY_BYTES:
                 self.close_connection = True  # 不读剩下的字节,直接断开,免得连接错位
