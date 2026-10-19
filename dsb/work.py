@@ -219,7 +219,8 @@ def is_protected(root: Path, resolved: Path, operation: Operation) -> bool:
     except (OSError, RuntimeError):
         return False
     for sensitive in sensitive_paths:
-        if target == sensitive:
+        # 还没落盘的文件没有 inode 可比,按折叠后的路径比:macOS 上换个大小写写的是同一份.
+        if str(target).casefold() == str(sensitive).casefold():
             return True
         # 同一个 inode 换个写法 / 硬链接也算:macOS 大小写不敏感,``RELAY.json`` 与
         # ``relay.json`` 是同一份文件;硬链接同理.按路径字符串比会漏.

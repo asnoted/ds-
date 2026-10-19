@@ -170,6 +170,15 @@ class Test真实生效的那一个:
         monkeypatch.delenv("DSB_MCP_CONFIG", raising=False)
         assert code_of(lambda: read_text(root, "mcp.json")) == ERROR_PROTECTED
 
+    def test_还没落盘的生效配置换个大小写也拒(
+        self, root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """文件不在盘上时没有 inode 可比;换个大小写在 macOS 上写的还是同一份."""
+        elsewhere = root / "config" / "my-servers.json"
+        elsewhere.parent.mkdir()
+        monkeypatch.setenv("DSB_MCP_CONFIG", str(elsewhere))
+        assert code_of(lambda: write_text(root, "config/My-Servers.json", "{}")) == ERROR_PROTECTED
+
 
 class TestGrep:
     def test_模式命中保护文件时结果里没有它(self, root: Path) -> None:
