@@ -14,8 +14,10 @@ import ast
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+import pytest
 
+ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.docs
 PROBE_DOC = ROOT / "docs" / "probe.md"
 PROBE_SCRIPT = ROOT / "scripts" / "page-action.py"
 

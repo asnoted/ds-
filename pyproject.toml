@@ -44,3 +44,4 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["docs: 文档一致性检查, 只在 CI 跑; 本地 pre-commit 用 -m 'not docs' 跳过"]

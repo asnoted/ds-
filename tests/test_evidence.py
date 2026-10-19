@@ -17,6 +17,8 @@ from typing import Any
 
 import pytest
 
+pytestmark = pytest.mark.docs
+
 EVIDENCE = Path(__file__).resolve().parents[1] / "protocol" / "evidence" / "controls.json"
 DATE_SHAPE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PLACEHOLDERS = ("...", "...", "<!--")

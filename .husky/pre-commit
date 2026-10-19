@@ -8,10 +8,13 @@
 #
 # **不比 `pnpm quality`**：那边多一个全仓 `format:check`，与 lint-staged 重复
 # （lint-staged 只管暂存区，快得多）。`pnpm quality` 仍是「一条命令跑全」的入口。
+#
+# 文档一致性（ADR 语料 / 证据 / 索引 / 探针表）只在 CI 查：整理文档时不该挡住
+# 代码提交。这里跑 `-m "not docs"`；CI 的 `pnpm quality:ci` 跑全量。
 
 npx lint-staged
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm relay:lint
-pnpm relay:test
+uv run pytest -m "not docs"

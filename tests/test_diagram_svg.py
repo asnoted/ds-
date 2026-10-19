@@ -22,6 +22,7 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.docs
 
 LEGACY = ROOT / "scripts" / "extract-diagram-svg.py"
 

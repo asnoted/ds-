@@ -11,7 +11,10 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.docs
 SCRIPT = ROOT / "scripts" / "audit-issues.py"
 
 

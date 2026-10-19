@@ -11,7 +11,10 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.docs
 
 DOC = ROOT / "docs" / "CODING_STANDARDS.md"
 
