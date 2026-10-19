@@ -142,6 +142,15 @@ def test_rewrite_paths_maps_adr_files_and_sends_deleted_topics_to_numbering() ->
     assert module.rewrite_paths(live + ":15") == live + ":15"
 
 
+def test_already_migrated_detects_history_markers_in_body_and_comments() -> None:
+    module = load_audit()
+    assert module.already_migrated([ticket(1, "见 旧 0010.")])
+    issue = ticket(2, "正文没有标记.")
+    issue["comments"] = [{"body": "评论见 旧 0007."}]
+    assert module.already_migrated([issue])
+    assert not module.already_migrated([ticket(3, "见 ADR-0001.")])
+
+
 def test_rewrite_changes_collects_body_and_comments() -> None:
     module = load_audit()
     issue = ticket(11, f"正文 {ghost('0013')}.")

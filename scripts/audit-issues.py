@@ -41,7 +41,8 @@
 把票里的旧号与旧路径改掉; 标"已删"的号改成 `旧 NNNN`, 旧路径改成编号表. 默认只打印
 diff, 加 `--apply` 才写回, 写前把原 JSON 备份到系统临时目录. 票在 2026-10-18 已按
 13 篇对齐过, 所以这是**一次性**的: 改完别再跑, 否则新的 0004 / 0005 / 0006 会被当成
-旧号再降一级. 已删号的票面保留 `旧 NNNN` 作历史, 不再强求可点.
+旧号再降一级. 票面一旦出现 `旧 NNNN`, 工具直接拒绝, 防手滑重跑. 已删号的票面保留
+`旧 NNNN` 作历史, 不再强求可点.
 """
 
 from __future__ import annotations
@@ -88,6 +89,7 @@ LEGACY_CITE = {
     "0013": "0006",
 }
 LEGACY_GONE = {"0001", "0002", "0003", "0007", "0009", "0010", "0011"}
+LEGACY_MARK = re.compile(r"旧\s+\d{4}")
 LEGACY_ADR_PATHS = {
     "docs/adr/0001-adrs-are-living-documents.md": "docs/evidence/numbering.md",
     "docs/adr/0002-dsb-is-a-stateless-mcp-gateway.md": "docs/evidence/numbering.md",
@@ -284,6 +286,16 @@ def check_doc_paths(issues: list[dict]) -> list[str]:
     return out
 
 
+def already_migrated(issues: list[dict]) -> bool:
+    """票面已有 `旧 NNNN` 就说明 13->6 那轮跑过了; 再跑会把新号当旧号降级."""
+    for issue in issues:
+        texts = [issue.get("body") or ""]
+        texts += [comment.get("body") or "" for comment in issue.get("comments") or []]
+        if any(LEGACY_MARK.search(text) for text in texts):
+            return True
+    return False
+
+
 def rewrite_citations(text: str) -> str:
     """把 13 篇那版的 `ADR-NNNN` 换成 6 篇的号; 已删的标成历史 `旧 NNNN`."""
 
@@ -425,6 +437,13 @@ def main() -> None:
         f"(开 {sum(1 for i in issues if i['state'] == 'OPEN')} / "
         f"关 {sum(1 for i in issues if i['state'] == 'CLOSED')})"
     )
+
+    if args.rewrite_citations and already_migrated(issues):
+        print(
+            f"{TAG} 票面已有 `旧 NNNN`, 说明 13->6 那轮已经跑过; 拒绝再改.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
     if args.rewrite_citations:
         changes = rewrite_changes(issues)
