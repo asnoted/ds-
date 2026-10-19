@@ -20,6 +20,7 @@ root 内还有一层**权限规则**(:mod:`dsb.permissions`,#89):按操作分类
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import re
 import signal
@@ -51,9 +52,10 @@ WORK_READ_LINE_LIMIT = 500
 WORK_READ_BYTES = 16_000
 WORK_LIST_LIMIT = 500
 WORK_GREP_LIMIT = 200
-#: ``grep`` 的墙钟(旧 0010):模式是模型给的,嵌套量词叠上一行几十万字能指数回溯,
-#: 而活工具跑在**单线程**的 stdio 子进程里--一次卡住,后面每一件工具都排在它后面
-#: 哑掉(gateway 那边只判 ``tool-timeout``,不杀还在转的孩子).过线就整个中止,回一个
+#: ``grep`` 的墙钟(旧 0010):模式是模型给的,嵌套量词叠上一行几十万字能指数回溯.请求跑在
+#: ``ThreadingHTTPServer`` 的工作线程里,而 ``re`` 的指数回溯**攥着 GIL**--留在本进程里跑,
+#: 整个中继(连 ``ping`` 一起)都冻住,而且是装不回来的(2026-10-20 实测).于是这一趟进
+#: **子进程**跑,墙钟由父进程收(见 :func:`_grep_in_child`):过线只收掉那个搜索,回一个
 #: 能让模型改写的码,而不是把工具面一起带走.给得比"正常那趟"宽得多:本仓上 ``ERROR_``
 #: 那种模式跑完要 3.5s,早已越过 ``dsb.log.SLOW_MS`` 那道水印.
 WORK_GREP_DEADLINE = 20.0
@@ -525,6 +527,9 @@ def _deadline(seconds: float, what: str) -> Iterator[None]:
     ``re`` 的内部循环会周期性查信号,所以指数回溯**真的**能被这一下打断(实测:
     40 个 ``a`` 后面挂 ``(a+)+b``,不打就再也回不来).装不上就**不装**--``signal``
     只能在主线程里装,少一道闸好过在错误的地方抛异常.
+
+    这一道现在装在**跑扫描的子进程**里(那里是单线程,装得上);发起请求的那个线程里
+    永远装不上,所以父进程另收一道墙钟兜着,见 :func:`_grep_in_child`.
     """
     main = threading.current_thread() is threading.main_thread()
     if not hasattr(signal, "setitimer") or not main:  # pragma: no cover - 平台/线程差异
@@ -543,6 +548,64 @@ def _deadline(seconds: float, what: str) -> Iterator[None]:
         signal.signal(signal.SIGALRM, previous)
 
 
+def _grep_child(send: Any, root: Path, pattern: str, raw: str, seconds: float, what: str) -> None:
+    """子进程那一半:跑一趟,结果或错误码从管道回去.
+
+    孩子**自己**也装一道墙钟(:func:`_deadline`):子进程是单线程的,``signal`` 在这儿装得上.
+    父进程那道 ``kill`` 是外层;这道是兜住"父进程被人收走"的情形--否则那个爆炸的搜索
+    会变成没人管的孤儿,一直转下去.
+    """
+    try:
+        try:
+            with _deadline(seconds, what):
+                text = _grep_scan(root, pattern, raw)
+            send.send(("ok", text))
+        except WorkError as error:
+            send.send(("fail", error.code, error.detail))
+        except BaseException:  # noqa: BLE001 - 孩子里漏出来的任何东西都折成一个码
+            send.send(("fail", ERROR_IO_FAILED, None))
+    finally:
+        send.close()
+
+
+def _grep_in_child(root: Path, pattern: str, raw: str, seconds: float, what: str) -> str:
+    """扫一趟,墙钟到点**收掉这个子进程**.
+
+    为什么非得进子进程:请求跑在 ``ThreadingHTTPServer`` 的工作线程里,``signal`` 只在主线程
+    装得上,而 ``re`` 的指数回溯攥着 GIL--留在本进程里跑,``ping`` 和其余工具一起冻住
+    (2026-10-20 实测:并发的 ``ping`` 3s 超时,``grep`` 永不回话).墙钟由父进程收,
+    与哪个线程发起的无关.
+
+    平台没有 ``fork``(Windows)时装不上这道闸,退回本进程直跑.
+    """
+    # shortcut: 从多线程进程 fork, 孩子可能撞上别的线程正拿着的锁僵住(到点被 kill, 这一趟
+    # 白回一个 pattern-too-slow); 真成问题时换成常驻的单线程搜索子进程.
+    try:
+        context = multiprocessing.get_context("fork")
+    except ValueError:  # pragma: no cover - 平台差异(Windows)
+        return _grep_scan(root, pattern, raw)
+    receive, send = context.Pipe(duplex=False)
+    child = context.Process(target=_grep_child, args=(send, root, pattern, raw, seconds, what))
+    child.daemon = True
+    child.start()
+    send.close()
+    try:
+        if not receive.poll(seconds):
+            raise WorkError(ERROR_PATTERN_TOO_SLOW, detail=what)
+        try:
+            outcome = receive.recv()
+        except EOFError as exc:  # 孩子没回话就走了:按一次失败的搜索收场
+            raise WorkError(ERROR_IO_FAILED, detail=what) from exc
+    finally:
+        if child.is_alive():
+            child.kill()
+        child.join()
+        receive.close()
+    if outcome[0] == "ok":
+        return str(outcome[1])
+    raise WorkError(str(outcome[1]), detail=outcome[2])
+
+
 def grep_tree(root: Path, pattern: str, raw: str = ".") -> str:
     """``grep``:在 root 内按正则搜文本行,回 ``相对路径:行号: 行``.
 
@@ -551,15 +614,14 @@ def grep_tree(root: Path, pattern: str, raw: str = ".") -> str:
 
     ``ls`` 仍如实列出这些文件的名字(只拦内容,不隐藏存在,与 opencode 一致).
 
-    整趟(编译 + 遍历 + 逐行匹配)躺在 ``WORK_GREP_DEADLINE`` 那道墙钟里
-    (:func:`_deadline`,旧 0010).
+    整趟(编译 + 遍历 + 逐行匹配)在**子进程**里跑,父进程只等 ``WORK_GREP_DEADLINE``
+    那道墙钟(:func:`_grep_in_child`,旧 0010 + 2026-10-20).
     """
     _require_root(root)
     what = (
         f"模式 {pattern!r} 未在 {WORK_GREP_DEADLINE:g}s 内搜完(换简单点的写法,或指定 path 缩小范围)"
     )
-    with _deadline(WORK_GREP_DEADLINE, what):
-        return _grep_scan(root, pattern, raw)
+    return _grep_in_child(root, pattern, raw, WORK_GREP_DEADLINE, what)
 
 
 def _grep_scan(root: Path, pattern: str, raw: str) -> str:

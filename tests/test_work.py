@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import signal
+import threading
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -598,26 +598,30 @@ def test_grep_gives_up_on_exponential_backtracking(
     assert time.monotonic() - started < 5
 
 
-def test_the_wall_clock_is_disarmed_when_the_search_finishes(
+def test_the_wall_clock_holds_off_the_main_thread(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """墙钟收工要撤: 不撤, 这一次搜索的闹铃过几秒会砸在**别人**头上(平白一件 pattern-too-slow).
+    """请求跑在 ``ThreadingHTTPServer`` 的工作线程里, 不是主线程.
 
-    闹铃是一次性的(``ITIMER_REAL``): 这一次搜得比墙钟快, 不走那一下撤掉它, 它就在几秒后
-    落在当前正在跑的随便哪件事上. 这里先自己装一个只记数的处理器--于是"没撤"当场看得见,
-    而不是把测试进程整个送走(装过处理器也是 ``_deadline`` 会还原的那一个).
+    在请求线程里 ``signal`` 装不上: 若扫描留在本进程跑, 指数回溯攥着 GIL, 连 ``ping``
+    一起冻住(2026-10-20 实测). 这道闸就**从上线起没生效过**. 这里在工作线程里问一次:
+    仍要按时回 ``pattern-too-slow``, 而且调用线程等得到, 不把整个进程带走.
     """
-    monkeypatch.setattr("dsb.work.WORK_GREP_DEADLINE", 0.2)
-    rang: list[bool] = []
-    previous = signal.signal(signal.SIGALRM, lambda *_args: rang.append(True))
-    try:
-        (tmp_path / "f.txt").write_text("hit\n", encoding="utf-8")
-        assert grep_tree(tmp_path, "hit") == "f.txt:1: hit"
-        time.sleep(0.5)
-        assert rang == []
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+    monkeypatch.setattr("dsb.work.WORK_GREP_DEADLINE", 0.3)
+    (tmp_path / "big.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
+    got: list[str] = []
+
+    def search() -> None:
+        try:
+            grep_tree(tmp_path, "(a+)+b")
+            got.append("returned")
+        except WorkError as exc:
+            got.append(exc.code)
+
+    worker = threading.Thread(target=search, daemon=True)
+    worker.start()
+    worker.join(timeout=10)
+    assert got == [ERROR_PATTERN_TOO_SLOW]
 
 
 def test_grep_missing_path_is_not_found(tmp_path: Path) -> None:
