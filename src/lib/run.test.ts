@@ -234,6 +234,33 @@ describe("出站请求认领:钥匙、过期与处置", () => {
     ]);
   });
 
+  it("限速让动手晚于放行:真发前一刻刷新武装时刻,TTL 从动手起算,不被误判过期", () => {
+    const armed = armedRun(true); // 放行那一刻武装:armedAt = 1_000
+    const sending = decide(armed, { type: "sending", now: 1_000 + ARMED_TTL_MS * 3 });
+    expect(sending.state.armed).toEqual({
+      phase: "armed",
+      continuation: buildContinuation(PAYLOAD),
+      armedAt: 1_000 + ARMED_TTL_MS * 3,
+    });
+
+    // 按放行时刻算早过了 TTL,按动手时刻算还在窗口里 → 照旧认领(工具结果进对话).
+    const claimed = decide(sending.state, {
+      type: "claimed",
+      shape: recognizeOutgoingShape(MARKER_BODY),
+      now: 1_000 + ARMED_TTL_MS * 3 + 50,
+    });
+    expect(claimed.claim).toEqual({ kind: "substituted", body: JSON.stringify({ prompt: CONT }) });
+    expect(claimed.state.armed).toEqual({ phase: "idle" });
+    expect(claimed.effects).toEqual([]);
+  });
+
+  it("没有武装时的动手前一刻:状态与效果都不动", () => {
+    const on = turnOn(true);
+    const sending = decide(on, { type: "sending", now: 999 });
+    expect(sending.state).toBe(on);
+    expect(sending.effects).toEqual([]);
+  });
+
   it("pending 不看时间:等用户按发送那条隔多久仍按钥匙认领", () => {
     const claimed = decide(armedRun(false), {
       type: "claimed",

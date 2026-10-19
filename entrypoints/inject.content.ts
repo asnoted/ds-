@@ -125,7 +125,11 @@ export default defineContentScript({
           break;
         case "send":
           void paceSend(
-            () => sendToPage(effect.message),
+            () => {
+              // 限速可能让这一发在放行之后再等一个间隔:武装的 TTL 从真动手那一刻起算.
+              dispatch({ type: "sending", now: Date.now() });
+              return sendToPage(effect.message);
+            },
             (outcome) => outcome.sent,
           )
             .then((outcome) => {

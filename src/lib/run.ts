@@ -1,6 +1,6 @@
 /**
- * 一趟续聊的**次序**:事件进(结果到达 / 窗口放行 / 发送出站落定 / 出站请求认领 /
- * 换会话 / 总开关关),裁决出(武装 / 只落草稿 / 发送 / 作废 / 留痕 / 轮数刹车).
+ * 一趟续聊的**次序**:事件进(结果到达 / 窗口放行 / 动手前一刻 / 发送出站落定 /
+ * 出站请求认领 / 换会话 / 总开关关),裁决出(武装 / 只落草稿 / 发送 / 作废 / 留痕 / 轮数刹车).
  *
  * 为什么单独一个 module:这些判断原先散在注入内容脚本的闭包里,每一条都出过事
  *(#49 武装时机、#52 闸关仍发送、发送失败撤武装),而闭包里的判定单测钉不住
@@ -103,6 +103,11 @@ export type RunEvent =
   | { readonly type: "result"; readonly payload: ReplyPayload }
   /** 出站窗口放行了这一条:武装与发送的走向在这一刻定(放行才武装). */
   | { readonly type: "released"; readonly message: string; readonly now: number }
+  /**
+   * 真动手发送**前一刻**:把武装的时刻改成此刻.限速(#61)可能让这一发在放行之后
+   * 再等过一个间隔,而武装的 TTL(`armed.ts` 的 `ARMED_TTL_MS`)该从**真发出去**那一刻起算.
+   */
+  | { readonly type: "sending"; readonly now: number }
   /** 一次发送 / 落草稿落定:`continuation` 说明这次落定属不属于本趟续聊. */
   | {
       readonly type: "settled";
@@ -178,6 +183,18 @@ function onReleased(state: RunState, message: string, now: number): RunDecision 
     ]);
   }
   return step({ ...base, armed: pend(continuation) }, [{ kind: "stage" }]);
+}
+
+/**
+ * 真动手发送前一刻:把 `armed` 的时刻改成此刻,让 TTL 从**真发出去**那一刻起算.
+ *
+ * 放行到动手之间,发送限速(#61)可能让我们等过一个间隔(最长 `WINDOW_MAX_MS`),
+ * 那段时间没有"等出站请求来认领"这回事--按放行时刻算 TTL,一条合法的续聊会在
+ * 我等限速时就过期,结果是被丢进协议说明那一支(工具结果不进对话).
+ */
+function onSending(state: RunState, now: number): RunDecision {
+  if (state.armed.phase !== "armed") return step(state, []);
+  return step({ ...state, armed: arm(state.armed.continuation, now) }, []);
 }
 
 /** 发送 / 落草稿落定:没发出去立刻撤武装(留着它,下一个出站会顶掉用户的话). */
@@ -275,6 +292,8 @@ export function decide(state: RunState, event: RunEvent): RunDecision {
       return onResult(state, event.payload);
     case "released":
       return onReleased(state, event.message, event.now);
+    case "sending":
+      return onSending(state, event.now);
     case "settled":
       return onSettled(state, event.continuation, event.outcome);
     case "session":
