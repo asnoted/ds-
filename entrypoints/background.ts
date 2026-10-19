@@ -104,6 +104,7 @@ import {
   WATCHDOG_CONFIG_STORAGE_KEY,
   readWatchdogConfig,
   watchdogDecision,
+  watchdogNudged,
   observedOutput,
   watchdogSeenActivity,
   watchdogSeenPassing,
@@ -627,10 +628,7 @@ export default defineBackground(() => {
           // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
           // 投递途中可能刚好收活,按收活后的账记,别把开着的活写回去.
           const latest = watches.get(tabId) ?? next;
-          watches.set(
-            tabId,
-            delivered && latest.taskOpen ? { ...latest, nudges: latest.nudges + 1 } : latest,
-          );
+          watches.set(tabId, delivered && latest.taskOpen ? watchdogNudged(latest, now) : latest);
           console.log(
             delivered
               ? `[dsb] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`

@@ -5,8 +5,9 @@ import {
   INITIAL_WATCHDOG_STATE,
   MAX_CONSECUTIVE_NUDGED_TASKS,
   readWatchdogConfig,
-  watchdogDecision,
   observedOutput,
+  watchdogDecision,
+  watchdogNudged,
   watchdogSeenActivity,
   watchdogSeenPassing,
   watchdogTaskClosed,
@@ -164,6 +165,24 @@ describe("watchdogDecision", () => {
     const second = watchdogDecision(first.next, { tabUrl: SESSION_URL, now: 1_000 });
     expect(first.act).toEqual({ kind: "nudge", text: DEFAULT_WATCHDOG_CONFIG.nudgeText });
     expect(second.act).toEqual(first.act);
+  });
+
+  it("催办送出去后窗口顺延:30 秒后的下一扫不会再送第二条(静默期按催办时刻重算)", () => {
+    const { silenceMs, nudgeText } = DEFAULT_WATCHDOG_CONFIG;
+    const due = 1_000 + silenceMs;
+
+    const first = watchdogDecision(armedState(), { tabUrl: SESSION_URL, now: due });
+    expect(first.act).toEqual({ kind: "nudge", text: nudgeText });
+
+    const after = watchdogNudged(first.next, due); // 编排层:送出去了
+    // 30 秒一扫:刚催过就当场再催的话,两条"继续"挤在半分钟里,静默期就形同虚设.
+    expect(watchdogDecision(after, { tabUrl: SESSION_URL, now: due + 30_000 }).act).toEqual({
+      kind: "nothing",
+    });
+    expect(watchdogDecision(after, { tabUrl: SESSION_URL, now: due + silenceMs }).act).toEqual({
+      kind: "nudge",
+      text: nudgeText,
+    });
   });
 
   it("每轮都靠路过动静顺延窗口,满额的两催照样走到停手(#104)", () => {

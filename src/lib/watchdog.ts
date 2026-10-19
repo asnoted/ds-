@@ -196,6 +196,17 @@ export function watchdogSeenPassing(state: WatchdogState, now: number): Watchdog
 }
 
 /**
+ * 一条催办**真送出去了**(编排层:闸拦着不算)--记一笔并顺延静默窗口.
+ *
+ * 顺延的是我们自己的动静:不然 30 秒一扫的下一次立刻把第二条也送掉,两条"继续"
+ * 挤在半分钟里,ADR-0001 的"催办在静默期触发"就没了.预算照旧只认送出去的:
+ * 只加 `nudges`,不碰 `nudgedTasks` / `sealed`.
+ */
+export function watchdogNudged(state: WatchdogState, now: number): WatchdogState {
+  return { ...state, lastActivityAt: now, nudges: state.nudges + 1 };
+}
+
+/**
  * 收活(内容脚本报 end-task:这一轮答复没有围栏 = 模型干净收尾;续聊到顶
  * 停手也算收活):**结账**--本笔活的连催与停手清零;这笔回催过就给
  * `nudgedTasks` 记一笔(连续两笔封掉,#104),干净收尾的活把连续笔数清零.
