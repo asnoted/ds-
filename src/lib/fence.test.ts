@@ -62,6 +62,10 @@ describe("parseSendFence / 边界", () => {
     expect(parseSendFence("```send\n  第一行\n第二行  \n```")).toBe("第一行\n第二行");
   });
 
+  it("收尾行带缩进或尾随空白也算收尾(单独一行即可)", () => {
+    expect(parseSendFence("```send\n问题\n   ```   ")).toBe("问题");
+  });
+
   it("只取第一块的那个口子(`wait.fence` 用)", () => {
     const text = "```send\n第一个\n```\n```send\n第二个\n```";
     expect(parseSendFence(text)).toBe("第一个");
