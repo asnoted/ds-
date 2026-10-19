@@ -194,6 +194,8 @@ class StdioServer:
         self._proc: subprocess.Popen[str] | None = None
         self._pending: dict[str, queue.Queue[Any]] = {}
         self._guard = threading.Lock()
+        #: 拉起这一段整段上锁: 并发两件工具都看见"没活"时不许各起一个.
+        self._start_guard = threading.Lock()
         self._write_guard = threading.Lock()
         self._issued = 0
         self._tools: list[Payload] = []
@@ -205,7 +207,15 @@ class StdioServer:
         return self._proc is not None and self._proc.poll() is None
 
     def start(self, timeout: float | None = None) -> None:
-        """拉起来并过 initialize 握手;已经活着就直接回."""
+        """拉起来并过 initialize 握手;已经活着就直接回.
+
+        检查与拉起整段上锁: 两件工具并发叫 `start()` 时, 两边都看见"没活"会各起一个--
+        没被 `_proc` 接手的那个成了孤儿, 后一个还会清掉前一个的挂账.
+        """
+        with self._start_guard:
+            self._start(timeout)
+
+    def _start(self, timeout: float | None) -> None:
         if self.alive:
             return
         try:

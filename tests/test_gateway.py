@@ -405,10 +405,7 @@ def test_a_dead_thread_only_collects_its_own_life() -> None:
 def test_start_on_a_live_server_does_not_spawn_a_second_child(
     fake_script: Path, tmp_path: Path
 ) -> None:
-    """已经活着就直接回: 再起一个会多留一个没人接手的孩子, 还把 `_proc` 指到新的那个.
-
-    并发来的两件工具都用 `if not alive: start()` 叫它, 这一句就是那道闸。
-    """
+    """已经活着就直接回: 再起一个会多留一个没人接手的孩子, 还把 `_proc` 指到新的那个."""
     starts = tmp_path / "starts.txt"
     server = StdioServer(
         "fake", [sys.executable, str(fake_script)], env={"FAKE_START_FILE": str(starts)}
@@ -417,6 +414,53 @@ def test_start_on_a_live_server_does_not_spawn_a_second_child(
         server.start()
         server.start()
         assert server.alive
+        assert len(starts.read_text(encoding="utf-8").split()) == 1
+    finally:
+        server.stop()
+
+
+def test_two_starts_at_once_spawn_one_child(
+    fake_script: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """并发叫 start() 的两件工具: 检查与拉起之间没有闸时各起一个.
+
+    没被 `_proc` 接手的那个成了孤儿(收摊够不着), 后一个还会清掉前一个的挂账.
+    这里把拉起拖慢(0.2 秒), 两边必然都先过 `alive` 检查再进 Popen--修复前起两个.
+    """
+    import subprocess
+
+    starts = tmp_path / "starts.txt"
+    real_popen = subprocess.Popen
+
+    def slow_popen(*args: Any, **kwargs: Any) -> subprocess.Popen[str]:
+        time.sleep(0.2)
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", slow_popen)
+    server = StdioServer(
+        "fake",
+        [sys.executable, str(fake_script)],
+        env={"FAKE_START_FILE": str(starts)},
+        start_timeout=2.0,
+    )
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def start() -> None:
+        barrier.wait()
+        try:
+            server.start()
+        except BaseException as exc:  # noqa: BLE001 - 线程里漏出来的都收下, 好让断言报出来
+            errors.append(exc)
+
+    threads = [threading.Thread(target=start) for _ in range(2)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+        assert all(not thread.is_alive() for thread in threads)
+        assert errors == []
         assert len(starts.read_text(encoding="utf-8").split()) == 1
     finally:
         server.stop()
