@@ -67,6 +67,16 @@ describe("watchdogDecision", () => {
     expect(act).toEqual({ kind: "navigate-back", url: SESSION_URL });
   });
 
+  it("同一个会话只改了查询串 / hash / 末尾斜杠 → 不算漂移", () => {
+    // 导航回去是 `tabs.update({url})`,等于整页重载;站点在同一个会话里挂个 `?from=`
+    // 或改个 hash 时,按整条 url 比就是每扫一次重载一次,正在生成的回复每次都被打断.
+    // 锚点说的是"会话",就比会话 id(与 `pageSessionIdOf` 同一条口径).
+    for (const url of [`${SESSION_URL}?from=history`, `${SESSION_URL}#top`, `${SESSION_URL}/`]) {
+      const { act } = watchdogDecision(armedState(), { tabUrl: url, now: 1_000 });
+      expect(act).toEqual({ kind: "nothing" });
+    }
+  });
+
   it("标签页读不到(url 为 null)→ 不动", () => {
     const { act } = watchdogDecision(armedState(), { tabUrl: null, now: 1_000 });
     expect(act).toEqual({ kind: "nothing" });
