@@ -305,7 +305,7 @@ def repo_index() -> tuple[set[str], str]:
 
 
 def named_files() -> list[Path]:
-    """写**当前口径**的那些文档: 13 篇 ADR, 加根层与 `docs/` 里手维护的六份.
+    """写**当前口径**的那些文档: 6 篇 ADR, 加根层与 `docs/` 里手维护的六份.
 
     `docs/evidence/` 不在内: 那些是**来历**, 里面刻意留着旧名字(改名前的常量就在那儿当
     证据), 拿它当"当前口径"扫是扫错地方. `docs/agents/*.md` 也不在: 那几份是**技能的口径**
