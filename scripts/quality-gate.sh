@@ -8,7 +8,7 @@
 # 用法: scripts/quality-gate.sh          # 报提交 + pnpm quality:ci
 #       scripts/quality-gate.sh --quiet  # 只报提交, 不跑质量门(脚本自查用)
 #
-# jj 不存在(比如 CI 容器)就只报 git HEAD, 不算失败.
+# jj 不存在(比如 CI 容器)或本仓不是 jj 仓就只报 git HEAD, 不算失败.
 
 set -euo pipefail
 
@@ -17,7 +17,11 @@ cd "$(dirname "$0")/.."
 git_head=$(git rev-parse --short HEAD 2>/dev/null || echo "no-git")
 jj_id="jj 不在"
 if command -v jj >/dev/null 2>&1; then
-  jj_id=$(jj log -r @ --no-graph -T 'commit_id.short()' 2>/dev/null || echo "jj 看不见 @")
+  if jj root >/dev/null 2>&1; then
+    jj_id=$(jj log -r @ --no-graph -T 'commit_id.short()' 2>/dev/null || echo "jj 看不见 @")
+  else
+    jj_id="本仓不是 jj 仓"
+  fi
 fi
 
 echo "[quality-gate] git HEAD: $git_head | jj @: $jj_id"
