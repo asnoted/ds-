@@ -513,6 +513,11 @@ async function sendToPage(message: string): Promise<SendOutcome> {
     console.log("[dsb] 输入框写不进去,这轮回灌作废");
     return { sent: false, failure: "composer-unwritable" };
   }
+  if (status === "draft") {
+    // 与半自动那一支同一条草稿保护:框里有你正在打的字就不覆盖,宁可少一轮.
+    console.log("[dsb] 输入框里还有你正在打的字,这一轮不覆盖");
+    return { sent: false, failure: "draft-in-composer" };
+  }
   if (status === "failed") return { sent: false, failure: "send-failed" };
   return { sent: true, failure: null };
 }

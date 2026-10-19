@@ -244,13 +244,14 @@ export async function triggerSend(element: HTMLElement, clock: Clock): Promise<b
   return awaitCleared(() => read(element), { timeoutMs: CIRCLE_WAIT_MS, clock });
 }
 
-/** 一次发送的结果:发出去了 / 写不进 / 没发出去(断在哪一步由调用方去留痕). */
-export type SendStatus = "unwritable" | "sent" | "failed";
+/** 一次发送的结果:发出去了 / 写不进 / 框里有别人的字(没覆盖) / 没发出去(断在哪一步由调用方去留痕). */
+export type SendStatus = "unwritable" | "draft" | "sent" | "failed";
 
 /**
- * 把 `message` 写进框里并把这条发出去;**发不出去就把原来的字还原**,页面里不留
- * 半截东西(草稿保护的另一面:写得进不等于发得出去,别把人打到一半的稿换成
- * 一条发不掉的消息).
+ * 把 `message` 写进框里并把这条发出去;**与 `stage` 同一份草稿保护**:框里有别人正在
+ * 打的字就不覆盖,回 `draft`(自动续聊宁可少一轮,也不吃人正在打的东西,与其半自动
+ * 那一支同一条原则);**发不出去就把原来的字还原**,页面里不留半截东西(草稿保护的
+ * 另一面:写得进不等于发得出去,别把人打到一半的稿换成一条发不掉的消息).
  */
 export async function send(
   element: HTMLElement,
@@ -258,7 +259,8 @@ export async function send(
   clock: Clock,
 ): Promise<SendStatus> {
   const before = read(element);
-  if (!write(element, message)) return "unwritable";
+  const staged = stage(element, message);
+  if (staged !== "written") return staged;
   if (await triggerSend(element, clock)) return "sent";
   if (read(element).includes(message)) write(element, before);
   return "failed";

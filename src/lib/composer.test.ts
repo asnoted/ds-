@@ -413,20 +413,36 @@ describe("把这条发出去:生成期绝不点圆键", () => {
   });
 
   it("send:发不出去就把原来的字还原(页面里不留半截东西)", async () => {
-    document.body.innerHTML = "<textarea>半截草稿</textarea>";
+    document.body.innerHTML = "<textarea></textarea>";
     mountCircle(STOP_HTML);
     const { clock } = fakeClock();
 
     expect(await send(textarea(), "要发的话", clock)).toBe("failed");
-    expect(textarea().value).toBe("半截草稿");
+    expect(textarea().value).toBe("");
+  });
+
+  it("send:框里有用户正在打的字 → 不覆盖,回 draft,一个键都不按(自动续聊不吃草稿)", async () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    mountCircle(SEND_READY_HTML, () => (textarea().value = ""));
+    textarea().value = "我打到一半的话";
+    const { clock } = fakeClock();
+    let keys = 0;
+    textarea().addEventListener("keydown", () => {
+      keys += 1;
+      textarea().value = "";
+    });
+
+    expect(await send(textarea(), CONTINUATION_MARKER, clock)).toBe("draft");
+    expect(textarea().value).toBe("我打到一半的话");
+    expect(keys).toBe(0);
   });
 
   it("send:写不进 → unwritable,框里的字没动", async () => {
-    document.body.innerHTML = '<div id="plain">字</div>';
+    document.body.innerHTML = '<div id="plain"></div>';
     const { clock } = fakeClock();
     const el = document.getElementById("plain") as HTMLElement;
 
     expect(await send(el, "要发的话", clock)).toBe("unwritable");
-    expect(el.textContent).toBe("字");
+    expect(el.textContent).toBe("");
   });
 });
