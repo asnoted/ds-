@@ -18,6 +18,10 @@
 基线取 prompt 接口回的那条消息自己的时间戳, 用服务端的钟, 不掺本地时间 --
 本地钟与服务端对不齐的话, 要么漏催, 要么同一轮里连催.
 
+**催过没带来改动就收工**: 催办本身也会让会话的 `updated` 前进, 光凭"又闲了"会
+无限催. 所以催之前量一次仓指纹(`repo_state`: HEAD 与工作树), 与上一句催办时相同
+就不再盯这个会话. 不是 git 仓时量不出, 保持旧行为(每轮催).
+
 **为什么走 `opencode api` 而不是直连 HTTP**: 找服务与鉴权都归它管, 这里只解码形状.
 失败的形状值得记一笔: 出错时它把状态行写 stderr(`HTTP 404 Not Found`), 错误体写
 stdout(JSON, 带 `_tag`), 而且**退出码非 0** -- 所以判成功看退出码, 不看 stdout
@@ -136,6 +140,24 @@ def project_at(cwd: str, projects: Sequence[dict]) -> str | None:
     return best[1] if best else None
 
 
+def repo_state(cwd: str | Path | None = None) -> str | None:
+    """HEAD 与工作树的指纹; 不是 git 仓(或 git 跑不动)就 None = 量不出进度.
+
+    一次 `status --porcelain=v2 --branch` 同时给 `branch.oid` 和改动列表. 只看
+    `status` 会把"提交后工作树又干净了"误判成没动, 所以 HEAD 必须在指纹里.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(cwd or Path.cwd()), "status", "--porcelain=v2", "--branch"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
 class Client(Protocol):
     def active(self) -> set[str]: ...
 
@@ -235,14 +257,17 @@ class Follower:
         text: str,
         *,
         dry_run: bool = False,
+        progress: Callable[[], str | None] | None = None,
         out: Callable[[str], None] = print,
     ) -> None:
         self._client = client
         self._text = text
         self._dry_run = dry_run
+        self._progress = progress
         self._out = out
         self._sessions = list(sessions)
         self._baselines: dict[str, float | None] = dict.fromkeys(sessions)
+        self._progress_at_nudge: dict[str, str | None] = {}
 
     @property
     def sessions(self) -> tuple[str, ...]:
@@ -255,11 +280,15 @@ class Follower:
             info = self._client.info(session_id)
             if info is None:
                 self._out(f"{TAG} {session_id} 够不着(删了 / ID 不对 / 工作目录不在了), 不再盯")
-                self._sessions.remove(session_id)
-                del self._baselines[session_id]
+                self._forget(session_id)
                 continue
             view = view_of(session_id, info, active)
             if not should_nudge(view, self._baselines[session_id]):
+                continue
+            current = self._progress() if self._progress is not None else None
+            if current is not None and self._progress_at_nudge.get(session_id) == current:
+                self._out(f"{TAG} {session_id} 催过但仓里没新提交/改动, 不再盯")
+                self._forget(session_id)
                 continue
             if self._dry_run:
                 self._out(f"{TAG} {session_id} 闲着, 该催(--dry-run, 没发)")
@@ -267,8 +296,14 @@ class Follower:
             else:
                 self._baselines[session_id] = self._client.prompt(session_id, self._text)
                 self._out(f"{TAG} {session_id} 闲着, 已催: {self._text}")
+            self._progress_at_nudge[session_id] = current
             nudged += 1
         return nudged
+
+    def _forget(self, session_id: str) -> None:
+        self._sessions.remove(session_id)
+        del self._baselines[session_id]
+        self._progress_at_nudge.pop(session_id, None)
 
 
 def watch(
@@ -347,7 +382,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.interval <= 0:
         parser.error("--interval 得是正的; 0 会变成连着捶服务端")
 
-    follower = Follower(OpencodeClient(), args.sessions, args.text, dry_run=args.dry_run)
+    # shortcut: 仓指纹取进程 cwd, 跨项目同时盯会误判; 升级时按会话 location 取.
+    follower = Follower(
+        OpencodeClient(), args.sessions, args.text, dry_run=args.dry_run, progress=repo_state
+    )
     print(
         f"{TAG} 盯 {', '.join(follower.sessions)}, 每 {args.interval:g}s 一拍"
         + (", --dry-run 不发" if args.dry_run else "")
