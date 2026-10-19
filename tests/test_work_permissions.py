@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,19 @@ class Test真实生效的那一个:
         monkeypatch.setenv("DSB_MCP_CONFIG", str(elsewhere))
         assert code_of(lambda: read_text(root, "config/my-servers.json")) == ERROR_PROTECTED
         assert code_of(lambda: write_text(root, "config/my-servers.json", "x")) == ERROR_PROTECTED
+
+    def test_同一份文件换个名字的硬链接也拒(
+        self, root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """macOS 大小写不敏感与硬链接都是同一 inode 的两种写法;按路径字符串比会漏."""
+        elsewhere = root / "config" / "my-servers.json"
+        elsewhere.parent.mkdir()
+        elsewhere.write_text('{"dsb-gateway": {"command": "sh"}}', encoding="utf-8")
+        monkeypatch.setenv("DSB_MCP_CONFIG", str(elsewhere))
+        alias = root / "config" / "alias.json"
+        os.link(elsewhere, alias)
+        assert code_of(lambda: read_text(root, "config/alias.json")) == ERROR_PROTECTED
+        assert code_of(lambda: write_text(root, "config/alias.json", "x")) == ERROR_PROTECTED
 
     def test_没配时_root_里那个_mcp_json_仍拒(
         self, root: Path, monkeypatch: pytest.MonkeyPatch

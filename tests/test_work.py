@@ -811,6 +811,7 @@ def test_arguments_type_is_a_mapping(tmp_path: Path) -> None:
     assert handler(arguments)[1] is False
 
 
+@pytest.mark.docs
 def test_every_code_is_catalogued_in_the_adr() -> None:
     """ADR-0009 那张表读起来是完整的一张: ``dsb/work.py`` 里定义的每个码都得在篇里点到名.
 

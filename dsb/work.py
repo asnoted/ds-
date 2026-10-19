@@ -211,10 +211,19 @@ def is_protected(root: Path, resolved: Path, operation: Operation) -> bool:
         return True
     try:
         target = resolved.resolve()
-        if target in _effective_sensitive(root):
-            return True
+        sensitive_paths = _effective_sensitive(root)
     except (OSError, RuntimeError):
         return False
+    for sensitive in sensitive_paths:
+        if target == sensitive:
+            return True
+        # 同一个 inode 换个写法 / 硬链接也算:macOS 大小写不敏感,``RELAY.json`` 与
+        # ``relay.json`` 是同一份文件;硬链接同理.按路径字符串比会漏.
+        try:
+            if os.path.samefile(target, sensitive):
+                return True
+        except OSError:
+            continue
     return False
 
 
