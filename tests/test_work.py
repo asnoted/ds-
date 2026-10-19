@@ -40,8 +40,6 @@ from dsb.work import (
     write_text,
 )
 
-#: 工作工具那张表的家(旧 0009): 码定义了却没写进这篇, 就是表漏了.
-
 
 def code_of(exc: pytest.ExceptionInfo[WorkError]) -> str:
     return exc.value.code

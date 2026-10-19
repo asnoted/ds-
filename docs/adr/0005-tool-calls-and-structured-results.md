@@ -22,5 +22,4 @@
 ## 判据(怎么自己复现)
 
 - 见 `tests/test_mcp_envelope.py`.
-- 实测见 `docs/evidence/gateway-timeouts.md`,`docs/evidence/read-pages.md`,
-  `docs/evidence/structured-results.md`,`docs/evidence/work-result-caps.md`.
+- 实测见 `docs/evidence/structured-results.md`.

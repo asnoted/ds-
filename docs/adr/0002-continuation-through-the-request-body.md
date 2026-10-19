@@ -24,8 +24,7 @@
 
 ## 判据(怎么自己复现)
 
-- 实测见 `docs/evidence/continuation.md`,`docs/evidence/native-continue.md`,
-  `docs/evidence/web-input-limit.md`.
+- 实测见 `docs/evidence/continuation.md`,`docs/evidence/native-continue.md`.
 
 ## 未验证项
 

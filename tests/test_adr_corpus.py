@@ -88,12 +88,14 @@ REQUIRED_SECTIONS = (
 H1_TITLED = re.compile(r"^#\s*ADR-(\d{3,4})\s*[::]\s*(\S.*)$", re.M)
 HEADING = re.compile(r"^##\s+(.+?)\s*$", re.M)
 
-#: 引用形态: `旧 0007`, `ADR-0005`, 以及并列写法 `旧 0007/0006` -- 后者每个号都算.
+#: 当前引用形态: `ADR-0005`, 以及并列写法 `ADR-0005/0006` -- 后者每个号都算.
+#: `旧 NNNN` 是历史标记, 指向已删的 13 篇那版, 不作为当前引用核.
 CITE = re.compile(r"ADR[- ]?(\d{3,4}(?:\s*[/,、]\s*\d{3,4})*)")
 CITE_SPLIT = re.compile(r"\s*[/,、]\s*")
 
-#: 篇内引用的形态: `ADR-0004 决定 12` / `旧 0010 第 19 条`. 下标指歪了(号对、位置不对)这条
-#: 查不出; 查得出的是"那一篇里没有第 M 条" -- 并决定 / 删决定的时候, 篇外那些下标最容易漏.
+#: 篇内引用的形态: `ADR-0004 决定 12`; `旧 0010 第 19 条` 是历史, 不核下标.
+#: 下标指歪了(号对、位置不对)这条查不出; 查得出的是"那一篇里没有第 M 条" --
+#: 并决定 / 删决定的时候, 篇外那些下标最容易漏.
 DECISION = re.compile(r"ADR-(\d{4})[^0-9\n]{0,12}(?:决定|第)\s*(\d+)\s*条?")
 
 #: 篇里点名的东西(反引号里): 路径 / 标识符 / 常量. 一个常量改了名、一个文件挪了家, 篇里那句
@@ -623,8 +625,16 @@ def test_root_markdown_check_fires(tmp_path: Path) -> None:
 #: 来历文件开头那句指路牌: `> 当前口径见 [ADR-0001](../adr/0001-....md), ...`.
 EVIDENCE_POINTER = re.compile(r"当前口径见[\s>]*\[ADR-(\d{4})\]\(\.\./adr/([^)]+)\)")
 
-#: 旧编号来历文件不属于任何单篇, 没有指路牌.
-POINTER_SKIP = frozenset({"numbering.md"})
+#: 主题已删的来历文件没有当前 ADR 可指; numbering.md 是旧编号表, 也不属于单篇.
+POINTER_SKIP = frozenset(
+    {
+        "numbering.md",
+        "gateway-timeouts.md",
+        "read-pages.md",
+        "web-input-limit.md",
+        "work-result-caps.md",
+    }
+)
 
 
 def pointer_problems(directory: Path) -> list[str]:
@@ -829,8 +839,8 @@ def test_citation_check_fires(tmp_path: Path) -> None:
     """并列写法里的第二个号也要查 -- 上一轮重编号漏的正是这种半边."""
     ghost = "ADR-" + "9" * 4  # 拼出来, 免得本文件自己被这条守卫报
     note = tmp_path / "note.ts"
-    note.write_text(f"见 旧 0002/0009 与 {ghost}.\n", encoding="utf-8")
-    problems = cite_problems([note], {"0002", "0009"})
+    note.write_text(f"见 ADR-0005/{ghost[4:]}.\n", encoding="utf-8")
+    problems = cite_problems([note], {"0005"})
     assert len(problems) == 1
     assert ghost in problems[0]
     assert "note.ts:1" in problems[0]

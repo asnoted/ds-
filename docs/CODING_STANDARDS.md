@@ -57,8 +57,7 @@ server 的 64K 闸(旧 0003), 别对错门).
 ### 先例
 
 `docs/adr/0002-continuation-through-the-request-body.md`(收了原来四篇: 续聊, 多块围栏,
-钥匙, 原生 continue),
-`docs/adr/0005-tool-calls-and-structured-results.md`(收了原来五篇).
+钥匙, 原生 continue).
 
 ---
 
