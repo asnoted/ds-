@@ -179,6 +179,16 @@ class Test真实生效的那一个:
         monkeypatch.setenv("DSB_MCP_CONFIG", str(elsewhere))
         assert code_of(lambda: write_text(root, "config/My-Servers.json", "{}")) == ERROR_PROTECTED
 
+    def test_还没落盘的生效配置换个_Unicode_规范化写法也拒(
+        self, root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """APFS 按 Unicode 规范化认名:NFC 与 NFD 写的是同一份,没 inode 时只折大小写会漏."""
+        composed = root / "config" / "caf\u00e9.json"
+        decomposed = root / "config" / "cafe\u0301.json"
+        composed.parent.mkdir()
+        monkeypatch.setenv("DSB_MCP_CONFIG", str(composed))
+        assert code_of(lambda: write_text(root, str(decomposed), "{}")) == ERROR_PROTECTED
+
 
 class TestGrep:
     def test_模式命中保护文件时结果里没有它(self, root: Path) -> None:
