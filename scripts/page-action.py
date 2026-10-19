@@ -288,9 +288,7 @@ def open_tab(url: str, *, background: bool = False) -> dict:
     if background:
         version = http_json("/json/version")
         ws_url = version["webSocketDebuggerUrl"] if isinstance(version, dict) else ""
-        reply = asyncio.run(
-            call_cdp(ws_url, "Target.createTarget", {"url": url, "background": True})
-        )
+        reply = cdp(ws_url, "Target.createTarget", {"url": url, "background": True})
         target_id = reply.get("result", {}).get("targetId") if isinstance(reply, dict) else None
         if target_id:
             for target in targets():
@@ -521,21 +519,43 @@ def read_timeline(ws_url: str, expression: str, times: int, every: float) -> int
     return 0
 
 
-async def call_cdp(ws_url: str, method: str, params: dict | None = None) -> object:
-    """发一条 CDP 命令,取它的回包(不带 id 的事件直接跳过)."""
+async def call_cdp(
+    ws_url: str, method: str, params: dict | None = None, timeout: float = 60.0
+) -> object:
+    """发一条 CDP 命令,取它的回包(不带 id 的事件直接跳过).
+
+    **必须有超时**:与 `evaluate` 同一条道理--对端不答时 `recv()` 会永远挂着,
+    探针就成了没输出的死进程(页面主线程卡住时真会这样).
+    """
     async with websockets.connect(ws_url, max_size=None) as ws:
         await ws.send(json.dumps({"id": 1, "method": method, "params": params or {}}))
         while True:
-            message = json.loads(await ws.recv())
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
+            except TimeoutError as error:
+                raise TimeoutError(
+                    f"CDP {method} 等回包超过 {timeout:.0f}s"
+                    "(对端没答:页面正忙 / 主线程卡住 / 目标已关)"
+                ) from error
+            message = json.loads(raw)
             if message.get("id") == 1:
                 return message
+
+
+def cdp(ws_url: str, method: str, params: dict | None = None, timeout: float = 60.0) -> object:
+    """`call_cdp` 的同步外壳:超时折成一句人话 + 退出码 4(与 `run()` 同一口径)."""
+    try:
+        return asyncio.run(call_cdp(ws_url, method, params, timeout))
+    except TimeoutError as error:
+        print(f"[page-action] {error}", file=sys.stderr)
+        raise SystemExit(4) from error
 
 
 def ax_nodes(tab: dict) -> list[dict]:
     """取整棵**无障碍树**(role + 可访问名,浏览器算出来的).先 enable 再要全量."""
     ws_url = tab["webSocketDebuggerUrl"]
-    asyncio.run(call_cdp(ws_url, "Accessibility.enable"))
-    reply = asyncio.run(call_cdp(ws_url, "Accessibility.getFullAXTree"))
+    cdp(ws_url, "Accessibility.enable")
+    reply = cdp(ws_url, "Accessibility.getFullAXTree")
     result = reply.get("result") if isinstance(reply, dict) else None
     nodes = result.get("nodes") if isinstance(result, dict) else None
     return nodes if isinstance(nodes, list) else []
@@ -720,7 +740,7 @@ def visible_capture(out_path: str, quality: int) -> int:
     上下文发一次.`--out` 落盘成 JPEG,方便直接眼看现场(#106).
     """
     tab = ensure_site_tab()
-    asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
+    cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront")
     ext = ensure_extension_page()
     raw = unwrap(run(ext["webSocketDebuggerUrl"], capture_visible_js(quality), timeout=75.0))
     try:
@@ -850,11 +870,12 @@ def frame_fail() -> int:
     elif isinstance(head, dict) and head.get("recoveredAt") is None:
         # 真红着:再报一笔不会新起一条(`rememberFailure` 的口径),判据作废.
         return blocked_report(report, "最前面那笔失败还没恢复:这次上报不会新起一条,判据作废")
-    asyncio.run(call_cdp(ext["webSocketDebuggerUrl"], "Page.bringToFront"))
+    cdp(ext["webSocketDebuggerUrl"], "Page.bringToFront")
     active = unwrap(
         run(
             ext["webSocketDebuggerUrl"],
-            "(async () => (await chrome.tabs.query({active: true}))[0]?.url ?? '')()",
+            "(async () => (await chrome.tabs.query({active: true, lastFocusedWindow: true}))"
+            "[0]?.url ?? '')()",
         )
     )
     report["activeWhileReporting"] = active
@@ -897,8 +918,8 @@ def frame_fail() -> int:
     report["restored"] = sole_new
     report["failuresAfter"] = len(stored_list(read_probe_stores(), FAILURE_LOG_KEY))
     # 还原:站点标签页回前台--别的探针动作与抓帧正路都靠它.
-    asyncio.run(call_cdp(site["webSocketDebuggerUrl"], "Page.bringToFront"))
-    report["ok"] = bool(report["recorded"]) and len(frames_after) == len(frames_before)
+    cdp(site["webSocketDebuggerUrl"], "Page.bringToFront")
+    report["ok"] = bool(report["recorded"]) and frames_unchanged(frames_before, frames_after)
     report["note"] = "抓帧失败不留单独的印(ADR-0004):判据只有两条--痕照落,帧数没变"
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["ok"] else 1
@@ -948,6 +969,11 @@ def stamps(rows: list) -> tuple:
     被当成账本动了.
     """
     return tuple(row["at"] for row in rows if isinstance(row, dict) and "at" in row)
+
+
+def frames_unchanged(before: list, after: list) -> bool:
+    """现场帧账本动过没有:同样成环(保 5 帧),按 `at` 序列比,不按条数."""
+    return stamps(before) == stamps(after)
 
 
 def ledger_clean(before: dict, after: dict) -> tuple[bool, str]:
@@ -1019,9 +1045,12 @@ def last_row() -> tuple[str, str] | None:
     return role, text
 
 
-def send_page_question(tag: int) -> str:
-    """探针问题:固定正文 + 这个 tag(判据按整条比,号变了才分得清新旧)."""
-    return f"{SEND_PAGE_QUESTION}(#{tag})"
+def send_page_question(tag: int, body: str = "") -> str:
+    """探针问题:正文 + 这个 tag(判据按整条比,号变了才分得清新旧).
+
+    `--question` 只换正文,**号照样挂**:同一句重跑时,上一轮那条会冒充这一轮.
+    """
+    return f"{body.strip() or SEND_PAGE_QUESTION}(#{tag})"
 
 
 def landed_question(rows: list, question: str) -> bool:
@@ -1104,6 +1133,20 @@ def send_page_verdict(
     return False, "闸开着,对话里却没有那条问题:两步里有一处没成"
 
 
+def stop_test_exit_code(report: dict) -> int:
+    """`stop-test` 的退出码:两条腿都验到才算 0.
+
+    闸关着(默认)时发送步回 `disabled`--那是闸拦的,不是故障(4);
+    其余没验到(没进生成相 / 点了没停)都算红(1),别让"什么都没验"退出 0.
+    """
+    if report.get("started") and report.get("stopped"):
+        return 0
+    enter = report.get("enter")
+    if isinstance(enter, dict) and enter.get("error") == "disabled":
+        return 4
+    return 1
+
+
 def send_page(question: str, *, allow_send: bool) -> int:
     """验本地工具 `send.page` 的两步(旧 0007):`composer.type` → `send.enter`,全走三道闸.
 
@@ -1142,7 +1185,7 @@ def send_page(question: str, *, allow_send: bool) -> int:
     if speak and not allow_send:
         return blocked_report(report, "闸开着:这一条会真发进当前对话;认了再加 --send")
     # 对话行是虚拟列表:站点标签页不在前台就一间都不挂(#54),判据会假红.
-    asyncio.run(call_cdp(site["webSocketDebuggerUrl"], "Page.bringToFront"))
+    cdp(site["webSocketDebuggerUrl"], "Page.bringToFront")
     # 打字前先让一段:写作框里有字(你的草稿,或扩展续聊压着的那条短标记)就不碰.
     watched = composer_stayed_empty(SEND_PAGE_IDLE_WATCH)
     report["composerBefore"] = watched
@@ -1323,7 +1366,7 @@ def continue_click(wait_seconds: float) -> int:
     """
     tab = ensure_site_tab()
     ws = tab["webSocketDebuggerUrl"]
-    asyncio.run(call_cdp(ws, "Page.bringToFront"))
+    cdp(ws, "Page.bringToFront")
     located = parse_outcome(unwrap(run(ws, CONTINUE_LOCATE_JS)))
     if located.get("found") is not True:
         print(
@@ -1340,18 +1383,16 @@ def continue_click(wait_seconds: float) -> int:
     viewport = located.get("viewport") or {}
     wheeled = 0
     while located.get("inView") is not True and wheeled < 12:
-        asyncio.run(
-            call_cdp(
-                ws,
-                "Input.dispatchMouseEvent",
-                {
-                    "type": "mouseWheel",
-                    "x": int(viewport.get("cx", 400)),
-                    "y": int(viewport.get("cy", 400)),
-                    "deltaX": 0,
-                    "deltaY": 800,
-                },
-            )
+        cdp(
+            ws,
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseWheel",
+                "x": int(viewport.get("cx", 400)),
+                "y": int(viewport.get("cy", 400)),
+                "deltaX": 0,
+                "deltaY": 800,
+            },
         )
         time.sleep(0.4)
         located = parse_outcome(unwrap(run(ws, CONTINUE_LOCATE_JS)))
@@ -1912,7 +1953,12 @@ def main() -> None:
         "--send", action="store_true", help='闸开着时认下"这一条真发进当前对话"'
     )
     send_page_parser.add_argument(
-        "--question", default="", help=f"换成别的问题(默认 {SEND_PAGE_QUESTION}(#<时刻>))"
+        "--question",
+        default="",
+        help=(
+            "换成别的问题的正文(仍挂 (#<时刻>):判据按整条比,重跑要分得清新旧;"
+            f"默认 {SEND_PAGE_QUESTION})"
+        ),
     )
     cont = sub.add_parser(
         "continue-click",
@@ -1954,7 +2000,7 @@ def main() -> None:
         raise SystemExit(frame_fail())
 
     if args.command == "send-page":
-        question = args.question or send_page_question(int(time.time()))
+        question = send_page_question(int(time.time()), args.question)
         raise SystemExit(send_page(question, allow_send=args.send))
 
     if args.command == "continue-click":
@@ -1968,14 +2014,14 @@ def main() -> None:
         # `--ext` 是反向用法:把扩展页置前台,让站点标签页**退到后台**,验"报上来的
         # 标签页不在前台就不抓帧"这类只有后台相才触发得出的负路(#106).
         target = ensure_extension_page() if args.ext else ensure_site_tab()
-        asyncio.run(call_cdp(target["webSocketDebuggerUrl"], "Page.bringToFront"))
+        cdp(target["webSocketDebuggerUrl"], "Page.bringToFront")
         print(json.dumps({"ok": True, "focused": target.get("url", "")}, ensure_ascii=False))
         return
 
     if args.command == "sse":
         tab = ensure_site_tab()
         if args.fresh:
-            asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
+            cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront")
             send_action("chat.new", {})
             if not wait_composer(tab):
                 print(
@@ -1997,7 +2043,7 @@ def main() -> None:
             sent = int(fill_composer(tab, body * args.repeat if args.repeat else body) or 0)
             send_action("send.enter", {})
         time.sleep(args.wait)
-        asyncio.run(call_cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront"))
+        cdp(tab["webSocketDebuggerUrl"], "Page.bringToFront")
         result = read_sse(tab)
         if isinstance(result, dict):
             result["sentChars"] = sent
@@ -2061,7 +2107,7 @@ def main() -> None:
                 f"[stop-test] 停后回到发送相:{report['stopped']}  icon={state2.get('circleIcon')}"
             )
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        return
+        raise SystemExit(stop_test_exit_code(report))
 
     if args.command == "send":
         try:

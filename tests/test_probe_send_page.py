@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterable
 
 from conftest import load_fixture, load_page_action
@@ -108,6 +109,19 @@ def test_probe_question_carries_its_tag() -> None:
     two = page_action.send_page_question(2)
     assert "1" in one and "2" in two and one != two
     assert one.startswith(page_action.SEND_PAGE_QUESTION)
+
+
+def test_custom_probe_question_carries_the_tag_too() -> None:
+    """`--question` 只换正文:不挂号的话,同一句重跑时上一轮那条会冒充这一轮."""
+    page_action = load_page_action()
+    one = page_action.send_page_question(1, "你好")
+    two = page_action.send_page_question(2, "你好")
+    assert one.startswith("你好") and one.endswith("(#1)")
+    assert one != two
+    # `main` 那半要 CDP 才跑得到;钉住 --question 只当正文,别再绕过 tag.
+    assert "send_page_question(int(time.time()), args.question)" in inspect.getsource(
+        page_action.main
+    )
 
 
 def test_landing_needs_the_whole_line() -> None:
