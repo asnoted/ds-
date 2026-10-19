@@ -190,7 +190,10 @@ export function parseSendNote(data: unknown): SendNoteMessage | null {
   if (message.source !== SEND_NOTE_MESSAGE_SOURCE) return null;
   if (message.world !== "main" && message.world !== "isolated") return null;
   if (typeof message.at !== "number" || !Number.isFinite(message.at)) return null;
-  return { source: SEND_NOTE_MESSAGE_SOURCE, world: message.world, at: message.at };
+  // 时刻只在这条通道上传,而页面自己也能往 `window` 投同形状的一条:收到未来时刻就
+  // 收窄到此刻--留个未来的 `lastSentAt`,下一发送会被判成"时钟回拨"而立刻放行.
+  const at = Math.min(message.at, Date.now());
+  return { source: SEND_NOTE_MESSAGE_SOURCE, world: message.world, at };
 }
 
 /** 通报构造(两个世界共用一条构造点). */

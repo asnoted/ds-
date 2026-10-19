@@ -13,6 +13,7 @@ import {
   type SendPace,
 } from "./sendpace";
 import { WINDOW_MAX_MS, WINDOW_MIN_MS } from "./outbound";
+import { parseSendNote, SEND_NOTE_MESSAGE_SOURCE } from "./channel";
 
 const random0 = () => 0;
 const random1 = () => 1;
@@ -135,6 +136,19 @@ describe("mergeSendPace / 跨世界并时刻", () => {
     const mine = noteSend(newSendPace(), 1000, random1);
     const merged = mergeSendPace(mine, 2000, random0);
     expect(merged.intervalMs).toBe(mine.intervalMs);
+  });
+
+  it("页面冒充的通报把时刻报到未来:收窄到此刻,下一发送照等满一个间隔", () => {
+    // 通报走的是页面自己也能投的 `window.postMessage`,时刻得在收的这一刻收窄:
+    // 一个未来的 lastSentAt 会被判成"时钟回拨"而放行(唯一限速被绕开).
+    const at = parseSendNote({
+      source: SEND_NOTE_MESSAGE_SOURCE,
+      world: "isolated",
+      at: Date.now() + 60_000,
+    })?.at;
+    expect(at).toBeLessThanOrEqual(Date.now());
+    const merged = mergeSendPace(newSendPace(), at ?? 0, random0);
+    expect(sendWaitMs(merged, Date.now())).toBeGreaterThan(0);
   });
 });
 
