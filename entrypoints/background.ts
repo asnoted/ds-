@@ -448,6 +448,8 @@ export default defineBackground(() => {
    */
   async function healthProbe(): Promise<void> {
     const probe = await pingRelay();
+    // 探的这几秒里被关掉:这趟作废,不记账也不翻红(与 `applyOutcome` 同一口径).
+    if (state === "off") return;
     const next = afterHealthProbe(state, probe.reachable);
     const flipped = next.state !== state || next.notice !== notice;
     console.log(
