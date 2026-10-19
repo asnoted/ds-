@@ -151,6 +151,18 @@ describe("发送限速的跨世界通报(#61)", () => {
     expect(parseSendNote(note)).toEqual(note);
   });
 
+  it("页面临时投来的未来时刻收窄到此刻:未来的记账会让下一次发送立刻放行", () => {
+    const before = Date.now();
+    const parsed = parseSendNote({
+      source: SEND_NOTE_MESSAGE_SOURCE,
+      world: "isolated",
+      at: before + 60_000,
+    });
+    const at = parsed?.at ?? Number.NaN;
+    expect(at).toBeGreaterThanOrEqual(before);
+    expect(at).toBeLessThanOrEqual(Date.now());
+  });
+
   it("形状不对的一律不收(不猜,不补)", () => {
     expect(parseSendNote(null)).toBeNull();
     expect(parseSendNote({ source: "别人的", world: "isolated", at: 1 })).toBeNull();
