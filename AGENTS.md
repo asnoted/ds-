@@ -33,7 +33,7 @@ Never cut: validation at trust boundaries, error handling that prevents data los
 
 Limit the number of comments in code to a strict minimum.
 
-NEVER edit `AGENTS.md`; maintainers only.
+NEVER edit `AGENTS.md` and adrs; maintainers only.
 
 ## Tools
 
@@ -49,6 +49,4 @@ All new tools go `scripts`.
 - **走流程`/ask-matt`**
 - **用人类习惯测试网页**
 - **必须**唯一限速,**禁止**绕过
-- **禁止**借用户环境,**应当**统一用env-up
-- **禁止**自动写adr.
 - **禁止**一次性脚本,**应当**集成cli.
