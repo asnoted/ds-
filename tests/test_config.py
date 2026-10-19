@@ -41,6 +41,18 @@ def test_strips_quotes() -> None:
     assert env_value(f'{PORT_ENV_KEY}="1234"\n', PORT_ENV_KEY) == "1234"
 
 
+def test_strips_single_quotes_too() -> None:
+    assert env_value(f"{PORT_ENV_KEY}='1234'\n", PORT_ENV_KEY) == "1234"
+
+
+def test_only_matching_quotes_are_stripped() -> None:
+    assert env_value(f"{PORT_ENV_KEY}=\"1234'\n", PORT_ENV_KEY) == "\"1234'"
+
+
+def test_a_quoted_empty_value_is_still_missing() -> None:
+    assert env_value(f'{PORT_ENV_KEY}=""\n', PORT_ENV_KEY) is None
+
+
 def test_missing_returns_none() -> None:
     assert env_value("OTHER=1\n", PORT_ENV_KEY) is None
     assert env_value("", PORT_ENV_KEY) is None
@@ -98,6 +110,16 @@ def test_config_path_falls_back_to_the_repo_root(
 ) -> None:
     """哪儿都没有: 落仓库根那个落点(文件不在就是空表, 不起错)."""
     monkeypatch.delenv(MCP_CONFIG_ENV_KEY, raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert resolve_config_path("") == repo_root() / "mcp.json"
+
+
+def test_config_path_does_not_take_a_directory_named_like_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """同名目录不是配置文件: 认成它, 网关会去读一个目录然后一堆 io 错."""
+    monkeypatch.delenv(MCP_CONFIG_ENV_KEY, raising=False)
+    (tmp_path / "mcp.json").mkdir()
     monkeypatch.chdir(tmp_path)
     assert resolve_config_path("") == repo_root() / "mcp.json"
 
