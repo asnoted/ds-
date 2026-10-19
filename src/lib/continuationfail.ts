@@ -56,7 +56,9 @@ const CAUSES: Readonly<Record<ContinuationFailure, string>> = {
  * 丢掉的故障在悬停里就变成空白,比一条"未知原因"更难查.
  */
 export function describeContinuationFailure(failure: ContinuationFailure | string): string {
-  return CAUSES[failure as ContinuationFailure] ?? `页面报续聊失败(${failure})`;
+  return Object.hasOwn(CAUSES, failure)
+    ? CAUSES[failure as ContinuationFailure]
+    : `页面报续聊失败(${failure})`;
 }
 
 /**

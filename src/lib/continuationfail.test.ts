@@ -47,6 +47,11 @@ describe("describeContinuationFailure / 原因短句", () => {
     expect(describeContinuationFailure("未来加的码")).toBe("页面报续聊失败(未来加的码)");
   });
 
+  it("原型上的名字不算册子里的码:toString / constructor 走兜底", () => {
+    expect(describeContinuationFailure("toString")).toBe("页面报续聊失败(toString)");
+    expect(describeContinuationFailure("constructor")).toBe("页面报续聊失败(constructor)");
+  });
+
   it("短句里不带任何正文:拿带明显标记的输入试,断言它不出现在短句里", () => {
     // 用户正在打的字,问题,答复,工具结果--一律不该进失败痕(ADR-0008).
     const secrets = [
