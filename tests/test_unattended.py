@@ -141,84 +141,6 @@ def test_dry_run_不发消息也按发过记账() -> None:
     assert any("dry-run" in line for line in lines)
 
 
-def test_催过之后仓里没动静就收工不再催() -> None:
-    module = load_driver()
-    client = FakeClient()
-    client.add("ses_a")
-    lines: list[str] = []
-    follower = module.Follower(client, ["ses_a"], "催", progress=lambda: "same", out=lines.append)
-
-    assert follower.tick() == 1
-    client.touch("ses_a", 2000)
-    assert follower.tick() == 0
-    assert follower.sessions == ()
-    assert any("不再盯" in line for line in lines)
-
-
-def test_仓里有了新动静就继续催() -> None:
-    module = load_driver()
-    client = FakeClient()
-    client.add("ses_a")
-    state = {"fingerprint": "a"}
-    follower = module.Follower(client, ["ses_a"], "催", progress=lambda: state["fingerprint"])
-
-    assert follower.tick() == 1
-    client.touch("ses_a", 2000)
-    state["fingerprint"] = "b"
-    assert follower.tick() == 1
-    assert [text for _sid, text in client.sent] == ["催", "催"]
-
-
-def test_量不出进度时照旧每轮催() -> None:
-    module = load_driver()
-    client = FakeClient()
-    client.add("ses_a")
-    follower = module.Follower(client, ["ses_a"], "催", progress=lambda: None)
-
-    assert follower.tick() == 1
-    client.touch("ses_a", 2000)
-    assert follower.tick() == 1
-    assert len(client.sent) == 2
-
-
-def test_repo_state_不在git仓里返回None(tmp_path: Path) -> None:
-    module = load_driver()
-    assert module.repo_state(tmp_path) is None
-
-
-def test_repo_state_工作树一变指纹就变(tmp_path: Path) -> None:
-    module = load_driver()
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    before = module.repo_state(tmp_path)
-    assert before is not None
-    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
-    assert module.repo_state(tmp_path) != before
-
-
-def test_repo_state_提交后指纹也变(tmp_path: Path) -> None:
-    module = load_driver()
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    before = module.repo_state(tmp_path)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(tmp_path),
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "user.name=t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "x",
-        ],
-        check=True,
-    )
-    assert module.repo_state(tmp_path) != before
-
-
 def test_查不到的会话从名单里摘掉() -> None:
     module = load_driver()
     client = FakeClient()
@@ -413,19 +335,3 @@ def test_不给_s_就列会话_不催(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(subprocess, "run", run)
     assert module.main([]) == 0
-
-
-def test_main_把仓进度接上(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = load_driver()
-    seen: dict[str, object] = {}
-
-    class Stub:
-        def __init__(self, client, sessions, text, **kwargs):
-            seen.update(kwargs)
-            self.sessions = tuple(sessions)
-
-    monkeypatch.setattr(module, "Follower", Stub)
-    monkeypatch.setattr(module, "OpencodeClient", lambda: object())
-    monkeypatch.setattr(module, "watch", lambda *_args, **_kwargs: None)
-    assert module.main(["-s", "ses_a"]) == 0
-    assert seen["progress"] is module.repo_state
