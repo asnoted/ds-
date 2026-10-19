@@ -1,12 +1,16 @@
 # AGENTS.md
 
-Limit the number of comments in code to a strict minimum. You should almost never add comments, except occasionally to non-trivial code, to function definitions whose arguments are not self-explanatory, and to class definitions and their members.
+Limit the number of comments in code to a strict minimum.
+You should almost never add comments,
+except occasionally to non-trivial code,
+to function definitions whose arguments are not self-explanatory,
+and to class definitions and their members.
 
 NEVER edit `AGENTS.md`; maintainers only.
 
 ## Tools
 
-All new tools go here. Use jj first.
+All new tools go here.
 
 ```sh
 scripts/env-up.sh                 # 幂等:起缺的,旧代码自动换,末尾打判据
@@ -45,14 +49,14 @@ DeepSeek 网页版的**浏览器扩展 + 本机 MCP 中继**(`dsb/`).扩展替�
 
 ## 测试要求
 
-- 嵌入 pre-commit,自动化.
+- 全部嵌入 pre-commit,自动化.
 
 ## IMPORTANT
 
-- **本项目维护者水平不一致,有错顺手改**
-- **问用户前先`/ask-matt`**
-- **不要让网页做无用的测试**
+- **本项目维护者水平不一致,注意合作**
+- **走流程`/ask-matt`**
+- **用人类习惯测试网页**
 - **必须**唯一限速,**禁止**绕过
 - **禁止**借用户环境,**应当**统一用env-up
 - **禁止**在根目录新增 `.md`.
-- **禁止**一次性脚本,**应当**集成到工具链.
+- **禁止**一次性脚本,**应当**集成cli.
