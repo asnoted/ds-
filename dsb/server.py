@@ -172,10 +172,10 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
             # 端口写没写都要对得上(http 的 80 会被浏览器省掉).
             if stated_port and stated_port != str(self.server.server_address[1]):
                 return 403
+            if self.headers.get("Transfer-Encoding"):
+                # 服务从不读 chunked: 411 断掉, 别把块里的字节当成下一条请求(不分方法/路径).
+                return 411
             if method == "POST" and urlsplit(self.path).path == MCP_PATH:
-                if self.headers.get("Transfer-Encoding"):
-                    # 服务从不读 chunked: 411 断掉, 别把块里的字节当成下一条请求.
-                    return 411
                 content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip()
                 if content_type.lower() != "application/json":
                     return 415

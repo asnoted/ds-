@@ -374,6 +374,31 @@ def test_a_chunked_body_is_refused_instead_of_read_as_a_new_request(service: Mcp
     assert answer.startswith(b"HTTP/1.1 411")
 
 
+def test_a_chunked_body_is_refused_on_every_method(service: McpService) -> None:
+    """chunked 服务从不读: 只在 POST /mcp 上拦,DELETE 的块字节照旧被当成下一条请求(2026-10-20)."""
+    import threading
+
+    with make_server(service, port=0) as server:
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            answer = raw_exchange(
+                server,
+                (
+                    f"DELETE {MCP_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                    "Transfer-Encoding: chunked\r\n\r\n"
+                    "5\r\nhello\r\n0\r\n\r\n"
+                ).encode(),
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+    assert answer.startswith(b"HTTP/1.1 411")
+    assert answer.count(b"HTTP/1.1 ") == 1
+
+
 def test_a_body_that_cannot_be_read_closes_the_connection(service: McpService) -> None:
     """Content-Length 读不成数会半路抛: 那条连接不许再复用, 否则正文被当成下一条请求."""
     import threading
