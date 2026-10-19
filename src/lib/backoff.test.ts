@@ -55,6 +55,19 @@ describe("readBackoff:持久状态", () => {
     expect(readBackoff({ until: "x", round: 2 })).toEqual({ until: null, round: 0 });
     expect(readBackoff({ until: 5, round: -3 })).toEqual({ until: 5, round: 0 });
   });
+
+  it("非有限数也是坏数据:Infinity 的终点会把人永远挡在门外", () => {
+    expect(readBackoff({ until: Number.POSITIVE_INFINITY, round: 2 })).toEqual({
+      until: null,
+      round: 0,
+    });
+    expect(readBackoff({ until: Number.NaN, round: 2 })).toEqual({ until: null, round: 0 });
+    // 终点还认得出就留着,只把认不出的回次归零.
+    expect(readBackoff({ until: 5, round: Number.POSITIVE_INFINITY })).toEqual({
+      until: 5,
+      round: 0,
+    });
+  });
 });
 
 describe("gateBackoff:三态迁移", () => {

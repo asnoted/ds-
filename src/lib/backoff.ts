@@ -36,8 +36,9 @@ export function readBackoff(stored: unknown): BackoffState {
     const round = record["round"];
     // `until: null` 是真状态(到期或恢复后留在存储里),不是坏数据--那上面还挂着回次,
     // 当成认不出会把阶梯重置:第二回禁言才又只退避 10 分钟.
-    if ((typeof until === "number" || until === null) && typeof round === "number") {
-      return { until, round: Math.max(0, Math.floor(round)) };
+    const validUntil = until === null || (typeof until === "number" && Number.isFinite(until));
+    if (validUntil && typeof round === "number") {
+      return { until, round: Number.isFinite(round) ? Math.max(0, Math.floor(round)) : 0 };
     }
   }
   return { until: null, round: 0 };
