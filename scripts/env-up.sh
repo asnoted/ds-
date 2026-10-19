@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 环境准备：起缺的、**旧代码自动换**（ds-browser 装的扩展比构建旧会自动
-# 重启；中继跑旧代码提示 kill），最后拿真判据验一次。
+# 环境准备：起缺的、**旧代码自动换**（ds-browser 装的扩展比构建旧、中继跑
+# 旧代码，都是自动重启），最后拿真判据验一次。
 # 用法：scripts/env-up.sh [--status] [--debug]
 #   --status 只读汇总
 #   --debug  让 ds-browser 带 --remote-debugging-port（开发探针用；见 scripts/page-action.py）
