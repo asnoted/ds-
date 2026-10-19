@@ -122,6 +122,36 @@ def test_paths_outside_the_corpus_are_left_alone() -> None:
     assert module.check_doc_paths(issues) == []
 
 
+def test_rewrite_citations_maps_13_to_6_and_marks_deleted() -> None:
+    """一次性迁移: 13 篇的号按表换, 已删的保留成历史 `旧 NNNN`."""
+    module = load_audit()
+    old = f"{'ADR-' + '0008/0013'} 与 {ghost('0010')} 与 {ghost('0005')}"
+    assert module.rewrite_citations(old) == (
+        f"{'ADR-' + '0004/ADR-0006'} 与 旧 0010 与 {ghost('0002')}"
+    )
+
+
+def test_rewrite_paths_maps_adr_files_and_sends_deleted_topics_to_numbering() -> None:
+    module = load_audit()
+    old = "docs/adr/" + "0008-failures-leave-a-trace.md:15"
+    deleted = "docs/adr/" + "0007-page-actions-and-local-tools.md:29"
+    live = "docs/adr/0004-failures-leave-a-trace.md"
+    assert module.rewrite_paths(old) == live
+    assert module.rewrite_paths(deleted) == "docs/evidence/numbering.md"
+    assert module.rewrite_paths(live) == live
+    assert module.rewrite_paths(live + ":15") == live + ":15"
+
+
+def test_rewrite_changes_collects_body_and_comments() -> None:
+    module = load_audit()
+    issue = ticket(11, f"正文 {ghost('0013')}.")
+    issue["comments"] = [{"id": "IC_x", "body": f"评论 {ghost('0010')}."}]
+    changes = module.rewrite_changes([issue])
+    assert [change[1] for change in changes] == [None, issue["comments"][0]]
+    assert changes[0][3] == f"正文 {ghost('0006')}."
+    assert changes[1][3] == "评论 旧 0010."
+
+
 def test_the_role_table_matches_the_tracker_doc() -> None:
     """五张角色的**本仓名字**写死在 `docs/agents/triage-labels.md` 那张表的右列, 脚本得跟它一致.
 

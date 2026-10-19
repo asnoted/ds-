@@ -9,7 +9,8 @@
 所以这件事得交给工具而不是交给手.
 
 **判据来自 `docs/agents/triage-labels.md`**(五个多态角色, 一个角色一个标签,
-与 `bug` / `enhancement` 那类类型标签并存不冲突). 它只读, 不改任何东西.
+与 `bug` / `enhancement` 那类类型标签并存不冲突). 默认只读, 不改任何东西;
+`--rewrite-citations --apply` 是唯一会写 GitHub 的模式(一次性迁移, 见下).
 
 **它查什么**:
   1. 开着的票必须**恰好一个**角色标签: 0 个是漏 triage, 多个是自相矛盾.
@@ -35,15 +36,23 @@
   上一轮只对齐了 `ADR-NNNN` 那个**号**, 篇路径是另一类漏网(旧号 0012 / 0014 / 0031 那几处
   的路径当时没跟着换), 就是靠这条揪出来的. 它扫**正文与评论**: 评论那一半的正文
   `gh issue list --json` 本来就带着, 顺手补上 `--citations` 说的那个盲区.
+
+**一次性迁移**: `--rewrite-citations` 按 `docs/evidence/numbering.md` 的 13 篇 -> 6 篇表,
+把票里的旧号与旧路径改掉; 标"已删"的号改成 `旧 NNNN`, 旧路径改成编号表. 默认只打印
+diff, 加 `--apply` 才写回, 写前把原 JSON 备份到系统临时目录. 票在 2026-10-18 已按
+13 篇对齐过, 所以这是**一次性**的: 改完别再跑, 否则新的 0004 / 0005 / 0006 会被当成
+旧号再降一级. 已删号的票面保留 `旧 NNNN` 作历史, 不再强求可点.
 """
 
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -66,6 +75,44 @@ CITE_SPLIT = re.compile(r"\s*[/,\u3001]\s*")
 #: 票里点的语料路径: 只认本仓重写后那两处. 旧仓的代码路径(`src/domain/**` 那些)满票都是,
 #: 那些由各票头顶的"已随 git 历史清除"处置注记兜着, 不在这里重复报.
 DOC_PATH = re.compile(r"docs/(?:adr|evidence)/[\w.-]*\.md")
+REWRITE_PATH = re.compile(r"docs/(?:adr|evidence)/[\w.-]*\.md(?::\d+(?:-\d+)?)?")
+
+#: 2026-10-19 收拢为 6 篇前, 票里用的是 13 篇那版编号. 这是一次性迁移表;
+#: 已删的主题改成 `旧 NNNN`, 让读者去 `docs/evidence/numbering.md` 查来历.
+LEGACY_CITE = {
+    "0004": "0001",
+    "0005": "0002",
+    "0006": "0003",
+    "0008": "0004",
+    "0012": "0005",
+    "0013": "0006",
+}
+LEGACY_GONE = {"0001", "0002", "0003", "0007", "0009", "0010", "0011"}
+LEGACY_ADR_PATHS = {
+    "docs/adr/0001-adrs-are-living-documents.md": "docs/evidence/numbering.md",
+    "docs/adr/0002-dsb-is-a-stateless-mcp-gateway.md": "docs/evidence/numbering.md",
+    "docs/adr/0003-third-party-servers-have-their-own-caps.md": "docs/evidence/numbering.md",
+    "docs/adr/0004-outbound-through-a-single-gate.md": (
+        "docs/adr/0001-outbound-through-a-single-gate.md"
+    ),
+    "docs/adr/0005-continuation-through-the-request-body.md": (
+        "docs/adr/0002-continuation-through-the-request-body.md"
+    ),
+    "docs/adr/0006-the-speak-gate-governs-sending-only.md": (
+        "docs/adr/0003-the-speak-gate-governs-sending-only.md"
+    ),
+    "docs/adr/0007-page-actions-and-local-tools.md": "docs/evidence/numbering.md",
+    "docs/adr/0008-failures-leave-a-trace.md": "docs/adr/0004-failures-leave-a-trace.md",
+    "docs/adr/0009-in-house-work-tools-and-permissions.md": "docs/evidence/numbering.md",
+    "docs/adr/0010-work-tool-results-are-paged-and-capped.md": "docs/evidence/numbering.md",
+    "docs/adr/0011-web-input-limit-is-a-token-budget.md": "docs/evidence/numbering.md",
+    "docs/adr/0012-tool-calls-and-structured-results.md": (
+        "docs/adr/0005-tool-calls-and-structured-results.md"
+    ),
+    "docs/adr/0013-controls-are-evidenced-by-code-and-image.md": (
+        "docs/adr/0006-controls-are-evidenced-by-code-and-image.md"
+    ),
+}
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -237,6 +284,99 @@ def check_doc_paths(issues: list[dict]) -> list[str]:
     return out
 
 
+def rewrite_citations(text: str) -> str:
+    """把 13 篇那版的 `ADR-NNNN` 换成 6 篇的号; 已删的标成历史 `旧 NNNN`."""
+
+    def replace(match: re.Match[str]) -> str:
+        numbers = CITE_SPLIT.split(match.group(1))
+        mapped = []
+        for number in numbers:
+            if number in LEGACY_GONE:
+                mapped.append(f"旧 {number}")
+            elif number in LEGACY_CITE:
+                mapped.append(f"ADR-{LEGACY_CITE[number]}")
+            else:
+                mapped.append(f"ADR-{number}")
+        if mapped == [f"ADR-{number}" for number in numbers]:
+            return match.group(0)
+        return "/".join(mapped)
+
+    return CITE.sub(replace, text)
+
+
+def rewrite_paths(text: str) -> str:
+    """旧 ADR 路径换成当前篇; 已删主题的路径换成编号表, 旧行号一并丢掉."""
+
+    def replace(match: re.Match[str]) -> str:
+        raw = match.group(0)
+        path = raw.split(":", 1)[0]
+        target = LEGACY_ADR_PATHS.get(path)
+        if target is None:
+            return raw
+        return target
+
+    return REWRITE_PATH.sub(replace, text)
+
+
+def rewrite_text(text: str) -> str:
+    return rewrite_paths(rewrite_citations(text))
+
+
+def rewrite_changes(issues: list[dict]) -> list[tuple[dict, dict | None, str, str]]:
+    """返回 (票, 评论或 None, 旧文, 新文); 只收真的会变的那些."""
+    changes = []
+    for issue in issues:
+        body = issue.get("body") or ""
+        new = rewrite_text(body)
+        if new != body:
+            changes.append((issue, None, body, new))
+        for comment in issue.get("comments") or []:
+            old = comment.get("body") or ""
+            new = rewrite_text(old)
+            if new != old:
+                changes.append((issue, comment, old, new))
+    return changes
+
+
+def apply_rewrites(issues: list[dict], changes: list[tuple[dict, dict | None, str, str]]) -> None:
+    """写回前先留一份原 JSON; 失败时人还能照着恢复."""
+    backup = Path(tempfile.gettempdir()) / (
+        f"dsb-issues-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json"
+    )
+    backup.write_text(json.dumps(issues, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"{TAG} 原样备份: {backup}")
+    query = (
+        "mutation($id:ID!,$body:String!){"
+        "updateIssueComment(input:{id:$id,body:$body}){issueComment{id}}}"
+    )
+    try:
+        for issue, comment, _old, new in changes:
+            if comment is None:
+                subprocess.run(
+                    ["gh", "issue", "edit", str(issue["number"]), "--body-file", "-"],
+                    input=new,
+                    text=True,
+                    check=True,
+                    capture_output=True,
+                )
+            else:
+                payload = json.dumps(
+                    {"query": query, "variables": {"id": comment["id"], "body": new}}
+                )
+                subprocess.run(
+                    ["gh", "api", "graphql", "--input", "-"],
+                    input=payload,
+                    text=True,
+                    check=True,
+                    capture_output=True,
+                )
+            print(f"  #{issue['number']} {'评论' if comment else '正文'}")
+    except subprocess.CalledProcessError as exc:
+        print(f"{TAG} 写回失败: {exc.stderr.strip()}", file=sys.stderr)
+        raise SystemExit(2) from None
+    print(f"{TAG} 已写回 {len(changes)} 处.")
+
+
 def report(title: str, lines: list[str], level: str) -> bool:
     """打印一段; 有内容返回 True(= 算问题)."""
     if not lines:
@@ -265,7 +405,19 @@ def main() -> None:
     ap.add_argument(
         "--paths", action="store_true", help="额外报正文/评论里指不到的语料路径(信息级)"
     )
+    ap.add_argument(
+        "--rewrite-citations",
+        action="store_true",
+        help="一次性: 把 13 篇旧号/路径改成 6 篇的; 默认只打印 diff",
+    )
+    ap.add_argument(
+        "--apply",
+        action="store_true",
+        help="与 --rewrite-citations 连用, 真正写回 GitHub",
+    )
     args = ap.parse_args()
+    if args.apply and not args.rewrite_citations:
+        ap.error("--apply 只能和 --rewrite-citations 一起用")
 
     issues = fetch()
     print(
@@ -273,6 +425,20 @@ def main() -> None:
         f"(开 {sum(1 for i in issues if i['state'] == 'OPEN')} / "
         f"关 {sum(1 for i in issues if i['state'] == 'CLOSED')})"
     )
+
+    if args.rewrite_citations:
+        changes = rewrite_changes(issues)
+        print(f"{TAG} [改写] 可改 {len(changes)} 处(正文/评论)")
+        for issue, comment, old, new in changes:
+            print(f"  #{issue['number']} {'评论' if comment else '正文'}")
+            for line in difflib.unified_diff(old.splitlines(), new.splitlines(), n=0, lineterm=""):
+                if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
+                    print(f"    {line[:160]}")
+        if args.apply:
+            apply_rewrites(issues, changes)
+        else:
+            print(f"{TAG}   ^ 没写回; 加 --apply 才动 GitHub.")
+        return
 
     failed = False
     failed |= report("开着的票没有角色标签", check_open_without_role(issues), "补 triage")
@@ -302,8 +468,8 @@ def main() -> None:
         for line in found:
             print(line)
         print(
-            f"{TAG}   ^ 旧号到新号的映射(28 篇全在): `docs/evidence/numbering.md`. "
-            "2026-10-18 已照它把票里的号改齐; 现在还有, 就是新出的漂移."
+            f"{TAG}   ^ 旧号映射见 `docs/evidence/numbering.md`(含 13 篇到 6 篇的表). "
+            "2026-10-19 已按它把票里的号改齐; 现在还有, 就是新出的漂移."
         )
 
     if args.paths:
@@ -312,8 +478,8 @@ def main() -> None:
         for line in found:
             print(line)
         print(
-            f"{TAG}   ^ 2026-10-18 补这条时揪出 4 处(旧号 0012 / 0014 / 0031 的篇路径没跟着号换), "
-            "已改齐; 现在还有, 就是新出的漂移."
+            f"{TAG}   ^ 2026-10-18 补这条时揪出 4 处; 2026-10-19 已把 13 篇的旧路径一并改齐. "
+            "现在还有, 就是新出的漂移."
         )
 
     if failed:
