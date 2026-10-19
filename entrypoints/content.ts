@@ -91,7 +91,7 @@ export default defineContentScript({
           "*",
         );
       } catch (error) {
-        console.log("[ds-] 工具调用没有送出去", error);
+        console.log("[dsb] 工具调用没有送出去", error);
         window.postMessage(unreachableResult(call.id), "*");
       }
     };
@@ -101,7 +101,7 @@ export default defineContentScript({
       try {
         await browser.runtime.sendMessage(saidReportMessage(said.text));
       } catch (error) {
-        console.log("[ds-] said 上报没有送出去", error);
+        console.log("[dsb] said 上报没有送出去", error);
       }
     };
 
@@ -113,7 +113,7 @@ export default defineContentScript({
           askReportMessage(ask.id, ask.question, pageSessionIdOf(location.href)),
         );
       } catch (error) {
-        console.log("[ds-] ask 上报没有送出去", error);
+        console.log("[dsb] ask 上报没有送出去", error);
       }
     };
 
@@ -124,7 +124,7 @@ export default defineContentScript({
           askClearedReportMessage(cleared.id, pageSessionIdOf(location.href)),
         );
       } catch (error) {
-        console.log("[ds-] ask 清除没有送出去", error);
+        console.log("[dsb] ask 清除没有送出去", error);
       }
     };
 
@@ -135,7 +135,7 @@ export default defineContentScript({
           stopReportMessage(stop.id, stop.cause, pageSessionIdOf(location.href)),
         );
       } catch (error) {
-        console.log("[ds-] 停手上报没有送出去", error);
+        console.log("[dsb] 停手上报没有送出去", error);
       }
     };
 
@@ -146,7 +146,7 @@ export default defineContentScript({
           endTaskReportMessage(end.id, pageSessionIdOf(location.href)),
         );
       } catch (error) {
-        console.log("[ds-] 任务收尾上报没有送出去", error);
+        console.log("[dsb] 任务收尾上报没有送出去", error);
       }
     };
 
@@ -157,7 +157,7 @@ export default defineContentScript({
           continuationFailReportMessage(fail.id, fail.cause, pageSessionIdOf(location.href)),
         );
       } catch (error) {
-        console.log("[ds-] 续聊失败上报没有送出去", error);
+        console.log("[dsb] 续聊失败上报没有送出去", error);
       }
     };
 
@@ -199,7 +199,7 @@ export default defineContentScript({
       try {
         const account = readAccount(readComposerPresent());
         await browser.runtime.sendMessage(accountReportMessage(account));
-        console.log(`[ds-] 账号处境已上报:${account.kind}`);
+        console.log(`[dsb] 账号处境已上报:${account.kind}`);
       } catch {
         // 上报是通知:送不出去不重试,下一报还在.
       }

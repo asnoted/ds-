@@ -12,7 +12,7 @@
 export const TOGGLE_STORAGE_KEY = "toggle";
 
 /** 信封标记:页面自己也在 postMessage,认不出这个标记的一律不收. */
-export const TOGGLE_MESSAGE_SOURCE = "ds-/toggle";
+export const TOGGLE_MESSAGE_SOURCE = "dsb/toggle";
 
 export type ToggleMessage =
   | {

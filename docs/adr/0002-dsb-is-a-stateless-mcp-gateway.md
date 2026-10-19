@@ -59,7 +59,7 @@ dsb 只干一件事: 本机 MCP 网关. JSON-RPC 2.0 从 `POST /mcp` 进来(`ini
 ## Consequences
 
 - **外部探针面没了**: 一废 `POST /action`, `scripts/env-up.sh` 从外面就探不到扩展, 判据只验
-  本机这一半(`ping` + `tools/list`); 扩展那一半看图标三态, 悬停与 `[ds-]` 控制台行.
+  本机这一半(`ping` + `tools/list`); 扩展那一半看图标三态, 悬停与 `[dsb]` 控制台行.
 - **两处册子必须同步**: `protocol/fixtures/action.json` 的 `errorCodes` ↔
   `src/lib/action.ts` 的 `ACTION_ERROR_*`; 少改一处测试门就红.
 - **扩展侧对工具目录的处理只有一处过滤**: `serveTools()` 只按 `said_` 前缀过滤, 所以新增

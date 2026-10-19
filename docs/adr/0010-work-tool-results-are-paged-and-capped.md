@@ -143,8 +143,8 @@
   (`test_work.py` / `test_work_permissions.py` / `test_mcp_server.py`); 它们钉的是**新契约**.
 - **最坏情况有界**: `ls` / `grep` 一条结果 `<= 16,000` 字(实测 101,999 -> 15,961,
   102,311 -> 15,890).
-- **`README.md` 的"限额与超时"多一行**(工作工具一条结果), 并接进
-  `tests/test_readme_limits.py` 的 `ROWS`: 数从 `dsb/work.py` 重算, 对不上就红.
+- **`README.md` 不再抄一份限额表**: 那张手抄表随 README 重写撤掉, 数值只在代码里,
+  由各自的单测钉着(`test_work.py` 等); 守那张表的守卫也一并退役.
 - **`protocol/fixtures/read.json` 是两半共读的判据**(`readPageLines` / `readPageBudget`),
   vitest 对着同一份断言.
 - **总成本由文件决定, 档只决定分几轮**: 同一份 25,679 字的文件, 三档的合计几乎一样

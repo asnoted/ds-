@@ -106,7 +106,7 @@ export function iconTitle(
   pendingAsk?: string | null,
   account: AccountState | null = null,
 ): string {
-  if (state === "off") return `ds-:总开关已关,扩展没有接管页面.${CLICK_HINT}`;
+  if (state === "off") return `dsb:总开关已关,扩展没有接管页面.${CLICK_HINT}`;
   // 在途与等人回只在"开着且可达"时才有意义:不可达时手里没有正经在途的东西.
   const waiting = state === "on-reachable" && inFlight ? "工具调用在途." : "";
   const ask = state === "on-reachable" && pendingAsk ? `${pendingAsk}.` : "";
@@ -116,7 +116,7 @@ export function iconTitle(
       : "";
   if (state === "on-reachable") {
     const history = lastFailure ? `${lastFailure}.` : "";
-    return `ds-:总开关已开,中继可达.${accountLine}${waiting}${ask}${history}${CLICK_HINT}`;
+    return `dsb:总开关已开,中继可达.${accountLine}${waiting}${ask}${history}${CLICK_HINT}`;
   }
   const shown =
     notice ??
@@ -125,7 +125,7 @@ export function iconTitle(
       reason: "本机中继 dsb 没有响应.",
       command: RELAY_START_COMMAND,
     } satisfies FailureNotice);
-  return `ds-:${shown.title} ${shown.reason} 启动命令:${shown.command}.${CLICK_HINT}`;
+  return `dsb:${shown.title} ${shown.reason} 启动命令:${shown.command}.${CLICK_HINT}`;
 }
 
 /**

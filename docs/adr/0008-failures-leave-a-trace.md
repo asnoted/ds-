@@ -44,7 +44,7 @@
 8. **不抢前台**: 只在报上来的那个标签页此刻仍是**窗口的活动标签页**时抓; 后台页, 或者活动页
    已经换人, 一律跳过, 留纯文字因由. `captureVisibleTab` 拍的是窗口的活动标签页, 不校验就会
    把别的站点拍下来存进库.
-9. **帧与痕拼在一起, 不新增上报面**: 独立键 `ds-/failure-frames`, 按 `at` 与失败记录配对,
+9. **帧与痕拼在一起, 不新增上报面**: 独立键 `dsb/failure-frames`, 按 `at` 与失败记录配对,
    帧随记录一起过期, 滚动保留最近 `FAILURE_FRAME_CAP = 5` 帧. 只进本地 `storage.local`, **没有任何出站路径**.
 10. **体积有界**: 整屏 JPEG 先按质量 70 抓, 超 `FAILURE_FRAME_BUDGET_CHARS = 55_000` 字符预算就用 `OffscreenCanvas` 逐步降采样
     重编码; 压不进预算就**丢帧留文字** -- 宁可不拍, 不让一帧把 10MB 的配额啃掉一块.
@@ -106,7 +106,7 @@ uv run scripts/page-action.py visible-capture     # 抓不抓得到
 uv run scripts/page-action.py frame-fail          # 抓不到时不影响原失败路径
 uv run pytest tests/test_log.py -q                # 事件名册子 ↔ 调用点 ↔ 篇里那张表
 uv run pytest tests/test_adr_corpus.py -q -k failure_stage   # 扩展侧"环节"名两向(联合类型 ↔ 篇)
-uv run scripts/page-action.py storage get --keys '["ds-/failure-frames"]'   # 帧落没落, 多大(开发期)
+uv run scripts/page-action.py storage get --keys '["dsb/failure-frames"]'   # 帧落没落, 多大(开发期)
 
 # 红: 把某个调用点的事件名打错一个字母(dsb/gateway.py 的 server-down → server-dow, 或者写成
 # server_down), 那条"调用点对着册子核"当场红(12 条里 1 条); 只改 tests/test_log.py 里那份册子

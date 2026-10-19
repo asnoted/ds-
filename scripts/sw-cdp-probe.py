@@ -70,20 +70,20 @@ async def main() -> int:
         v1 = r1.get("result", {}).get("result", {}).get("value") if isinstance(r1, dict) else None
         print(f"[1] evaluate 返回值: {v1!r} (期望 42)  raw_ok={'result' in (r1 or {})}")
 
-        r2 = await call(sw, 2, "console.log('[ds-probe] sw-cdp-alive');'logged'", timeout=5)
+        r2 = await call(sw, 2, "console.log('[dsb-probe] sw-cdp-alive');'logged'", timeout=5)
         v2 = r2.get("result", {}).get("result", {}).get("value") if isinstance(r2, dict) else None
         print(f"[2] console.log 后 evaluate 返回值: {v2!r} (期望 'logged')")
 
         storage_expr = (
-            "chrome.storage.local.set({'ds-/probe':1})"
-            ".then(() => chrome.storage.local.get('ds-/probe'))"
+            "chrome.storage.local.set({'dsb/probe':1})"
+            ".then(() => chrome.storage.local.get('dsb/probe'))"
             ".then((v) => JSON.stringify(v))"
         )
         r4 = await call(sw, 3, storage_expr, timeout=8)
         v4 = r4.get("result", {}).get("result", {}).get("value") if isinstance(r4, dict) else None
         print(f"[3] storage set+get: {v4!r}")
 
-        await call(sw, 4, "console.log('[ds-probe] second-mark');'logged'", timeout=5)
+        await call(sw, 4, "console.log('[dsb-probe] second-mark');'logged'", timeout=5)
         await asyncio.sleep(1)
         print(f"[4] console 事件录到: {events if events else '无'}")
 

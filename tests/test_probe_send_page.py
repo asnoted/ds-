@@ -125,20 +125,20 @@ def test_landing_needs_the_whole_line() -> None:
 def test_ledger_clean_wants_the_same_at_sequence() -> None:
     """账本成环:条数不变而内容换了也得算"动了"--第一版比条数,真机上漏过一笔."""
     page_action = load_page_action()
-    before = {"ds-/failures": [{"at": 2}, {"at": 1}], "ds-/failure-frames": []}
+    before = {"dsb/failures": [{"at": 2}, {"at": 1}], "dsb/failure-frames": []}
     assert page_action.ledger_clean(before, before)[0]
     # 环满员时新笔挤掉最老那笔:条数一样多,内容换了.
-    rolled = {"ds-/failures": [{"at": 3}, {"at": 2}], "ds-/failure-frames": []}
+    rolled = {"dsb/failures": [{"at": 3}, {"at": 2}], "dsb/failure-frames": []}
     assert not page_action.ledger_clean(before, rolled)[0]
     assert "失败痕" in page_action.ledger_clean(before, rolled)[1]
     # 原地补个恢复时刻不算账本动了.
     recovered = {
-        "ds-/failures": [{"at": 2, "recoveredAt": 9}, {"at": 1}],
-        "ds-/failure-frames": [],
+        "dsb/failures": [{"at": 2, "recoveredAt": 9}, {"at": 1}],
+        "dsb/failure-frames": [],
     }
     assert page_action.ledger_clean(before, recovered)[0]
     # 现场帧那份照同一条判据.
-    framed = {"ds-/failures": [{"at": 2}, {"at": 1}], "ds-/failure-frames": [{"at": 5}]}
+    framed = {"dsb/failures": [{"at": 2}, {"at": 1}], "dsb/failure-frames": [{"at": 5}]}
     assert not page_action.ledger_clean(before, framed)[0]
     # 键缺了当空(与各读取器同一条口径):两边都缺就是"没动".
     assert page_action.ledger_clean({}, {})[0]

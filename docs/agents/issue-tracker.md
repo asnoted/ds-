@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo (`copytht/ds-`) live as GitHub issues. Use the `gh` CLI for all operations.
+Issues and specs for this repo (`copytht/dsb`) live as GitHub issues. Use the `gh` CLI for all operations.
 
 ## Conventions
 

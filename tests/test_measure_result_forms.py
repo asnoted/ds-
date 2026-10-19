@@ -25,7 +25,7 @@ def load_measure() -> ModuleType:
 
 HITS = [
     ("src/lib/run.ts", 142, "function onResult(state: RunState, payload: ReplyPayload)"),
-    ("README.md", 7, "ds-: 浏览器扩展 + 本机 MCP 中继"),
+    ("README.md", 7, "dsb: 浏览器扩展 + 本机 MCP 中继"),
 ]
 
 
@@ -34,7 +34,7 @@ def test_parse_hits_splits_three_columns_and_drops_footnotes() -> None:
     text = "\n".join(
         [
             "src/lib/run.ts:142: function onResult(state: RunState, payload: ReplyPayload)",
-            "README.md:7: ds-: 浏览器扩展 + 本机 MCP 中继",
+            "README.md:7: dsb: 浏览器扩展 + 本机 MCP 中继",
             "...(命中数达上限 200,已截断)",
             "(结果已截断:原文 16000 字,这里是前 16000 字;收窄模式,或指定 path 分几次搜)",
         ]
@@ -48,18 +48,18 @@ def test_the_three_forms_are_pinned() -> None:
     module = load_measure()
     assert module.form_today(HITS) == (
         "src/lib/run.ts:142: function onResult(state: RunState, payload: ReplyPayload)\n"
-        "README.md:7: ds-: 浏览器扩展 + 本机 MCP 中继"
+        "README.md:7: dsb: 浏览器扩展 + 本机 MCP 中继"
     )
     assert module.form_structured(HITS) == (
         '[{"path":"src/lib/run.ts","number":142,'
         '"text":"function onResult(state: RunState, payload: ReplyPayload)"},'
-        '{"path":"README.md","number":7,"text":"ds-: 浏览器扩展 + 本机 MCP 中继"}]'
+        '{"path":"README.md","number":7,"text":"dsb: 浏览器扩展 + 本机 MCP 中继"}]'
     )
     # 表格形是上界: 表头一行, 一行一条, Tab 分隔, 不转义.
     assert module.form_toon(HITS) == (
         "path\tnumber\ttext\n"
         "src/lib/run.ts\t142\tfunction onResult(state: RunState, payload: ReplyPayload)\n"
-        "README.md\t7\tds-: 浏览器扩展 + 本机 MCP 中继"
+        "README.md\t7\tdsb: 浏览器扩展 + 本机 MCP 中继"
     )
 
 

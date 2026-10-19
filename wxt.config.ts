@@ -2,7 +2,7 @@ import { defineConfig } from "wxt";
 
 export default defineConfig({
   manifest: {
-    name: "ds-",
+    name: "dsb",
     description: "Browser extension built with WXT",
     // 站点范围在装的那一刻定死,运行期不接受任何切换;总开关不参与站点判定.
     // `<all_urls>` 是唯一的例外,只解锁一件事:失败当场抓一帧(ADR-0008,#106).
@@ -21,7 +21,7 @@ export default defineConfig({
     // 只放总开关--点图标开它,不再直接切开关.
     // 静态图标是 background 还没 setIcon 前的兜底,画的是 "off" 态(默认关).
     action: {
-      default_title: "ds-",
+      default_title: "dsb",
       default_icon: {
         16: "icon/16.png",
         32: "icon/32.png",

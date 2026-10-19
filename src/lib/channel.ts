@@ -31,15 +31,15 @@ import { errorPayload, isReplyPayload, type ReplyPayload } from "./reply";
 export { isReplyPayload };
 
 /** 页面世界与隔离世界共用的信封标记;认不出这个标记的一概不收. */
-export const CHAIN_MESSAGE_SOURCE = "ds-/chain";
+export const CHAIN_MESSAGE_SOURCE = "dsb/chain";
 /** background 那条路的信封标记. */
-export const SEND_MESSAGE_TYPE = "ds-/send";
+export const SEND_MESSAGE_TYPE = "dsb/send";
 /** background → 内容脚本的动作信封标记(照 send 的套路,各认各的 type). */
-export const ACTION_MESSAGE_TYPE = "ds-/action";
+export const ACTION_MESSAGE_TYPE = "dsb/action";
 /** 隔离世界 → background 的 said 上报信封标记. */
-export const SAID_MESSAGE_TYPE = "ds-/said";
+export const SAID_MESSAGE_TYPE = "dsb/said";
 /** 隔离世界 → background 的工具目录请求信封标记. */
-export const TOOLS_REQUEST_MESSAGE_TYPE = "ds-/tools";
+export const TOOLS_REQUEST_MESSAGE_TYPE = "dsb/tools";
 
 export type CallMessage = {
   readonly source: typeof CHAIN_MESSAGE_SOURCE;
@@ -154,18 +154,18 @@ export type SendResponse = {
 };
 
 /** 隔离世界 → background 的 ask 上报信封标记(照 send 的套路,各认各的 type). */
-export const ASK_MESSAGE_TYPE = "ds-/ask";
+export const ASK_MESSAGE_TYPE = "dsb/ask";
 /** 隔离世界 → background 的 ask 清除信封标记. */
-export const ASK_CLEARED_MESSAGE_TYPE = "ds-/ask-cleared";
+export const ASK_CLEARED_MESSAGE_TYPE = "dsb/ask-cleared";
 
 /** 隔离世界 → background 的"续聊到顶停手"上报信封标记. */
-export const STOP_MESSAGE_TYPE = "ds-/stop";
+export const STOP_MESSAGE_TYPE = "dsb/stop";
 
 /** 隔离世界 → background 的"任务收尾"上报信封标记(#104 任务门). */
-export const END_TASK_MESSAGE_TYPE = "ds-/end-task";
+export const END_TASK_MESSAGE_TYPE = "dsb/end-task";
 
 /** 隔离世界 → background 的"续聊这一跳失败了"上报信封标记(#51). */
-export const CONTINUATION_FAIL_MESSAGE_TYPE = "ds-/continuation-fail";
+export const CONTINUATION_FAIL_MESSAGE_TYPE = "dsb/continuation-fail";
 
 /**
  * 发送限速的跨世界通报(#61):任一世界替用户发出去一条消息,就通报一声时刻,
@@ -174,7 +174,7 @@ export const CONTINUATION_FAIL_MESSAGE_TYPE = "ds-/continuation-fail";
  * 走既有的 `window.postMessage` 通道--**不迁状态,不写 DOM 属性**.带 `world` 是为了
  * 让自己不认自己的通报(`postMessage` 也投递给发送方自己).
  */
-export const SEND_NOTE_MESSAGE_SOURCE = "ds-/send-note";
+export const SEND_NOTE_MESSAGE_SOURCE = "dsb/send-note";
 
 export type SendNoteMessage = {
   readonly source: typeof SEND_NOTE_MESSAGE_SOURCE;
@@ -265,7 +265,7 @@ export type ToolsResponse = {
 };
 
 /** 隔离世界 → background 的账号处境上报信封标记. */
-export const ACCOUNT_REPORT_MESSAGE_TYPE = "ds-/account";
+export const ACCOUNT_REPORT_MESSAGE_TYPE = "dsb/account";
 
 /**
  * 账号处境上报(#2):总开关开着时周期上报.禁言期写路径全断,
@@ -276,7 +276,7 @@ export type AccountReport = {
   readonly account: AccountState;
 };
 
-/** background → 内容脚本的一件动作:动作帧裹一层 `ds-/action`. */
+/** background → 内容脚本的一件动作:动作帧裹一层 `dsb/action`. */
 export type ActionRequest = {
   readonly type: typeof ACTION_MESSAGE_TYPE;
   readonly frame: ActionFrame;

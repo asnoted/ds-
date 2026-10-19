@@ -250,16 +250,16 @@ describe("storage.get / storage.set / storage.remove", () => {
     const storage = storageApi();
     expect(
       await runAction(
-        frame({ action: "storage.set", params: { data: { "ds-/watchdog": { silenceMs: 1000 } } } }),
+        frame({ action: "storage.set", params: { data: { "dsb/watchdog": { silenceMs: 1000 } } } }),
         context({ storage }),
       ),
-    ).toEqual({ ok: true, result: { stored: { "ds-/watchdog": { silenceMs: 1000 } } } });
+    ).toEqual({ ok: true, result: { stored: { "dsb/watchdog": { silenceMs: 1000 } } } });
     expect(
       await runAction(
-        frame({ action: "storage.get", params: { keys: ["ds-/watchdog"] } }),
+        frame({ action: "storage.get", params: { keys: ["dsb/watchdog"] } }),
         context({ storage }),
       ),
-    ).toEqual({ ok: true, result: { stored: { "ds-/watchdog": { silenceMs: 1000 } } } });
+    ).toEqual({ ok: true, result: { stored: { "dsb/watchdog": { silenceMs: 1000 } } } });
   });
 
   it("remove 删键,get 回读不再有(漏网的键照留)", async () => {

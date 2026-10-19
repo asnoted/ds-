@@ -356,7 +356,7 @@ export default defineBackground(() => {
       });
     } catch (error) {
       const [red, green, blue] = ICON_COLORS[state];
-      console.log("[ds-] 图标像素画不出来,退回角标", error);
+      console.log("[dsb] 图标像素画不出来,退回角标", error);
       await browser.action.setBadgeBackgroundColor({ color: `rgb(${red}, ${green}, ${blue})` });
     }
   }
@@ -384,7 +384,7 @@ export default defineBackground(() => {
       state = "on-unreachable";
       notice = failureNotice(payload.error);
       recordFailure("call", cause ?? notice.reason);
-      console.log(`[ds-] 工具调用没成(${payload.error}),已记一笔:${cause ?? notice.reason}`);
+      console.log(`[dsb] 工具调用没成(${payload.error}),已记一笔:${cause ?? notice.reason}`);
     }
     void paintIcon();
   }
@@ -449,7 +449,7 @@ export default defineBackground(() => {
     const next = afterHealthProbe(state, probe.reachable);
     const flipped = next.state !== state || next.notice !== notice;
     console.log(
-      `[ds-] 周期探活:中继${probe.reachable ? "可达" : `不可达(${probe.cause ?? "原因不详"})`},` +
+      `[dsb] 周期探活:中继${probe.reachable ? "可达" : `不可达(${probe.cause ?? "原因不详"})`},` +
         `图标${flipped ? `翻到 ${next.state}` : "不动"}`,
     );
     // 记账不看 flipped:翻红要留痕,翻绿要收尾,没变的时候同一次故障也记不进第二笔.
@@ -508,10 +508,10 @@ export default defineBackground(() => {
     const after = watchdogTaskClosed(before);
     if (after === before) return;
     watches.set(tabId, after);
-    console.log(`[ds-] 看门狗:${why},本笔活收尾`);
+    console.log(`[dsb] 看门狗:${why},本笔活收尾`);
     if (!before.sealed && after.sealed) {
       recordFailure("watchdog", `连续 ${after.nudgedTasks} 笔活靠催办推进,本武装期停手`);
-      console.log(`[ds-] 看门狗:连续 ${after.nudgedTasks} 笔活都靠催办推进,封手到总开关关一次`);
+      console.log(`[dsb] 看门狗:连续 ${after.nudgedTasks} 笔活都靠催办推进,封手到总开关关一次`);
     }
   }
 
@@ -530,7 +530,7 @@ export default defineBackground(() => {
     context: ActionContext,
   ): Promise<boolean> {
     if (!context.speak) {
-      console.log('[ds-] "代你发言"闸关着,这次催办整个跳过(不留半截在输入框里)');
+      console.log('[dsb] "代你发言"闸关着,这次催办整个跳过(不留半截在输入框里)');
       return false;
     }
     const frame = (action: string, params: Record<string, unknown>): ActionFrame => ({
@@ -602,11 +602,11 @@ export default defineBackground(() => {
       );
       watches.set(tab.id, next);
       if (act.kind === "navigate-back") {
-        console.log(`[ds-] 看门狗:标签页 ${tab.id} 离开了会话,导航回去`);
+        console.log(`[dsb] 看门狗:标签页 ${tab.id} 离开了会话,导航回去`);
         try {
           await browser.tabs.update(tab.id, { url: act.url });
         } catch (error) {
-          console.log("[ds-] 看门狗:导航回去没成", error);
+          console.log("[dsb] 看门狗:导航回去没成", error);
         }
       } else if (act.kind === "nudge") {
         const tabId = tab.id;
@@ -617,10 +617,10 @@ export default defineBackground(() => {
           // 催办喂活自己的动静源(#104).
           const fresh = watches.get(tabId) ?? next;
           watches.set(tabId, watchdogSeenPassing(fresh, now));
-          console.log(`[ds-] 看门狗:标签页 ${tabId} 正在生成,本轮不催,静默窗口顺延`);
+          console.log(`[dsb] 看门狗:标签页 ${tabId} 正在生成,本轮不催,静默窗口顺延`);
         } else if (!(watches.get(tabId) ?? next).taskOpen) {
           // 判读那几秒里模型正好干净收尾:活没了,没资格催(任务门).
-          console.log(`[ds-] 看门狗:标签页 ${tabId} 刚才收了活,本轮不催`);
+          console.log(`[dsb] 看门狗:标签页 ${tabId} 刚才收了活,本轮不催`);
         } else {
           const delivered = await deliverNudge(tabId, act.text, context);
           // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
@@ -632,12 +632,12 @@ export default defineBackground(() => {
           );
           console.log(
             delivered
-              ? `[ds-] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
-              : "[ds-] 看门狗:催办没送出去(闸拦着或标签页答不上),不算催",
+              ? `[dsb] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
+              : "[dsb] 看门狗:催办没送出去(闸拦着或标签页答不上),不算催",
           );
         }
       } else if (act.kind === "stand-down") {
-        console.log(`[ds-] 看门狗:本笔活连催 ${config.maxNudges} 次无动静,停手`);
+        console.log(`[dsb] 看门狗:本笔活连催 ${config.maxNudges} 次无动静,停手`);
         recordFailure("watchdog", `本笔活连催 ${config.maxNudges} 次无动静`);
       }
     }
@@ -704,7 +704,7 @@ export default defineBackground(() => {
       };
     } catch (error) {
       const cause = describeFetchFailure(error, MCP_CALL_TIMEOUT_MS);
-      console.log(`[ds-] 工具调用没连上(${cause})`);
+      console.log(`[dsb] 工具调用没连上(${cause})`);
       return { payload: errorPayload(FAILURE_RELAY_UNREACHABLE), cause };
     }
   }
@@ -744,7 +744,7 @@ export default defineBackground(() => {
         if (effect.tabId !== undefined) watchdogSeen(effect.tabId, effect.now, effect.phase);
         return;
       case "log":
-        console.log(`[ds-] ${effect.note}`);
+        console.log(`[dsb] ${effect.note}`);
         return;
     }
   }
@@ -786,7 +786,7 @@ export default defineBackground(() => {
       toolsCache = { at: Date.now(), tools: visible };
       return visible;
     } catch (error) {
-      console.log("[ds-] 工具表没取到", describeFetchFailure(error, MCP_LIST_TIMEOUT_MS));
+      console.log("[dsb] 工具表没取到", describeFetchFailure(error, MCP_LIST_TIMEOUT_MS));
       return toolsCache?.tools ?? null;
     }
   }
@@ -804,9 +804,9 @@ export default defineBackground(() => {
         body: callToolBody(id, SAID_ADD_TOOL, { text }),
       });
       const payload = parseMcpResponse(response.status, await response.text(), id);
-      if (payload.status === "error") console.log(`[ds-] said 没报上去(${payload.error})`);
+      if (payload.status === "error") console.log(`[dsb] said 没报上去(${payload.error})`);
     } catch (error) {
-      console.log("[ds-] said 没报上去", describeFetchFailure(error, MCP_LIST_TIMEOUT_MS));
+      console.log("[dsb] said 没报上去", describeFetchFailure(error, MCP_LIST_TIMEOUT_MS));
     }
   }
 
@@ -851,7 +851,7 @@ export default defineBackground(() => {
           await browser.storage.local.remove([...keys]);
         },
       },
-      // 带 target 的动作投进那个标签页:帧裹一层 ds-/action 送过去;
+      // 带 target 的动作投进那个标签页:帧裹一层 dsb/action 送过去;
       // 标签页没了 / 内容脚本没注入(sendMessage 抛错)都折成 tab-gone,不冒泡.
       sendToTab: sendMessageSendToTab((tabId, frameToTab) =>
         browser.tabs.sendMessage(tabId, actionRequestMessage(frameToTab)),
@@ -906,7 +906,7 @@ export default defineBackground(() => {
     if (!(TOGGLE_STORAGE_KEY in changes)) return;
     // 留一行痕:闹钟排没排、活清没清,看这行就知道跟着开关走了没有.
     console.log(
-      `[ds-] 开关变了:排班与图标跟着走(${
+      `[dsb] 开关变了:排班与图标跟着走(${
         readToggle(changes[TOGGLE_STORAGE_KEY].newValue) ? "开" : "关"
       })`,
     );
@@ -958,7 +958,7 @@ export default defineBackground(() => {
     // 这一侧的参与到头了,看门狗那笔活一并收掉,别再往死里催(#104 任务门).
     const stop = parseStopReport(message);
     if (stop !== null) {
-      console.log(`[ds-] 页面报停手:${stop.cause}`);
+      console.log(`[dsb] 页面报停手:${stop.cause}`);
       recordFailure("rounds", describeStop(stop.cause));
       const stopTabId = sender.tab?.id;
       if (stopTabId !== undefined) closeWatchdogTask(stopTabId, "续聊到顶停手");
@@ -977,7 +977,7 @@ export default defineBackground(() => {
     // 这里只落痕(正文进不来,ADR-0008).
     const continuationFail = parseContinuationFailReport(message);
     if (continuationFail !== null) {
-      console.log(`[ds-] 页面报续聊失败:${continuationFail.cause}`);
+      console.log(`[dsb] 页面报续聊失败:${continuationFail.cause}`);
       const reportedAt = recordFailure("continuation", continuationFail.cause);
       // 只在**真的落了新记录**时抓一帧(#106):同一段红着的延续不重复拍.
       // fire-and-forget:抓帧那一路自己吞掉所有失败,原失败路径不等它,也不看它.
@@ -988,7 +988,7 @@ export default defineBackground(() => {
     const accountReport: AccountReport | null = parseAccountReport(message);
     if (accountReport !== null) {
       account = accountReport.account;
-      console.log(`[ds-] 账号处境已更新:${account.kind}`);
+      console.log(`[dsb] 账号处境已更新:${account.kind}`);
       void paintIcon();
       return undefined;
     }
@@ -996,7 +996,7 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onInstalled.addListener(() => {
-    console.log("[ds-] installed, first message id:", nextMessageId("install"));
+    console.log("[dsb] installed, first message id:", nextMessageId("install"));
   });
 
   void syncFromStorage();

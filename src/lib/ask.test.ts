@@ -136,6 +136,6 @@ describe("describePendingAsks", () => {
 
 describe("存储键", () => {
   it("值与版本绑死:改名等于把挂着的等人回丢在旧键里", () => {
-    expect(ASKS_STORAGE_KEY).toBe("ds-/asks");
+    expect(ASKS_STORAGE_KEY).toBe("dsb/asks");
   });
 });

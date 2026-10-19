@@ -53,7 +53,7 @@ export const DEFAULT_WATCHDOG_CONFIG: WatchdogConfig = {
 export const MAX_CONSECUTIVE_NUDGED_TASKS = 2;
 
 /** 存储键:存 `WatchdogConfig` 的部分覆写,缺的落默认. */
-export const WATCHDOG_CONFIG_STORAGE_KEY = "ds-/watchdog";
+export const WATCHDOG_CONFIG_STORAGE_KEY = "dsb/watchdog";
 
 /** 一条被武装的 DeepSeek 标签页的看门狗状态. */
 export type WatchdogState = {

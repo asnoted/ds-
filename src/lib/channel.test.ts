@@ -207,7 +207,7 @@ describe("页面世界 ↔ 隔离世界的信封", () => {
   it("不是我们的标记,形状不对的一律不收", () => {
     expect(parseChainMessage(undefined)).toBeNull();
     expect(parseChainMessage(null)).toBeNull();
-    expect(parseChainMessage("ds-/chain")).toBeNull();
+    expect(parseChainMessage("dsb/chain")).toBeNull();
     expect(parseChainMessage({ source: "page", kind: "call", id: "1", calls: ["{}"] })).toBeNull();
     expect(parseChainMessage({ source: CHAIN_MESSAGE_SOURCE, kind: "ping" })).toBeNull();
     expect(
@@ -271,10 +271,10 @@ describe("隔离世界 ↔ background 的信封", () => {
 
   it("认不出的请求与响应不收", () => {
     expect(parseSendRequest({})).toBeNull();
-    expect(parseSendRequest({ type: "ds-/other", id: "1", calls: ["{}"] })).toBeNull();
-    expect(parseSendRequest({ type: "ds-/send", id: "1", calls: [] })).toBeNull();
-    expect(parseSendRequest({ type: "ds-/send", id: "1", calls: [""] })).toBeNull();
-    expect(parseSendRequest({ type: "ds-/send", id: "1" })).toBeNull();
+    expect(parseSendRequest({ type: "dsb/other", id: "1", calls: ["{}"] })).toBeNull();
+    expect(parseSendRequest({ type: "dsb/send", id: "1", calls: [] })).toBeNull();
+    expect(parseSendRequest({ type: "dsb/send", id: "1", calls: [""] })).toBeNull();
+    expect(parseSendRequest({ type: "dsb/send", id: "1" })).toBeNull();
     expect(parseSendResponse(undefined)).toBeNull();
     expect(parseSendResponse({ id: "1", payload: { status: "error" } })).toBeNull();
     expect(parseSendResponse({ payload: { status: "ok", answer: "a" } })).toBeNull();
@@ -309,7 +309,7 @@ describe("said 上报(围栏之外的话)", () => {
     ).toBeNull();
     expect(parseChainMessage({ source: CHAIN_MESSAGE_SOURCE, kind: "said", id: "1" })).toBeNull();
     expect(parseSaidReport({ type: SAID_MESSAGE_TYPE, text: "   " })).toBeNull();
-    expect(parseSaidReport({ type: "ds-/other", text: "x" })).toBeNull();
+    expect(parseSaidReport({ type: "dsb/other", text: "x" })).toBeNull();
     expect(parseSaidReport(undefined)).toBeNull();
   });
 });
@@ -328,7 +328,7 @@ describe("工具目录(协议说明照它拼)", () => {
   it("请求只认标记,回话带目录或 null(取不到沿用上一份)", () => {
     expect(parseToolsRequest(toolsRequestMessage())).toEqual(toolsRequestMessage());
     expect(parseToolsRequest({ type: TOOLS_REQUEST_MESSAGE_TYPE })).toEqual(toolsRequestMessage());
-    expect(parseToolsRequest({ type: "ds-/other" })).toBeNull();
+    expect(parseToolsRequest({ type: "dsb/other" })).toBeNull();
 
     expect(parseToolsResponse(toolsResponseMessage(TOOLS))).toEqual(toolsResponseMessage(TOOLS));
     expect(parseToolsResponse(toolsResponseMessage(null))).toEqual(toolsResponseMessage(null));
@@ -488,7 +488,7 @@ describe("background ↔ 内容脚本的动作信封", () => {
 
   it("缺字段 / 错 type / 形状不对的一律 null", () => {
     expect(parseActionRequest(undefined)).toBeNull();
-    expect(parseActionRequest({ type: "ds-/send", id: "1", question: "q" })).toBeNull();
+    expect(parseActionRequest({ type: "dsb/send", id: "1", question: "q" })).toBeNull();
     expect(parseActionRequest({ type: ACTION_MESSAGE_TYPE })).toBeNull();
     expect(
       parseActionRequest({ type: ACTION_MESSAGE_TYPE, frame: { ...ACTION_FRAME, id: "" } }),

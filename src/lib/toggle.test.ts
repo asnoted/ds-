@@ -95,7 +95,7 @@ describe("parseToggleMessage", () => {
 
   it("形状不对的不猜", () => {
     expect(parseToggleMessage(null)).toBeNull();
-    expect(parseToggleMessage("ds-/toggle")).toBeNull();
+    expect(parseToggleMessage("dsb/toggle")).toBeNull();
     expect(parseToggleMessage({ source: TOGGLE_MESSAGE_SOURCE, kind: "state" })).toBeNull();
     expect(
       parseToggleMessage({ source: TOGGLE_MESSAGE_SOURCE, kind: "state", enabled: "true" }),

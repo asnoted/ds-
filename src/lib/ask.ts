@@ -9,7 +9,7 @@
  */
 
 /** 存储键:跟总开关同在 `storage.local`,但各管各的. */
-export const ASKS_STORAGE_KEY = "ds-/asks";
+export const ASKS_STORAGE_KEY = "dsb/asks";
 
 /** 一笔挂着的问题:问什么,几点挂的. */
 export type PendingAsk = {

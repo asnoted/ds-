@@ -70,7 +70,6 @@
 
 ```sh
 pnpm vitest run src/lib/continuation.test.ts   # 预算常量 90 万被钉住(拿它当实测硬墙就会红)
-uv run pytest tests/test_readme_limits.py -q   # README 那张限额表里的 90 万与它同源
 uv run scripts/count-tokens.py --file <file>   # 离线数 token(要本机有那份分词器)
 uv run scripts/page-action.py sse --file <大输入>   # 真机: 按 finish_reason 判拒收
 

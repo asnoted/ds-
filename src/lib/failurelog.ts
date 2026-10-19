@@ -9,7 +9,7 @@
  */
 
 /** 存储键:跟总开关同在 `storage.local`,但各管各的. */
-export const FAILURE_LOG_STORAGE_KEY = "ds-/failures";
+export const FAILURE_LOG_STORAGE_KEY = "dsb/failures";
 
 /** 留多少条:够回看一整天的零星故障,又不至于把 storage 撑大. */
 export const FAILURE_LOG_CAP = 20;

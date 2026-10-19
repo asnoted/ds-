@@ -1,5 +1,5 @@
 {
-  "description": "页面动作协议（扩展内部）：background 把一件动作帧 {\"action\",\"params\",\"target\"} 经 browser.tabs.sendMessage 投给目标标签页的内容脚本（信封 type=ds-/action，见 src/lib/channel.ts），按 target 标签页串行执行，当场回一个同构结果。response 成功 {\"ok\":true,\"result\"}，失败 {\"ok\":false,\"error\"}；error 只取下面册子里的码。谁在用：出站与看门狗（src/lib/action.ts 的 runAction）。",
+  "description": "页面动作协议（扩展内部）：background 把一件动作帧 {\"action\",\"params\",\"target\"} 经 browser.tabs.sendMessage 投给目标标签页的内容脚本（信封 type=dsb/action，见 src/lib/channel.ts），按 target 标签页串行执行，当场回一个同构结果。response 成功 {\"ok\":true,\"result\"}，失败 {\"ok\":false,\"error\"}；error 只取下面册子里的码。谁在用：出站与看门狗（src/lib/action.ts 的 runAction）。",
   "errorCodes": [
     {
       "code": "disabled",

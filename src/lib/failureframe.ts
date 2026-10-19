@@ -10,7 +10,7 @@
  */
 
 /** 存储键:与总开关、失败留痕同在 `storage.local`,各管各的. */
-export const FAILURE_FRAME_STORAGE_KEY = "ds-/failure-frames";
+export const FAILURE_FRAME_STORAGE_KEY = "dsb/failure-frames";
 
 /** 留几帧:够看"最近几次红各是什么现场",又不至于把 storage 撑大. */
 export const FAILURE_FRAME_CAP = 5;

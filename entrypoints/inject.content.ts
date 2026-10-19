@@ -136,8 +136,8 @@ export default defineContentScript({
               });
               console.log(
                 outcome.sent
-                  ? "[ds-] 续聊已作为一条短标记发出"
-                  : "[ds-] 续聊没有发出去,页面里没有新消息",
+                  ? "[dsb] 续聊已作为一条短标记发出"
+                  : "[dsb] 续聊没有发出去,页面里没有新消息",
               );
             })
             .catch((error) => {
@@ -146,7 +146,7 @@ export default defineContentScript({
                 continuation: effect.continuation,
                 outcome: { thrown: error },
               });
-              console.log("[ds-] 续聊发送出岔,页面里没有新消息", error);
+              console.log("[dsb] 续聊发送出岔,页面里没有新消息", error);
             });
           break;
         case "stage":
@@ -155,12 +155,12 @@ export default defineContentScript({
         case "trace": {
           const id = nextMessageId("cont-fail");
           window.postMessage(continuationFailMessage(id, effect.cause), "*");
-          console.log(`[ds-] 续聊失败:${effect.cause}(已留痕)`);
+          console.log(`[dsb] 续聊失败:${effect.cause}(已留痕)`);
           break;
         }
         case "stop":
           window.postMessage(stopMessage(nextMessageId("rounds"), effect.cause), "*");
-          console.log(`[ds-] ${effect.note}`);
+          console.log(`[dsb] ${effect.note}`);
           break;
         case "apply":
           if (effect.enabled) install();
@@ -174,11 +174,11 @@ export default defineContentScript({
             gate = newGate();
           }
           console.log(
-            `[ds-] 总开关${effect.enabled ? "打开" : "关闭"},协议说明${effect.enabled ? "开始注入" : "不再注入"},回灌链${effect.enabled ? "开始工作" : "整条不再工作"}`,
+            `[dsb] 总开关${effect.enabled ? "打开" : "关闭"},协议说明${effect.enabled ? "开始注入" : "不再注入"},回灌链${effect.enabled ? "开始工作" : "整条不再工作"}`,
           );
           break;
         case "log":
-          console.log(`[ds-] ${effect.note}`);
+          console.log(`[dsb] ${effect.note}`);
           break;
       }
     }
@@ -202,7 +202,7 @@ export default defineContentScript({
         sleep: realSleep,
       });
       if (run.waitedMs > 0) {
-        console.log(`[ds-] 发送限速:上一条刚发过,等 ${run.waitedMs}ms 再发`);
+        console.log(`[dsb] 发送限速:上一条刚发过,等 ${run.waitedMs}ms 再发`);
       }
       if (run.pace !== sendPace) {
         sendPace = run.pace;
@@ -225,11 +225,11 @@ export default defineContentScript({
       const decision = dispatch({ type: "claimed", shape, now: Date.now() });
       switch (decision.claim?.kind) {
         case "substituted":
-          console.log("[ds-] 续聊正文已替换进这次出站请求(工具结果不走可见消息)");
+          console.log("[dsb] 续聊正文已替换进这次出站请求(工具结果不走可见消息)");
           return decision.claim.body;
         default: {
           const next = rewriteOutgoingBody(shape, catalog);
-          if (next !== null) console.log("[ds-] 已把协议说明拼到这条消息开头");
+          if (next !== null) console.log("[dsb] 已把协议说明拼到这条消息开头");
           return next;
         }
       }
@@ -258,11 +258,11 @@ export default defineContentScript({
       if (composer === null) return { sent: false, failure: "composer-absent" };
       const outcome = stage(composer, CONTINUATION_MARKER);
       if (outcome === "draft") {
-        console.log("[ds-] 输入框里还有你正在打的字,这一轮不覆盖");
+        console.log("[dsb] 输入框里还有你正在打的字,这一轮不覆盖");
         return { sent: false, failure: "draft-in-composer" };
       }
       if (outcome === "unwritable") return { sent: false, failure: "composer-unwritable" };
-      console.log('[ds-] "代你发言"闸关着:短标记已写进输入框,等你按发送');
+      console.log('[dsb] "代你发言"闸关着:短标记已写进输入框,等你按发送');
       return { sent: true, failure: null };
     }
 
@@ -311,7 +311,7 @@ export default defineContentScript({
       }
       if (calls.length > 0) {
         const id = nextMessageId("send");
-        console.log(`[ds-] 认出 ${calls.length} 块 send 围栏(${id}),交给中继`);
+        console.log(`[dsb] 认出 ${calls.length} 块 send 围栏(${id}),交给中继`);
         fenceCalls = expectResult(fenceCalls, id);
         window.postMessage(callMessage(id, calls), "*");
         pendingAsk = false;
@@ -326,19 +326,19 @@ export default defineContentScript({
       if (ask !== null) {
         pendingAsk = true;
         const id = nextMessageId("ask");
-        console.log(`[ds-] 认出 ask 围栏(${id}),网页在等人回`);
+        console.log(`[dsb] 认出 ask 围栏(${id}),网页在等人回`);
         window.postMessage(askMessage(id, ask), "*");
         return;
       }
       if (pendingAsk) {
         pendingAsk = false;
         const id = nextMessageId("ask");
-        console.log(`[ds-] 对话继续了,ask(${id})作废`);
+        console.log(`[dsb] 对话继续了,ask(${id})作废`);
         window.postMessage(askClearedMessage(id), "*");
       }
       // 静默分支曾让"围栏在,但形状认不出"无法定位,这里只在真有 send 字样时吭声.
       if (raw.includes("```send")) {
-        console.log(`[ds-] 响应里有 \`\`\`send 字样却没认出围栏(${raw.length} 字)`);
+        console.log(`[dsb] 响应里有 \`\`\`send 字样却没认出围栏(${raw.length} 字)`);
       }
     }
 
@@ -347,10 +347,10 @@ export default defineContentScript({
       try {
         const raw = await response.text();
         // 与"检测没跑"区分:跑没跑先有个数.
-        console.log(`[ds-] 读到出站响应(${raw.length} 字)`);
+        console.log(`[dsb] 读到出站响应(${raw.length} 字)`);
         detect(raw);
       } catch (error) {
-        console.log("[ds-] 响应读不出来,这轮不检测", error);
+        console.log("[dsb] 响应读不出来,这轮不检测", error);
       }
     }
 
@@ -447,7 +447,7 @@ export default defineContentScript({
         const claimed = claimResult(fenceCalls, chain.id);
         fenceCalls = claimed.calls;
         if (!claimed.accepted) {
-          console.log(`[ds-] 收到一条不是我们那轮的 result(${chain.id}),丢掉`);
+          console.log(`[dsb] 收到一条不是我们那轮的 result(${chain.id}),丢掉`);
           return;
         }
         dispatch({ type: "result", payload: chain.payload });
@@ -500,12 +500,12 @@ export type SendOutcome = {
 async function sendToPage(message: string): Promise<SendOutcome> {
   const composer = pick();
   if (composer === null) {
-    console.log("[ds-] 没找到站点的输入框,这轮回灌作废");
+    console.log("[dsb] 没找到站点的输入框,这轮回灌作废");
     return { sent: false, failure: "composer-absent" };
   }
   const status = await send(composer, message, realClock);
   if (status === "unwritable") {
-    console.log("[ds-] 输入框写不进去,这轮回灌作废");
+    console.log("[dsb] 输入框写不进去,这轮回灌作废");
     return { sent: false, failure: "composer-unwritable" };
   }
   if (status === "failed") return { sent: false, failure: "send-failed" };

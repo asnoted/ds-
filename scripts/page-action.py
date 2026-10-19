@@ -34,7 +34,7 @@
 2. **本地工具**(`send.page` 等)不在 `ACTION_ROSTER` 里, `send` 调不到. 唯一触发
    办法是用 `js` 往页面里注入一条 chain 信封, 让它走 `content.ts` → background:
 
-     uv run scripts/page-action.py js 'window.postMessage({source:"ds-/chain",kind:"call",
+     uv run scripts/page-action.py js 'window.postMessage({source:"dsb/chain",kind:"call",
        id:"probe-1",calls:[JSON.stringify({tool:"send.page",arguments:{question:"..."}})]},"*")'
 
    要页面模型**自己**排围栏的路径(如本地工具)只能这么验; 不要为了验一个动作去
@@ -71,14 +71,14 @@ EXT_DIR = Path(os.environ.get("DSB_EXT_DIR", str(REPO / ".output" / "chrome-mv3"
 SITE_MATCH = os.environ.get("DSB_SITE_MATCH", "https://chat.deepseek.com/")
 
 #: 站点上的动作信封(与 `src/lib/channel.ts` 的 `ACTION_MESSAGE_TYPE` 同一份).
-ACTION_MESSAGE_TYPE = "ds-/action"
+ACTION_MESSAGE_TYPE = "dsb/action"
 
 #: 页面世界 → 内容脚本的 chain 信封标记(与 `src/lib/channel.ts` 的 `CHAIN_MESSAGE_SOURCE` 同一份).
-CHAIN_MESSAGE_SOURCE = "ds-/chain"
+CHAIN_MESSAGE_SOURCE = "dsb/chain"
 
 #: 失败痕与现场帧那两个键(与 `src/lib/failurelog.ts` / `failureframe.ts` 同一份).
-FAILURE_LOG_KEY = "ds-/failures"
-FAILURE_FRAME_KEY = "ds-/failure-frames"
+FAILURE_LOG_KEY = "dsb/failures"
+FAILURE_FRAME_KEY = "dsb/failure-frames"
 
 #: 负路探针投的那条失败由因:与真痕同形,一眼看得出是探针造的(#106).
 FRAME_FAIL_CAUSE = "探针造的失败:验抓帧负路(#106)"

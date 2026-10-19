@@ -23,7 +23,7 @@
 fire-and-forget 的 evaluate 后再单独 pump,一条都收不到(纯监听也 0 行). 所以所有
 SW 侧操作都走 `call()`,它在等自己回包时把途经的 `Runtime.consoleAPICalled` 一并记下.
 
-判定(看控制台 `[ds-] 看门狗` 行):
+判定(看控制台 `[dsb] 看门狗` 行):
   - 出现 `催办已发`        → 完成(speak 闸开着,写+发两步都过)
   - 出现 `催办整个跳过`    → 未完成(speak 闸关着)
   - 出现 `催办没送出去`    → 未完成(闸拦着或标签页答不上)
@@ -66,8 +66,8 @@ SW 侧操作都走 `call()`,它在等自己回包时把途经的 `Runtime.consol
 
 用法:
   uv run scripts/watchdog-probe.py
-  uv run scripts/watchdog-probe.py --generating   # 验完删 ds-/watchdog 键
-  uv run scripts/watchdog-probe.py --gate         # 验完删 ds-/watchdog 键
+  uv run scripts/watchdog-probe.py --generating   # 验完删 dsb/watchdog 键
+  uv run scripts/watchdog-probe.py --gate         # 验完删 dsb/watchdog 键
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ GENERATE_TEXT = "请写一篇 8000 字的散文,主题是海边的灯塔,分段,
 #: 发完即回确认,页面随即进入生成相;它经 `fenceround` 的 `watchdog` 效果
 #: 刷动静时刻,所以这一腿不用再单独投 `composer.read`.
 GENERATE_EXPR = (
-    "window.postMessage({source:'ds-/chain',kind:'call',id:'probe-wd-generating',"
+    "window.postMessage({source:'dsb/chain',kind:'call',id:'probe-wd-generating',"
     "calls:[JSON.stringify({tool:'send.page',arguments:{question:"
     + json.dumps(GENERATE_TEXT)
     + "}})]},'*');'sent'"
@@ -135,7 +135,7 @@ GENERATE_EXPR = (
 #: **必须在总开关关着时投**(见文件头):开着的话自动续聊会把提示替用户发出去,
 #: 模型一回话任务就收尾,活抢在第一扫之前就没了.
 ACTIVITY_EXPR = (
-    "window.postMessage({source:'ds-/chain',kind:'call',id:'probe-wd-activity',"
+    "window.postMessage({source:'dsb/chain',kind:'call',id:'probe-wd-activity',"
     "calls:['probe-not-a-tool-call']},'*');'sent'"
 )
 
@@ -147,7 +147,7 @@ PHASE_EXPR = (
     "if(!t)return 'no-site-tab';"
     "const frame={type:'action',id:'probe-wd-phase',action:'button.get',params:{},"
     "target:String(t.id)};"
-    "const r=await chrome.tabs.sendMessage(t.id,{type:'ds-/action',frame});"
+    "const r=await chrome.tabs.sendMessage(t.id,{type:'dsb/action',frame});"
     "return JSON.stringify(r);})()"
 )
 
@@ -304,7 +304,7 @@ async def main(leg: str) -> int:
             # 对表先把窗口停长:睡的这一段里上一轮的静默尾巴还记着账,窗口短的话
             # 这期间的一次扫就会抢着催,白留一条催办.睡够了再拧短,投递,
             # 让那次扫正落在生成相里(见 SWEEP_LEAD_S).
-            await sw.call("chrome.storage.local.set({'ds-/watchdog':{'silenceMs':900000}})")
+            await sw.call("chrome.storage.local.set({'dsb/watchdog':{'silenceMs':900000}})")
             lead = await wait_for_sweep(sw)
             if lead > 0:
                 print(
@@ -313,14 +313,14 @@ async def main(leg: str) -> int:
                     flush=True,
                 )
                 await sw.pump(lead)
-            await sw.call(f"chrome.storage.local.set({{'ds-/watchdog':{{'silenceMs':{silence}}}}})")
+            await sw.call(f"chrome.storage.local.set({{'dsb/watchdog':{{'silenceMs':{silence}}}}})")
             await site.call(GENERATE_EXPR)
         else:
             # 开活的两步,顺序不能反(见文件头):先关总开关(清场 + 续聊闭嘴),
             # 再投动静(land 开活)--开着开关投的话模型几秒内就回话收尾了.
             await sw.call("chrome.storage.local.set({'toggle':false})")
             await sw.pump(1.0)
-            await sw.call(f"chrome.storage.local.set({{'ds-/watchdog':{{'silenceMs':{silence}}}}})")
+            await sw.call(f"chrome.storage.local.set({{'dsb/watchdog':{{'silenceMs':{silence}}}}})")
             await site.call(ACTIVITY_EXPR)
         # 从这一刻起的 console 才算这一轮的证据(enable 瞬间的整批回放是历史,见 realtime_lines).
         armed_at = time.time() * 1000
