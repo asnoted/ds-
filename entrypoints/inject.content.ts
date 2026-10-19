@@ -288,7 +288,12 @@ export default defineContentScript({
       const step = release(gate, Date.now(), Math.random);
       gate = step.gate;
       for (const message of step.released) {
-        dispatch({ type: "released", message, now: Date.now() });
+        dispatch({
+          type: "released",
+          message,
+          now: Date.now(),
+          session: pageSessionIdOf(location.href),
+        });
       }
       if (gate.queue.length > 0) scheduleFlush();
     }

@@ -101,8 +101,18 @@ export type SettleOutcome =
 export type RunEvent =
   /** 中继回灌的结果到达(总开关关着、载荷不可注入时不入队). */
   | { readonly type: "result"; readonly payload: ReplyPayload }
-  /** 出站窗口放行了这一条:武装与发送的走向在这一刻定(放行才武装). */
-  | { readonly type: "released"; readonly message: string; readonly now: number }
+  /**
+   * 出站窗口放行了这一条:武装与发送的走向在这一刻定(放行才武装).
+   *
+   * `session` 是放行这一刻页面所在的会话(认不出传 null,不知道就缺省):结果进队
+   * 之后到放行之间用户可能已经切走,写给上一条会话的续聊不该再发进新对话.
+   */
+  | {
+      readonly type: "released";
+      readonly message: string;
+      readonly now: number;
+      readonly session?: string | null;
+    }
   /**
    * 真动手发送**前一刻**:把武装的时刻改成此刻.限速(#61)可能让这一发在放行之后
    * 再等过一个间隔,而武装的 TTL(`armed.ts` 的 `ARMED_TTL_MS`)该从**真发出去**那一刻起算.
@@ -171,11 +181,22 @@ function onResult(state: RunState, payload: ReplyPayload): RunDecision {
  * 发消息,早武装就会把他的真消息换成工具结果.
  *
  * 闸关着那一支的裁决里**没有发送步**(只有落草稿),接线层照着做就碰不到 Enter(#52).
+ *
+ * 结果进队到放行之间用户切走了会话:这条结果写给的是上一条会话,放出去只会在新对话
+ * 里多一条可见标记、工具结果也接错上下文--静默作废(用户自己换的,不算故障留痕).
  */
-function onReleased(state: RunState, message: string, now: number): RunDecision {
+function onReleased(
+  state: RunState,
+  message: string,
+  now: number,
+  session?: string | null,
+): RunDecision {
   const isRun = state.queued !== null && message === CONTINUATION_MARKER;
   if (!isRun) {
     return step(state, [{ kind: "send", message, continuation: false }]);
+  }
+  if (session !== undefined && state.session !== null && session !== state.session) {
+    return step({ ...state, queued: null }, [{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
   }
   const continuation = state.queued;
   const base = { ...state, queued: null };
@@ -293,7 +314,7 @@ export function decide(state: RunState, event: RunEvent): RunDecision {
     case "result":
       return onResult(state, event.payload);
     case "released":
-      return onReleased(state, event.message, event.now);
+      return onReleased(state, event.message, event.now, event.session);
     case "sending":
       return onSending(state, event.now);
     case "settled":

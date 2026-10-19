@@ -188,6 +188,55 @@ describe("换会话:轮数归零且待发作废(AC④)", () => {
     expect(changed.state.armed.phase).toBe("armed");
     expect(changed.effects).toEqual([]);
   });
+
+  it("结果还在队列里时用户切到别的会话:这条续聊作废,标记不落进新对话", () => {
+    const queued = decide(decide(turnOn(true), { type: "session", key: "s1" }).state, {
+      type: "result",
+      payload: PAYLOAD,
+    });
+    expect(queued.state.queued).not.toBeNull();
+
+    const released = decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+      session: "s2",
+    });
+    expect(released.state.queued).toBeNull();
+    expect(released.state.armed).toEqual({ phase: "idle" });
+    // 静默作废:用户自己换的会话,不是桥的故障,不留失败痕.
+    expect(released.effects).toEqual([{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
+  });
+
+  it("放行时会话已经认不出(null):同样作废(URL 已经不在会话页上)", () => {
+    const queued = decide(decide(turnOn(true), { type: "session", key: "s1" }).state, {
+      type: "result",
+      payload: PAYLOAD,
+    });
+    const released = decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+      session: null,
+    });
+    expect(released.effects).toEqual([{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
+  });
+
+  it("放行时还在同一个会话:照发(别把正常放行也拦了)", () => {
+    const queued = decide(decide(turnOn(true), { type: "session", key: "s1" }).state, {
+      type: "result",
+      payload: PAYLOAD,
+    });
+    const released = decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+      session: "s1",
+    });
+    expect(released.effects).toEqual([
+      { kind: "send", message: CONTINUATION_MARKER, continuation: true },
+    ]);
+  });
 });
 
 describe("出站请求认领:钥匙、过期与处置", () => {
