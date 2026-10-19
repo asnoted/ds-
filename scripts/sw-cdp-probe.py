@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import urllib.request
 
 import websockets
@@ -35,7 +36,31 @@ def sw_ws_url() -> str:
     raise SystemExit("没找到扩展 service worker 目标")
 
 
-async def call(ws: websockets.ClientConnection, id_: int, expr: str, timeout: float) -> object:
+def record_console(message: dict, events: list[str], since_ms: float) -> None:
+    """把这条消息里的 console 行记下来;`Runtime.enable` 回放的历史(时间戳旧)不算.
+
+    回放能到只说明连接通,证不了"此刻还到";不滤时间戳,[4] 会把历史回放判成绿的
+    (`watchdog-probe.py` 的文件头写着同一条教训).
+    """
+    if message.get("method") != "Runtime.consoleAPICalled":
+        return
+    params = message.get("params", {})
+    ts = params.get("timestamp", 0)
+    if not isinstance(ts, (int, float)) or ts < since_ms:
+        return
+    args = params.get("args", [])
+    events.append(str(args[0].get("value")) if args else "?")
+    print(f"  consoleAPICalled| {events[-1]}", flush=True)
+
+
+async def call(
+    ws: websockets.ClientConnection,
+    id_: int,
+    expr: str,
+    timeout: float,
+    events: list[str],
+    since_ms: float,
+) -> object:
     await ws.send(
         json.dumps(
             {
@@ -57,20 +82,26 @@ async def call(ws: websockets.ClientConnection, id_: int, expr: str, timeout: fl
         message = json.loads(raw)
         if message.get("id") == id_:
             return message
+        # 等回包时途经的 console 事件也顺路记下(纯监听那一路实测收不到).
+        record_console(message, events, since_ms)
 
 
 async def main() -> int:
     sw_url = sw_ws_url()
     events: list[str] = []
+    # 这一刻之前的 console 都是 `Runtime.enable` 的回放(历史),不算本轮证据.
+    since_ms = time.time() * 1000
     async with websockets.connect(sw_url, max_size=None) as sw:
         await sw.send(json.dumps({"id": 900, "method": "Runtime.enable"}))
         await asyncio.sleep(0.5)
 
-        r1 = await call(sw, 1, "42", timeout=5)
+        r1 = await call(sw, 1, "42", 5, events, since_ms)
         v1 = r1.get("result", {}).get("result", {}).get("value") if isinstance(r1, dict) else None
         print(f"[1] evaluate 返回值: {v1!r} (期望 42)  raw_ok={'result' in (r1 or {})}")
 
-        r2 = await call(sw, 2, "console.log('[dsb-probe] sw-cdp-alive');'logged'", timeout=5)
+        r2 = await call(
+            sw, 2, "console.log('[dsb-probe] sw-cdp-alive');'logged'", 5, events, since_ms
+        )
         v2 = r2.get("result", {}).get("result", {}).get("value") if isinstance(r2, dict) else None
         print(f"[2] console.log 后 evaluate 返回值: {v2!r} (期望 'logged')")
 
@@ -79,24 +110,22 @@ async def main() -> int:
             ".then(() => chrome.storage.local.get('dsb/probe'))"
             ".then((v) => JSON.stringify(v))"
         )
-        r4 = await call(sw, 3, storage_expr, timeout=8)
+        r4 = await call(sw, 3, storage_expr, 8, events, since_ms)
         v4 = r4.get("result", {}).get("result", {}).get("value") if isinstance(r4, dict) else None
         print(f"[3] storage set+get: {v4!r}")
 
-        await call(sw, 4, "console.log('[dsb-probe] second-mark');'logged'", timeout=5)
+        await call(sw, 4, "console.log('[dsb-probe] second-mark');'logged'", 5, events, since_ms)
         await asyncio.sleep(1)
-        print(f"[4] console 事件录到: {events if events else '无'}")
 
         while True:
             try:
                 raw = await asyncio.wait_for(sw.recv(), timeout=1)
             except TimeoutError:
                 break
-            message = json.loads(raw)
-            if message.get("method") == "Runtime.consoleAPICalled":
-                args = message.get("params", {}).get("args", [])
-                events.append(str(args[0].get("value")) if args else "?")
-                print(f"  consoleAPICalled| {events[-1]}", flush=True)
+            record_console(json.loads(raw), events, since_ms)
+
+        last = f";末条 {events[-1]!r}" if events else ":无"
+        print(f"[4] 本轮 console 事件录到 {len(events)} 条{last}")
 
     print("\n=== 判据 ===")
     print(f"  SW 活着且 evaluate 通: {v1 == 42}")
