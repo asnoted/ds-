@@ -32,11 +32,12 @@ const MAX_BACKOFF_MINUTES = 8 * 60;
 export function readBackoff(stored: unknown): BackoffState {
   if (typeof stored === "object" && stored !== null) {
     const record = stored as Record<string, unknown>;
-    if (typeof record["until"] === "number" && typeof record["round"] === "number") {
-      return {
-        until: record["until"],
-        round: Math.max(0, Math.floor(record["round"])),
-      };
+    const until = record["until"];
+    const round = record["round"];
+    // `until: null` 是真状态(到期或恢复后留在存储里),不是坏数据--那上面还挂着回次,
+    // 当成认不出会把阶梯重置:第二回禁言才又只退避 10 分钟.
+    if ((typeof until === "number" || until === null) && typeof round === "number") {
+      return { until, round: Math.max(0, Math.floor(round)) };
     }
   }
   return { until: null, round: 0 };

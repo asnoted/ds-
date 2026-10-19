@@ -44,6 +44,11 @@ describe("readBackoff:持久状态", () => {
     expect(readBackoff({ until: 123, round: 2 })).toEqual({ until: 123, round: 2 });
   });
 
+  it("until 为 null 但回次还在:如实读出,别把阶梯重置", () => {
+    // 到期放行 / 账号恢复后存储里就是 {until: null, round: N};丢了回次,下一次禁言只退 10 分钟.
+    expect(readBackoff({ until: null, round: 3 })).toEqual({ until: null, round: 3 });
+  });
+
   it("认不出就当从没退避过", () => {
     expect(readBackoff(undefined)).toEqual({ until: null, round: 0 });
     expect(readBackoff("junk")).toEqual({ until: null, round: 0 });
