@@ -147,6 +147,13 @@ export default defineBackground(() => {
 
   /** 图标三态. */
   let state: IconState = "off";
+  /**
+   * 总开关每动一次就 +1: 探活开跑时记下这一代, 回话时发现换了就作废--
+   * "关掉又打开"之后, 上一代晚到的回话不许再把刚探绿的图标按红.
+   */
+  let switchEpoch = 0;
+  /** 看门狗同一时刻只扫一遍: 闹钟 30s 一拍, 带催办的一扫可能更久, 叠起来会催同一页两次. */
+  let sweeping = false;
   /** 不可达时的原因与启动命令,进悬停文案. */
   let notice: FailureNotice | null = null;
   /** 工具调用在途(一次 `tools/call` 出门到回话):角标转速与悬停靠它. */
@@ -447,9 +454,12 @@ export default defineBackground(() => {
    * 状态没变就不重画--每 30s 一次,重画是白做的功.
    */
   async function healthProbe(): Promise<void> {
+    const epoch = switchEpoch;
     const probe = await pingRelay();
     // 探的这几秒里被关掉:这趟作废,不记账也不翻红(与 `applyOutcome` 同一口径).
     if (state === "off") return;
+    // 关掉又打开也算换了一代: 上一代的回话不许把刚探绿的图标按红.
+    if (epoch !== switchEpoch) return;
     const next = afterHealthProbe(state, probe.reachable);
     const flipped = next.state !== state || next.notice !== notice;
     console.log(
@@ -472,7 +482,13 @@ export default defineBackground(() => {
     if (alarm.name !== HEALTH_ALARM_NAME) return;
     void healthProbe();
     // 看门狗搭这趟车:闹钟只在武装时排,总开关关掉即全停.
-    void watchdogSweep();
+    // 带催办的一扫可能比一拍久(判读几拍 + 限速窗口): 上一扫没完就跳过这一拍.
+    if (!sweeping) {
+      sweeping = true;
+      void watchdogSweep().finally(() => {
+        sweeping = false;
+      });
+    }
   });
 
   /**
@@ -625,22 +641,31 @@ export default defineBackground(() => {
       } else if (act.kind === "nudge") {
         const tabId = tab.id;
         const context = await actionContext();
-        if (await observedOutput(() => pageIsGenerating(tabId, context), nap)) {
+        const generating = await observedOutput(() => pageIsGenerating(tabId, context), nap);
+        // 判读这几秒里总开关可能关过:那笔账已经清了,这一趟不再归本轮--既不催,也不写回.
+        const tracked = watches.get(tabId);
+        if (tracked === undefined) {
+          console.log(`[dsb] 看门狗:标签页 ${tabId} 的账在判读期间被清了,本轮不催`);
+          continue;
+        }
+        if (generating) {
           // 判读那几拍只顺延窗口,活与预算原样(这几拍里可能刚好收活,
           // 别把旧账写回去):输出多半是催办惹来的回复,连预算一起清就成了
           // 催办喂活自己的动静源(#104).
-          const fresh = watches.get(tabId) ?? next;
-          watches.set(tabId, watchdogSeenPassing(fresh, now));
+          watches.set(tabId, watchdogSeenPassing(tracked, now));
           console.log(`[dsb] 看门狗:标签页 ${tabId} 正在生成,本轮不催,静默窗口顺延`);
-        } else if (!(watches.get(tabId) ?? next).taskOpen) {
+        } else if (!tracked.taskOpen) {
           // 判读那几秒里模型正好干净收尾:活没了,没资格催(任务门).
           console.log(`[dsb] 看门狗:标签页 ${tabId} 刚才收了活,本轮不催`);
         } else {
-          const delivered = await deliverNudge(tabId, act.text, context);
+          // 判读那几秒里闸也可能被关:投递前现读一次,别拿旧 context 替人开口.
+          const delivered = await deliverNudge(tabId, act.text, await actionContext());
           // 计数只认送出去的:闸拦着(退避中 / 没开替人发言)不算催.
-          // 投递途中可能刚好收活,按收活后的账记,别把开着的活写回去.
-          const latest = watches.get(tabId) ?? next;
-          watches.set(tabId, delivered && latest.taskOpen ? watchdogNudged(latest, now) : latest);
+          // 投递途中可能刚好收活 / 关开关,按当下的账记,别把已清掉的账写回来.
+          const latest = watches.get(tabId);
+          if (latest !== undefined) {
+            watches.set(tabId, delivered && latest.taskOpen ? watchdogNudged(latest, now) : latest);
+          }
           console.log(
             delivered
               ? `[dsb] 看门狗:距上次动静超 ${config.silenceMs / 1000}s,催办已发`
@@ -872,6 +897,7 @@ export default defineBackground(() => {
 
   /** 总开关变了就跟图标:关了即"关",开了先按可达摆,再探一次中继. */
   async function syncFromStorage(): Promise<void> {
+    switchEpoch += 1; // 这一代之前的探活回话一律作废(关掉又打开也算)
     const stored = await browser.storage.local.get([
       TOGGLE_STORAGE_KEY,
       FAILURE_LOG_STORAGE_KEY,
