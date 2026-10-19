@@ -172,6 +172,8 @@ def test_a_notifications_method_with_an_id_is_answered(service: McpService) -> N
     """带 id 的就是请求, 不是通知: 静默丢下会让客户端一直等这一条(2026-10-20)."""
     error = error_of(call(service, 7, "notifications/whatever"))
     assert error["code"] == METHOD_NOT_FOUND
+    # id 为 null 也算"带 id"(JSON-RPC 2.0:通知是"没有 id 成员").
+    assert error_of(call(service, None, "notifications/whatever"))["code"] == METHOD_NOT_FOUND
 
 
 def test_a_batch_is_answered_item_by_item(service: McpService) -> None:
