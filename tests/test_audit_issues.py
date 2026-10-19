@@ -39,11 +39,11 @@ def ticket(number: int, body: str, title: str = "一张票") -> dict:
 def test_only_the_numbers_outside_the_corpus_are_reported() -> None:
     module = load_audit()
     issues = [
-        ticket(1, "这条按 旧 0010 办."),
+        ticket(1, "这条按 ADR-0005 办."),
         ticket(2, f"旧号: {ghost('0023')} 与 {ghost('0030')}."),
         ticket(3, "没有引用."),
     ]
-    found = module.check_citations(issues, {"0002", "0010"})
+    found = module.check_citations(issues, {"0002", "0005"})
     assert len(found) == 1
     assert "#2" in found[0]
     assert ghost("0023") in found[0] and ghost("0030") in found[0]
@@ -51,9 +51,10 @@ def test_only_the_numbers_outside_the_corpus_are_reported() -> None:
 
 
 def test_the_second_number_of_a_paired_citation_counts() -> None:
-    """并列写法 `旧 0007/0006` 里的第二个号也要查 -- 上一轮漏的正是这种半边."""
+    """并列写法 `ADR-0005/0006` 里的第二个号也要查 -- 上一轮漏的正是这种半边."""
     module = load_audit()
-    found = module.check_citations([ticket(9, f"见 旧 0007/{ghost('0006')}")], {"0007"})
+    pair = "ADR-" + "0007/" + "0006"
+    found = module.check_citations([ticket(9, f"见 {pair}.")], {"0007"})
     assert len(found) == 1
     assert ghost("0006") in found[0]
 

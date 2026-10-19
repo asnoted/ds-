@@ -58,7 +58,7 @@ DISPATCH = ("ready-for-agent", "ready-for-human", "wontfix")
 
 FIELDS = "number,title,state,body,labels,comments,createdAt,updatedAt"
 
-#: 票正文里的引用形态: 与 `tests/test_adr_corpus.py` 同一批口径(并列写法 `旧 0007/0006`
+#: 票正文里的引用形态: 与 `tests/test_adr_corpus.py` 同一批口径(并列写法 `ADR-0005/0006`
 #: 里每个号都算 -- 上一轮重编号漏的正是这种半边). 顿号写成转义(`\u3001`): 中文标点是
 #: 那半边守卫的禁字, 而这里要的是它的**语义**.
 CITE = re.compile(r"ADR[- ]?(\d{3,4}(?:\s*[/,\u3001]\s*\d{3,4})*)")
