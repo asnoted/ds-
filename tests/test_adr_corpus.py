@@ -615,7 +615,7 @@ def test_the_corpus_suites_own_size_in_adr_0001_is_current() -> None:
     )
 
 
-#: ADR-0001 决定 6 / AGENTS.md 的"文档"一节: 根目录只许这三份 `.md`, 别的文档一律进 `docs/`.
+#: ADR-0001 决定 6: 根目录只许这三份 `.md`, 别的文档一律进 `docs/`.
 #: 多出来的一份今天不让任何守卫出声(它只是没人读), 但"只许三份"是明写的规矩.
 ROOT_MARKDOWN = frozenset({"AGENTS.md", "README.md", "GLOSSARY.md"})
 
