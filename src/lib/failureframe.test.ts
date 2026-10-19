@@ -33,6 +33,26 @@ describe("readFailureFrames / 存储是外部输入", () => {
     expect(frames.map((item) => item.at)).toEqual([1, 4]);
   });
 
+  it("数组里混进 null 也只是跳过,不能把读取器打崩", () => {
+    expect(readFailureFrames([null, frame(1)])).toEqual([frame(1)]);
+  });
+
+  it("只认顶头就是 data:image/ 的:URL 里带这几个字不算", () => {
+    const frames = readFailureFrames([
+      { at: 1, dataUrl: "https://example.com/?next=data:image/png" },
+    ]);
+    expect(frames).toEqual([]);
+  });
+
+  it("时刻是 NaN / Infinity 也当坏数据丢掉", () => {
+    expect(
+      readFailureFrames([
+        { at: Number.NaN, dataUrl: jpeg() },
+        { at: Number.POSITIVE_INFINITY, dataUrl: jpeg() },
+      ]),
+    ).toEqual([]);
+  });
+
   it("配额之外的截掉", () => {
     const raw = Array.from({ length: FAILURE_FRAME_CAP + 3 }, (_, i) => frame(i));
     expect(readFailureFrames(raw)).toHaveLength(FAILURE_FRAME_CAP);
@@ -125,6 +145,23 @@ describe("captureFailureFrame / 抓帧失败绝不能影响原失败路径", () 
       ...budget,
     });
     expect(captured).toBeNull();
+  });
+
+  it("压缩器交回的不是图也丢", async () => {
+    const captured = await captureFailureFrame(42, {
+      capture: async () => jpeg(),
+      shrink: async () => "not-a-data-url",
+      ...budget,
+    });
+    expect(captured).toBeNull();
+  });
+
+  it("正好压在预算线上要收下:超一个字符才丢", async () => {
+    const prefix = "data:image/jpeg;base64,";
+    const exact = jpeg("x".repeat(FAILURE_FRAME_BUDGET_CHARS - prefix.length));
+    expect(exact).toHaveLength(FAILURE_FRAME_BUDGET_CHARS);
+    const captured = await captureFailureFrame(42, { capture: async () => exact, ...budget });
+    expect(captured?.at).toBe(42);
   });
 
   it("不给压缩器就用原图,超预算照样丢", async () => {
