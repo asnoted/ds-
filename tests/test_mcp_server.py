@@ -110,6 +110,15 @@ def test_tools_call_wraps_the_payload_as_text(service: McpService) -> None:
     assert result == {"content": [{"type": "text", "text": "echo:你好"}], "isError": False}
 
 
+def test_a_payload_with_a_lone_surrogate_round_trips(service: McpService) -> None:
+    """网页 / 第三方回话里写坏的半个 emoji(孤立代理字符)不该把整条回话打成 500:
+    响应退回全转义形态,客户端解回来还是同一个串."""
+    result = result_of(
+        call(service, 1, "tools/call", {"name": "echo", "arguments": {"text": "a\ud800b"}})
+    )
+    assert result["content"][0]["text"] == "echo:a\ud800b"
+
+
 def test_a_failed_payload_is_marked_is_error(service: McpService) -> None:
     result = result_of(call(service, 1, "tools/call", {"name": "fail", "arguments": {"name": "x"}}))
     assert result["isError"] is True

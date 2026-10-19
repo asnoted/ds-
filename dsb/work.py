@@ -141,6 +141,8 @@ def resolve_in_root(root: Path, raw: Any) -> Path:
     try:
         resolved = candidate.resolve()
         root_real = root.resolve()
+    except UnicodeError as exc:  # JSON 里的孤立代理字符:落不成文件系统编码
+        raise WorkError(ERROR_BAD_PATH, detail=f"路径 {raw}") from exc
     except (OSError, RuntimeError) as exc:  # 符号链接成环之类:解析不了就是坏路径
         raise WorkError(ERROR_BAD_PATH, detail=f"路径 {raw}") from exc
     if not _inside(root_real, resolved):
@@ -470,11 +472,17 @@ def write_text(root: Path, raw: str, content: str) -> int:
     if path.is_dir():
         raise WorkError(ERROR_NOT_A_FILE, detail=f"路径 {raw}")
     try:
+        data = content.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # 孤立代理字符(JSON 里的 \ud800:模型偶尔写坏的半个 emoji 转义)落不成 UTF-8.
+        # 必须先挡在 open 之前--write_text 是"先按 w 截断,再编码",空了才抛.
+        raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}(正文不是文本)") from exc
+    try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
     except OSError as exc:
         raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
-    return len(content.encode("utf-8"))
+    return len(data)
 
 
 def edit_text(root: Path, raw: str, old_string: str, new_string: str) -> int:
@@ -501,8 +509,14 @@ def edit_text(root: Path, raw: str, old_string: str, new_string: str) -> int:
         raise WorkError(ERROR_EDIT_NO_MATCH, detail=f"路径 {raw}")
     if count > 1:
         raise WorkError(ERROR_EDIT_NOT_UNIQUE, detail=f"路径 {raw}(命中 {count} 处)")
+    updated = content.replace(old_string, new_string, 1)
     try:
-        path.write_text(content.replace(old_string, new_string, 1), encoding="utf-8")
+        updated.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # 同上:替换后的正文落不成 UTF-8 时别动文件(截断在前,编码在后).
+        raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}(正文不是文本)") from exc
+    try:
+        path.write_text(updated, encoding="utf-8")
     except OSError as exc:
         raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
     return 1

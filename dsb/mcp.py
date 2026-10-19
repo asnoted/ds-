@@ -81,7 +81,13 @@ def _result(request_id: Any, value: Any) -> Payload:
 
 
 def _dump(payload: Any) -> bytes:
-    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    try:
+        return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        # 孤立代理字符(网页/第三方回话里写坏的半个 emoji)落不成 UTF-8. 退回全转义的
+        # ASCII 形态:JSON 仍无损(\udXXX 解回来还是同一个串),代价只是这次响应里的
+        # 中文也变成转义--比让整条回话塌成 500 强.
+        return json.dumps(payload).encode("ascii")
 
 
 def text_result(payload: Mapping[str, Any], *, failed: bool = False) -> Payload:

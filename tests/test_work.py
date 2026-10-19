@@ -94,6 +94,14 @@ def test_an_empty_path_is_bad_path(tmp_path: Path) -> None:
         assert code_of(exc) == ERROR_BAD_PATH
 
 
+def test_a_path_that_cannot_be_encoded_is_bad_path(tmp_path: Path) -> None:
+    # 与正文同一条来路:JSON 里的孤立代理字符.路径落不成 UTF-8 时 resolve() 抛的是
+    # UnicodeEncodeError--它漏出这层就是"内部错"加一笔 tool-broke(五件工具都过这儿).
+    with pytest.raises(WorkError) as exc:
+        resolve_in_root(tmp_path, "a\ud800b.txt")
+    assert code_of(exc) == ERROR_BAD_PATH
+
+
 # ---- list_dir ----
 
 
@@ -359,6 +367,16 @@ def test_write_overwrites(tmp_path: Path) -> None:
     assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "新"
 
 
+def test_write_of_text_that_cannot_be_encoded_leaves_the_old_file_alone(tmp_path: Path) -> None:
+    # JSON 里的孤立代理字符(模型写坏的 \ud800)落不成 UTF-8,而 write_text 是
+    # 先截断再编码:不先挡一道,原文件会被掏成 0 字节,报出去的却只是"内部错".
+    (tmp_path / "f.txt").write_text("原样", encoding="utf-8")
+    with pytest.raises(WorkError) as exc:
+        write_text(tmp_path, "f.txt", "a\ud800b")
+    assert code_of(exc) == ERROR_IO_FAILED
+    assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "原样"
+
+
 def test_write_onto_a_directory_is_not_a_file(tmp_path: Path) -> None:
     (tmp_path / "d").mkdir()
     with pytest.raises(WorkError) as exc:
@@ -398,6 +416,15 @@ def test_edit_replaces_a_unique_match(tmp_path: Path) -> None:
     (tmp_path / "f.txt").write_text("alpha beta", encoding="utf-8")
     assert edit_text(tmp_path, "f.txt", "beta", "gamma") == 1
     assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "alpha gamma"
+
+
+def test_edit_with_text_that_cannot_be_encoded_leaves_the_file_alone(tmp_path: Path) -> None:
+    # 同上一条:替换后的正文要能落成 UTF-8 才动文件,不然掏空的原文件就是唯一剩下的东西.
+    (tmp_path / "f.txt").write_text("alpha beta", encoding="utf-8")
+    with pytest.raises(WorkError) as exc:
+        edit_text(tmp_path, "f.txt", "beta", "b\ud800")
+    assert code_of(exc) == ERROR_IO_FAILED
+    assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "alpha beta"
 
 
 def test_edit_without_a_match_leaves_the_file_alone(tmp_path: Path) -> None:
