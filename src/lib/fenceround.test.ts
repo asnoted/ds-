@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ACTION_ERROR_TAB_GONE } from "./action";
+import { MAX_RESULT_CHARS } from "./continuation";
 import { createFenceRound, type FenceRoundDeps, type FenceRoundEffect } from "./fenceround";
 import { MALFORMED_CALL_HINT } from "./fence";
 import { FAILURE_RELAY_UNREACHABLE } from "./relay";
@@ -279,5 +280,20 @@ describe("超 8 块截断附一句", () => {
     expect(payload.status).toBe("ok");
     if (payload.status !== "ok") return;
     expect(payload.answer).not.toContain("没执行");
+  });
+
+  it("每块都顶格时末句照样在:总量不越过 MAX_RESULT_CHARS,那句'没执行'不会被扩展那道闸切掉", async () => {
+    const h = harness();
+    h.relayAnswer = async () => ({ payload: okPayload("字".repeat(4_000)), cause: null });
+    const calls = Array.from({ length: 9 }, (_, index) => callJson("read", { page: index }));
+
+    const { payload } = await createFenceRound(h.deps).handle(calls, 1);
+
+    expect(payload.status).toBe("ok");
+    if (payload.status !== "ok") return;
+    expect(payload.answer.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
+    expect(payload.answer.endsWith("(这一轮最多执行 8 块围栏,还有 1 块没执行--下一轮再排.)")).toBe(
+      true,
+    );
   });
 });

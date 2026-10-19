@@ -176,15 +176,15 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
     }
 
     const dropped = calls.length - planned.length;
-    const joined = joinCallAnswers(answers);
+    // 收尾那句也算这一轮的额度:不然它落在 16,000 之外,被扩展侧同数的闸切掉的
+    // 正是"还有几块没执行"(旧 0010 的同一课).
+    const note =
+      dropped <= 0
+        ? ""
+        : `\n\n(这一轮最多执行 ${MAX_CALLS_PER_ROUND} 块围栏,还有 ${dropped} 块没执行--下一轮再排.)`;
+    const joined = joinCallAnswers(answers, note.length);
     emit({ kind: "watchdog", tabId, now: deps.now(), phase: "land" });
-    if (dropped <= 0) return { payload: okPayload(joined), effects };
-    return {
-      payload: okPayload(
-        `${joined}\n\n(这一轮最多执行 ${MAX_CALLS_PER_ROUND} 块围栏,还有 ${dropped} 块没执行--下一轮再排.)`,
-      ),
-      effects,
-    };
+    return { payload: okPayload(joined + note), effects };
   }
 
   return { handle };

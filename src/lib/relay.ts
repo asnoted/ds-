@@ -110,12 +110,16 @@ export type ToolAnswer = {
  * 16,000 就是 128,000,顶穿 旧 0011 那道上下文预算).先扣掉"工具 <名字>:"与空行,
  * 剩下的按块平摊,每块各留自己那句"已截断"--于是后面几块不会被头一块整个挤没,
  * 而且每块都看得到自己被砍.
+ *
+ * `reserved` 是这一轮**之外**还要留的额度(接线侧末尾那句"还有 N 块没执行");
+ * 它先跟抬头一起扣掉,所以那句不会被扩展侧同数的闸切掉.
  */
-export function joinCallAnswers(answers: readonly ToolAnswer[]): string {
+export function joinCallAnswers(answers: readonly ToolAnswer[], reserved = 0): string {
+  const budget = Math.max(1, MAX_RESULT_CHARS - reserved);
   const only = answers[0]?.text ?? "";
-  if (answers.length <= 1) return truncateResult(only);
+  if (answers.length <= 1) return truncateResult(only, budget);
   const headers = answers.reduce((sum, one) => sum + toolHeader(one.tool).length + 2, 0);
-  const share = Math.max(1, Math.floor((MAX_RESULT_CHARS - headers) / answers.length));
+  const share = Math.max(1, Math.floor((budget - headers) / answers.length));
   return answers
     .map(({ tool, text }) => `${toolHeader(tool)}${truncateResult(text, share)}`)
     .join("\n\n");
