@@ -50,4 +50,4 @@ If your output contradicts an existing ADR, surface it explicitly rather than si
 
 > _Contradicts the ADR on event-sourced orders, but worth reopening because..._
 
-ADRs are living documents: each one states the current rule, and you edit it in place when the rule changes (bumping `Date`). The header's first two lines are `Status` / `Date`; one-off measurements live in `docs/evidence/` and are pointed at from the ADR body. See `docs/adr/0001-adrs-are-living-documents.md`.
+ADRs are living documents: each one states the current rule, and you edit it in place when the rule changes (bumping `Date`). The header's first two lines are `Status` / `Date`; one-off measurements live in `docs/evidence/` and are pointed at from the ADR body. See `docs/adr/README.md`.

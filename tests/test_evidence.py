@@ -1,4 +1,4 @@
-"""页面控件存证的完整性对拍(ADR-0013):与 `src/lib/evidence.test.ts` 是同一判据的两份独立实现.
+"""页面控件存证的完整性对拍(ADR-0006):与 `src/lib/evidence.test.ts` 是同一判据的两份独立实现.
 
 `protocol/evidence/controls.json` 是真机按钮原件(`outerHTML` 一字不缩写 + 完整 `svg path` + 真机
 日期).这里用标准库 `html.parser` 把 `svgs` 从 `outerHTML` 里独立解析一遍:缩写,改写,断头 tag

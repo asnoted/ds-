@@ -46,19 +46,19 @@ DOM 的地方,`vitest` 用 jsdom 覆盖.规则针对的是**判定**,不是所�
 ### 为什么
 
 `docs/agents/domain.md` 早先写的是"推翻已接受 ADR 必须写新篇点名", 那条规则已被
-2026-10-17 的重写作废(见 `docs/adr/0001-adrs-are-living-documents.md`). 作废它的是实测的
+2026-10-17 的重写作废(见 `docs/adr/README.md`). 作废它的是实测的
 后果: 旧语料 28 篇里有 13 条"只修订某篇一点"的边, 于是"额度是多少"要拼 6 篇才读得出来;
 而被推翻的句子仍以**现在时**留在原地(旧篇写着 `MAX_RESULT_CHARS = 2000`, 代码里是 16,000
--- 那是**扩展侧**那份, 与一页 `read` 同数(ADR-0010 决定 17); dsb 侧另有一个同名常量, 是第三方
-server 的 64K 闸(ADR-0003), 别对错门).
+-- 那是**扩展侧**那份, 与一页 `read` 同数(旧 0010 决定 17); dsb 侧另有一个同名常量, 是第三方
+server 的 64K 闸(旧 0003), 别对错门).
 
 不写下来, 下一个人(或 agent)会照着旧习惯再开一篇"修订型 ADR", 而那正是本轮要拆掉的东西.
 
 ### 先例
 
-`docs/adr/0005-continuation-through-the-request-body.md`(收了原来四篇: 续聊, 多块围栏,
+`docs/adr/0002-continuation-through-the-request-body.md`(收了原来四篇: 续聊, 多块围栏,
 钥匙, 原生 continue),
-`docs/adr/0010-work-tool-results-are-paged-and-capped.md`(收了原来五篇).
+`docs/adr/0005-tool-calls-and-structured-results.md`(收了原来五篇).
 
 ---
 

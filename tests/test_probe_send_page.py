@@ -1,4 +1,4 @@
-"""`send.page` 两步那条真机探针的判据半边(ADR-0007 / ADR-0006).
+"""`send.page` 两步那条真机探针的判据半边(旧 0007 / ADR-0003).
 
 探针本体要 CDP(真机才跑),能在这里对拍的是**判据本身**:闸开着与闸关着各认什么、
 两头的反证长什么样. 判据写错了,真机跑出来的绿红就都是错的,所以它单拎出来测.
@@ -162,7 +162,7 @@ def test_sole_new_trace_survives_a_full_ring() -> None:
 
 
 #: 页面**不产**、探针自己造的瞬时代码 -- 页面那本册子里没有它们的位置.
-#: `no-site-tab` 是找不到站点标签页; `cdp-timeout` 是探针自己那 20s 墙钟到点(ADR-0010).
+#: `no-site-tab` 是找不到站点标签页; `cdp-timeout` 是探针自己那 20s 墙钟到点(旧 0010).
 PROBE_LOCAL_TRANSIENT = frozenset({"no-site-tab", "cdp-timeout"})
 
 

@@ -163,7 +163,7 @@ def read_cases() -> list[dict[str, Any]]:
 def test_read_limits_match_dsb_constants() -> None:
     """「一页 read 的结果能原样进对话」的两个数:dsb 产出那半与 fixture 相等.
 
-    扩展那半(MAX_RESULT_CHARS 与教模型的脚注)在 vitest 独立对着同一份断言(ADR-0010).
+    扩展那半(MAX_RESULT_CHARS 与教模型的脚注)在 vitest 独立对着同一份断言(旧 0010).
     """
     fixture = load_fixture("read.json")
     assert fixture["readPageLines"] == work.WORK_READ_PAGE_LINES
@@ -171,7 +171,7 @@ def test_read_limits_match_dsb_constants() -> None:
 
 
 def test_result_units_match_the_extension_measure() -> None:
-    """同一个串在 dsb 侧量出来多长,必须与扩展侧量出来的一样(ADR-0010).
+    """同一个串在 dsb 侧量出来多长,必须与扩展侧量出来的一样(旧 0010).
 
     扩展侧那半在 vitest 对着同一份 fixture 用 JS 的 ``.length`` 量;这边用
     :func:`dsb.work._units`.两处对不上,星平面字那条路上"原样进对话"就破口.

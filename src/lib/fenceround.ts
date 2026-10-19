@@ -9,9 +9,9 @@
  * 执行(定时器 / browser API)仍在接线侧.
  *
  * 红线:截获点函数仍叫 `sendCall`,位置原样(`parseToolCall` 之后、打网关之前,
- * ADR-0007 点名);本地工具不打中继、不翻中继图标(ADR-0002/0007);一轮上限
- * 8 块、排坏的块占一块、连不上才整轮作废(ADR-0005);失败留痕由接线侧的
- * 图标结论落笔(ADR-0008).
+ * 旧 0007 点名);本地工具不打中继、不翻中继图标(旧 0002/0007);一轮上限
+ * 8 块、排坏的块占一块、连不上才整轮作废(ADR-0002);失败留痕由接线侧的
+ * 图标结论落笔(ADR-0004).
  */
 
 import { ACTION_ERROR_TAB_GONE } from "./action";
@@ -87,8 +87,8 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
   const localBusy = new Set<number>();
 
   /**
-   * **本地工具的截获点**--`local-tools` 的 requirement(已退役的 spec, 去处见 ADR-0001 决定 6)
-   * 与 ADR-0007 都按这个名字指着这里
+   * **本地工具的截获点**--`local-tools` 的 requirement(已退役的 spec, 去处见 旧 0001 决定 6)
+   * 与 旧 0007 都按这个名字指着这里
    * (#50:这段以前内联在一轮处置的循环体里,于是两份文档指的是一个不存在的函数:
    * 遵守的人找不到地方,将来谁建个同名函数那条 requirement 就"满足"了而截获在别处;
    * #101 把处置抽进本 module 时,名字与位置原样保住).
@@ -109,7 +109,7 @@ export function createFenceRound(deps: FenceRoundDeps): FenceRound {
     }
     const local = findLocalTool(toolCall.tool);
     if (local !== null) {
-      // 本地工具:就地跑,一次 fetch 都不打(ADR-0007),成败都证明不了中继健不健康.
+      // 本地工具:就地跑,一次 fetch 都不打(旧 0007),成败都证明不了中继健不健康.
       if (tabId === undefined) return { ok: false, payload: errorPayload(ACTION_ERROR_TAB_GONE) };
       if (localBusy.has(tabId)) {
         // 重入护栏:回一条可见提示让模型别重排,不并发.

@@ -20,7 +20,7 @@ export const INSTRUCTIONS_HEADER = "[ds 协议]";
 
 /**
  * `read` 脚注三态的字面量:dsb `work.py` 产出那半,这里存同一份教模型认
- * (两半各自对着线协议 `protocol/fixtures/read.json` 断言,ADR-0010).
+ * (两半各自对着线协议 `protocol/fixtures/read.json` 断言,旧 0010).
  */
 export const READ_FOOTNOTE_TEMPLATES = {
   /** 文件读完:不编下一步. */

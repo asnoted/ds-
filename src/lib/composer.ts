@@ -8,7 +8,7 @@
  *
  * 边界(CODING_STANDARDS 第 1 条):这里只搬 **DOM 判据**--挑框,读写,按键,
  * 等清空,圆键此刻是什么意图.**不碰闸**:写草稿放行、发送才归"代你发言"闸的分界
- * (ADR-0006)与各动作的闸归类一字不动,归 `action.ts` / `run.ts` / `registry.ts`;
+ * (ADR-0003)与各动作的闸归类一字不动,归 `action.ts` / `run.ts` / `registry.ts`;
  * **不碰时钟**:`awaitCleared` / `triggerSend` / `send` 的时钟由调用方注入,
  * 真钟(`Date` / `setTimeout`)那一份在接线侧 `entrypoints/inject.content.ts` 里,
  * 本模块只有 `Clock` 类型.探针 `scripts/page-action.py` 是独立仪器(CODING_STANDARDS
@@ -200,7 +200,7 @@ export function circleIntent(): Intent {
 export type StageOutcome = "written" | "draft" | "unwritable";
 
 /**
- * 同一份字的判定:归一化那一份与钥匙共用(`normalize.ts`,ADR-0005:站点与 React
+ * 同一份字的判定:归一化那一份与钥匙共用(`normalize.ts`,ADR-0002:站点与 React
  * 受控输入在换行与首尾空白上与我们写进去的不完全一致),两处都由用例钉着:这里钉
  * "上一轮落的短标记再落一次不算别人的字",`armed.test.ts` 钉"用户手打的话永远不等于标记".
  */
@@ -213,7 +213,7 @@ function sameText(left: string, right: string): boolean {
  * 一轮,也不吃人正在打的东西(#52 的半自动待发续聊靠这条).框里那份是**这一份**
  * (上一轮落的短标记,换行 / 首尾空白不算数)就覆盖:落草稿是幂等的.
  *
- * 只有写入,没有发送步;"代你发言"闸关不关、要不要人按发送都不在这里管(ADR-0006:
+ * 只有写入,没有发送步;"代你发言"闸关不关、要不要人按发送都不在这里管(ADR-0003:
  * 写草稿放行,发送才归闸).
  */
 export function stage(element: HTMLElement, text: string): StageOutcome {

@@ -1,5 +1,5 @@
 /**
- * 中继的调用契约(MCP 版,ADR-0002):`POST /mcp`,JSON-RPC 2.0,无会话,无流.
+ * 中继的调用契约(MCP 版,旧 0002):`POST /mcp`,JSON-RPC 2.0,无会话,无流.
  *
  * dsb 被动到底:探活是 `ping`,干活是 `tools/call`,别的方法一概没有--`/send`
  * `/health` `/status` 那批 HTTP 路随问答后端一起废了.端点与请求体在这儿定死
@@ -107,9 +107,9 @@ export type ToolAnswer = {
  * 加上"工具 <名字>:"这一行--不然模型分不出哪段是谁说的.
  *
  * **额度是这一轮的,不是每块一块**:`MAX_RESULT_CHARS` 是一轮正文的总量(8 块各
- * 16,000 就是 128,000,顶穿 ADR-0011 那道上下文预算).先扣掉"工具 <名字>:"与空行,
+ * 16,000 就是 128,000,顶穿 旧 0011 那道上下文预算).先扣掉"工具 <名字>:"与空行,
  * 剩下的按块平摊,每块各留自己那句"已截断"--于是后面几块不会被头一块整个挤没,
- * 而且每块都看得到自己被砍(ADR-0005 决定 7).
+ * 而且每块都看得到自己被砍.
  */
 export function joinCallAnswers(answers: readonly ToolAnswer[]): string {
   const only = answers[0]?.text ?? "";

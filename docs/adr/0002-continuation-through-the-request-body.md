@@ -1,0 +1,32 @@
+# ADR-0002: 续聊替换: 一轮可排多块
+
+- **Status**: accepted
+- **Date**: 2026-10-17
+
+工具结果作为一条可见的长消息回灌
+一轮里模型可以排多块围栏, 各块各打一趟网关.
+
+## 决定
+
+1. **正文改走消息窗**:
+2. **结果截断 `MAX_RESULT_CHARS = 16_000`**
+3. **一轮多块**:
+   按出现顺序取出所有块
+4. **答复认 id**: 排 `call` 时记下 id, 收 `result` 时**只认自己排出去,还没收过的那一个**
+5. **用站点原生的输入**
+6. **全部工具结果收回后在插入**
+
+## Considered Options
+
+## Consequences
+
+- **用户消息可见"**; 工具结果人类可读(用toon).
+
+## 判据(怎么自己复现)
+
+- 实测见 `docs/evidence/continuation.md`,`docs/evidence/native-continue.md`,
+  `docs/evidence/web-input-limit.md`.
+
+## 未验证项
+
+- **一轮里用户插话与在途回灌的顺序**: 单来回下队列恒一个元素, 多块下的顺序仍按"谁先入队".

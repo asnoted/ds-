@@ -1,4 +1,4 @@
-"""`uv run dsb` 起的本机 MCP 网关(ADR-0002:被动式接受命令).
+"""`uv run dsb` 起的本机 MCP 网关(旧 0002:被动式接受命令).
 
 唯一端点是 ``POST /mcp``:JSON-RPC 一行一条(``initialize`` / ``ping`` /
 ``tools/list`` / ``tools/call``).原来那批 HTTP 路--``/send`` ``/health`` ``/status``
@@ -167,7 +167,7 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", str(len(body)))
             for name, value in (extra or {}).items():
                 self.send_header(name, value)
-            # 注意:这里**没有** CORS 头,一条都没有(ADR-0002).
+            # 注意:这里**没有** CORS 头,一条都没有(旧 0002).
             self.end_headers()
             if body:
                 self.wfile.write(body)

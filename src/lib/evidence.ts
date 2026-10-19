@@ -1,5 +1,5 @@
 /**
- * 页面控件存证(ADR-0013):`protocol/evidence/controls.json` 的类型与加载器.
+ * 页面控件存证(ADR-0006):`protocol/evidence/controls.json` 的类型与加载器.
  *
  * 存证是**证据**,不是定位判据--真机抓到的按钮原件(`outerHTML` 一字不缩写 + 完整 `svg path`
  * + 真机日期).回归用例用 `evidenceHtml(id)` 取原件,**不许手抄**;扫源码的对拍在

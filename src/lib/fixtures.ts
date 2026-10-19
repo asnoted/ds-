@@ -78,7 +78,7 @@ export type ReadFixtureFile = FixtureFile<ReadFootnoteCase> & {
  * 两边的"字数"单位对拍(`result-units.json`):同一段正文,两边各量一遍.
  *
  * `utf16Units` 是扩展那边 JS 的 `.length`(星平面字算两个),`codePoints` 是另一种单位
- * (星平面字算一个)-- 它俩分岔正是这条 fixture 要盯住的事(ADR-0010).
+ * (星平面字算一个)-- 它俩分岔正是这条 fixture 要盯住的事(旧 0010).
  */
 export type ResultUnitsCase = {
   readonly name: string;
@@ -94,7 +94,7 @@ export type SendPaceCase = {
   readonly expectedMs: number;
 };
 
-/** 唯一限速的间隔规格(`send-pace.json`):全仓一条(ADR-0004),TS 与 Python 共读. */
+/** 唯一限速的间隔规格(`send-pace.json`):全仓一条(ADR-0001),TS 与 Python 共读. */
 export type SendPaceFixtureFile = FixtureFile<SendPaceCase> & {
   readonly minMs: number;
   readonly modeMs: number;

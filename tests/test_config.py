@@ -2,7 +2,7 @@
 
 纯函数铺在两条路上: `env_value` 读一行, `resolve_config_path` / `find_dotenv` 定"哪一份文件
 才算生效的那份". 后者读错一档的代价最大 -- 网关据此拉 server, 工作工具的护栏也据此守文件
-(ADR-0009 决定 9), 两份读者一起错.
+(旧 0009 决定 9), 两份读者一起错.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 {
-  "description": "页面控件存证（ADR-0013）：真机抓到的按钮原件——outerHTML 一字不缩写 + 完整 svg path + 真机日期。证据，不是定位判据。回归用例用 evidenceHtml(id) 读，不许手抄。",
+  "description": "页面控件存证（ADR-0006）：真机抓到的按钮原件——outerHTML 一字不缩写 + 完整 svg path + 真机日期。证据，不是定位判据。回归用例用 evidenceHtml(id) 读，不许手抄。",
   "entries": [
     {
       "id": "circle.stop",

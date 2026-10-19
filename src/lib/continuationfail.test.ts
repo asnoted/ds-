@@ -53,7 +53,7 @@ describe("describeContinuationFailure / 原因短句", () => {
   });
 
   it("短句里不带任何正文:拿带明显标记的输入试,断言它不出现在短句里", () => {
-    // 用户正在打的字,问题,答复,工具结果--一律不该进失败痕(ADR-0008).
+    // 用户正在打的字,问题,答复,工具结果--一律不该进失败痕(ADR-0004).
     const secrets = [
       "SECRET-QUESTION-问用户的",
       "SECRET-ANSWER-模型的答复",

@@ -36,7 +36,7 @@ from dsb.gateway import (
 FAKE_SERVER = """
 import json, os, signal, subprocess, sys, time
 
-# 真正死锁那一种(ADR-0003 未验证项里"永不回头"): 不答, 还无视 SIGTERM --
+# 真正死锁那一种(旧 0003 未验证项里"永不回头"): 不答, 还无视 SIGTERM --
 # 只有真的 kill 才收得动. pid 写文件, 好让测试看它到底死没死.
 PID_FILE = os.environ.get("FAKE_PID_FILE")
 
@@ -291,7 +291,7 @@ def test_a_hanging_server_hits_the_deadline(fake_script: Path) -> None:
 
 
 def test_a_hanging_server_is_dropped_so_a_retry_gets_a_fresh_one(fake_script: Path) -> None:
-    """过线就把孩子断掉(ADR-0003):留着它,重试会排在卡住那件后面一起超时."""
+    """过线就把孩子断掉(旧 0003):留着它,重试会排在卡住那件后面一起超时."""
     gate = make_gateway(fake_script, timeout=0.4)
     try:
         handler = gate.tools()[0].handler
@@ -309,7 +309,7 @@ def test_a_deadlocked_child_is_killed_not_left_behind(fake_script: Path, tmp_pat
     """真正"永不回头"的孩子(不答 + 无视 SIGTERM)也要真的死掉, 不是留着.
 
     替身 `hang` 那一种睡 60s 就会自己退, 所以"断掉"与"等它自己好"分不出来; 这一条的替身
-    把 SIGTERM 设成忽略 -- 只有 `kill()`(SIGKILL)才收得动它(ADR-0003 决定 5).
+    把 SIGTERM 设成忽略 -- 只有 `kill()`(SIGKILL)才收得动它(旧 0003 决定 5).
     """
     pid_file = tmp_path / "child.pid"
     gate = make_gateway(fake_script, timeout=0.4, env={"FAKE_PID_FILE": str(pid_file)})
@@ -341,7 +341,7 @@ def test_stop_reaps_the_grandchild_not_just_the_shim(fake_script: Path, tmp_path
 
 
 def test_a_dead_thread_only_collects_its_own_life() -> None:
-    """重启后旧线程的 EOF 不许碰新挂账(ADR-0003): 碰了, 新一代正在跑的那件会被平白判成不在.
+    """重启后旧线程的 EOF 不许碰新挂账(旧 0003): 碰了, 新一代正在跑的那件会被平白判成不在.
 
     收摊 / 重启都把 `_proc` 换了人, 而旧孩子的读口那头还要过一会儿才见 EOF--那一声
     `_fail_all(旧孩子)` 只该收旧孩子的场。
@@ -380,7 +380,7 @@ def test_start_on_a_live_server_does_not_spawn_a_second_child(
 
 
 def test_stop_wakes_the_calls_still_in_flight(fake_script: Path) -> None:
-    """收摊要把挂着的叫醒: 不然那件工具一路等到自己的超时, 用户白等两分钟(ADR-0003).
+    """收摊要把挂着的叫醒: 不然那件工具一路等到自己的超时, 用户白等两分钟(旧 0003).
 
     孩子被收掉时读口那头也会叫一声, 但收摊先清了 `_proc`, 那一声认不出自己的场--
     所以这里量的正是 `stop` 亲自叫的那一声。

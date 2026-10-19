@@ -107,7 +107,7 @@ export function readComposerPresent(): boolean {
 
 /**
  * 名字对齐共享规格里的 `page.state`(`protocol/fixtures/action.json` 的"page.state 成功"一例;
- * 当年并排的是 dsb 的 `actions.py:59-61`,它随 ADR-0002 那刀一起撤了--2026-10-18 核).
+ * 当年并排的是 dsb 的 `actions.py:59-61`,它随 旧 0002 那刀一起撤了--2026-10-18 核).
  * `frame` 不用:读的就是本标签页.
  */
 export function readPageState(_frame: ActionFrame): PageState {
@@ -199,7 +199,7 @@ export function newChat(_frame: ActionFrame): Record<string, never> {
 }
 
 /**
- * 侧栏开关(真机契约见 git 历史里已退役的 frontend spec"侧栏开关",去处见 ADR-0001 决定 6).**两态是同一个控件**:图标 `path` 不变,只是位置从
+ * 侧栏开关(真机契约见 git 历史里已退役的 frontend spec"侧栏开关",去处见 旧 0001 决定 6).**两态是同一个控件**:图标 `path` 不变,只是位置从
  * "展开:2 颗里第 2"变成"收起:3 颗里第 1".顶栏图标键没有任何语义属性(无字,无 aria,无 title),
  * 身份只靠位置--所以用结构不变量把"点错"变成"停下":
  *

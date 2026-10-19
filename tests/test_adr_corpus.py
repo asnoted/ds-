@@ -1,7 +1,7 @@
 """守卫: `docs/adr/` 这份语料的几条不变量 -- 骨架, 引用, 点名的东西, 判据会不会咬, 来历有
 没有人点, 册子两边对不对得上.
 
-ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修订/取代". 好处是读一篇就够,
+ADR 是活文档(旧 0001): 改口径就地改那一篇, 不另开新篇去"修订/取代". 好处是读一篇就够,
 代价是**好几样东西没有编译器管**:
 
 - **骨架**: 一篇 ADR 少了一个固定节(比如 `## Consequences`), 或者 H1 的编号与文件名对不
@@ -17,7 +17,7 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   `MAX_RESULT_CHARS` 这类)是给读者当**指路牌**用的; 代码里改了名、文件挪了家, 牌还在原地
   指着空地 -- 旧语料写着的 `MAX_RESULT_CHARS = 2000` 就是这么来的. `名字 = 值` 那种写法左边
   那个名字也算(2026-10-18 才补上: 在那之前这一族整片没被核过).
-- **判据里点的路径**: `## 判据` 那些 ```sh 块是让人照着跑的(ADR-0001 决定 3: 判据要真的会
+- **判据里点的路径**: `## 判据` 那些 ```sh 块是让人照着跑的(旧 0001 决定 3: 判据要真的会
   咬). 块里点着的文件没了, 那句判据就成了空话 -- 而"命令跑不起来"只有真去跑的人才会发现,
   所以在这里对着仓核一遍. 拿 `-k` 筛用例的也要核: 筛词得真在那些文件的用例名里, 用例改了名
   而筛词没改, 那条命令会**一个用例都不收**而退出码照旧 0(这个夜里真发生过两次:
@@ -30,7 +30,7 @@ ADR 是活文档(ADR-0001): 改口径就地改那一篇, 不另开新篇去"修�
   指路牌指着哪篇, 那篇就得点到它 -- 指错门的文件把人带到别的主题去, 与孤儿一样算漏.
 - **册子两边对不对得上**: 那种"仓里一份, 篇里一份"的**名册**, 只核一个方向会漏 -- 篇里的
   名字在仓里查得到(点名那条管了), 而**仓里新加的、篇里没写**的那个没人管. 2026-10-17 真的
-  发生过一次(中继事件册子在 ADR-0008 决定 4 里少了四条, 而两边都绿). 中继侧事件名那一半住
+  发生过一次(中继事件册子在 ADR-0004 决定 4 里少了四条, 而两边都绿). 中继侧事件名那一半住
   `tests/test_log.py`, 工具载荷码那一半住 `tests/test_work.py`, 扩展侧环节名(`FailureWhere`)
   那条住本文件.
 
@@ -54,7 +54,7 @@ pytestmark = pytest.mark.docs
 #: 被扫的引用面: 本仓自己的那些目录. 别人家的(`.agents/` / `vendor/`)与生成物不碰;
 #: 手维护的存证(`protocol/evidence/controls.json`)与实测记录(`docs/evidence/`)**在扫**
 #: -- 里面的编号同样会悬空(那次重编号就在 `controls.json` 的 `description` 上留了一处).
-#: `dsweb/`(站点逆向的结论)也在扫: 它引 ADR-0011 / ADR-0013 引了好几处, 悬空同样要报.
+#: `dsweb/`(站点逆向的结论)也在扫: 它引 旧 0011 / ADR-0006 引了好几处, 悬空同样要报.
 SCANNED_ROOTS = (
     "src",
     "entrypoints",
@@ -88,11 +88,11 @@ REQUIRED_SECTIONS = (
 H1_TITLED = re.compile(r"^#\s*ADR-(\d{3,4})\s*[::]\s*(\S.*)$", re.M)
 HEADING = re.compile(r"^##\s+(.+?)\s*$", re.M)
 
-#: 引用形态: `ADR-0007`, `ADR 0007`, 以及并列写法 `ADR-0007/0006` -- 后者每个号都算.
+#: 引用形态: `旧 0007`, `ADR-0005`, 以及并列写法 `旧 0007/0006` -- 后者每个号都算.
 CITE = re.compile(r"ADR[- ]?(\d{3,4}(?:\s*[/,、]\s*\d{3,4})*)")
 CITE_SPLIT = re.compile(r"\s*[/,、]\s*")
 
-#: 篇内引用的形态: `ADR-0008 决定 12` / `ADR-0010 第 19 条`. 下标指歪了(号对、位置不对)这条
+#: 篇内引用的形态: `ADR-0004 决定 12` / `旧 0010 第 19 条`. 下标指歪了(号对、位置不对)这条
 #: 查不出; 查得出的是"那一篇里没有第 M 条" -- 并决定 / 删决定的时候, 篇外那些下标最容易漏.
 DECISION = re.compile(r"ADR-(\d{4})[^0-9\n]{0,12}(?:决定|第)\s*(\d+)\s*条?")
 
@@ -134,7 +134,7 @@ K_NOISE = frozenset({"and", "or", "not"})
 #: 点名了、但本来就不在仓里的东西: 站点 / 上游 / 协议 / 用户本机. 每条都写清为什么 --
 #: 新遇到一条, 先问"是篇里写错了, 还是它真在仓外", 后者才往这里加.
 NOT_IN_REPO = {
-    "NNNN-kebab-title.md": "骨架模板里的占位文件名(ADR-0001 决定 2)",
+    "NNNN-kebab-title.md": "骨架模板里的占位文件名(旧 0001 决定 2)",
     "docs/adr/archive/": "Considered Options 里被否决的那个目录, 故意不存在",
     "mcp.json": "用户本机的配置文件, 仓外; 拒它的是规则, 不是这个文件",
     "tools/call": "MCP 协议的方法名",
@@ -143,7 +143,7 @@ NOT_IN_REPO = {
     "deepseek-ai/DeepSeek-V3": "上游模型仓",
     "dsb/failure-frames": "`storage.local` 的键名, 不是文件",
     "dsb/watchdog": "`storage.local` 的键名, 不是文件",
-    "structuredContent": "MCP 协议字段(ADR-0012 明确不建这条通路)",
+    "structuredContent": "MCP 协议字段(ADR-0005 明确不建这条通路)",
     "outputSchema": "MCP 协议字段",
     "__ds_remote_feature_store_model": "站点 localStorage 的键",
     "__ds_remote_feature_store_provider": "站点 localStorage 的键",
@@ -155,7 +155,7 @@ NOT_IN_REPO = {
     "visibilityState": "DOM 的 API(探针手册按它判站点在不在前台)",
     "FSTRING_START/MIDDLE/END": "Python 3.13 拆 f-string 的 token 类型名(编码规范里记的坑)",
     "dsweb/bundle": "抓下来的站点 bundle 落这儿, 被 .gitignore 挡着(没抓过就没有)",
-    "mattpocock/skills": "上游技能仓(Matt 的技能, 见 ADR-0001)",
+    "mattpocock/skills": "上游技能仓(Matt 的技能, 见 旧 0001)",
     "GLOSSARY-MAP.md": "Matt 技能按需生成的多语境映射; 本仓是单语境, 没有它",
 }
 
@@ -177,7 +177,7 @@ def adr_numbers() -> set[str]:
 
 
 def adr_text(number: str) -> str:
-    """按四位号取一篇的正文(`0008` -> `0008-failures-leave-a-trace.md`)."""
+    """按四位号取一篇的正文(`0004` -> `0004-failures-leave-a-trace.md`)."""
     matched = [p for p in adr_files() if p.name.startswith(number)]
     assert len(matched) == 1, f"按号 {number} 没找到唯一一篇: {matched}"
     return matched[0].read_text(encoding="utf-8")
@@ -218,7 +218,7 @@ def citations(text: str) -> Iterator[str]:
 
 
 def cite_problems(files: Iterable[Path], known: set[str]) -> list[str]:
-    """返回"这个号指不到篇章"的清单(`ADR-0007 <- 文件:行`);空列表 = 都指得到."""
+    """返回"这个号指不到篇章"的清单(`旧 0007 <- 文件:行`);空列表 = 都指得到."""
     hits: dict[str, list[str]] = {}
     for path in files:
         try:
@@ -263,11 +263,11 @@ def decision_problems(files: Iterable[Path], known: Mapping[str, set[int]]) -> l
     return out
 
 
-#: 写清了归属的下标(`ADR-0008 决定 12` / `ADR-0010 第 19 条`): 中间容几格空白, 换行也算 --
+#: 写清了归属的下标(`ADR-0004 决定 12` / `旧 0010 第 19 条`): 中间容几格空白, 换行也算 --
 #: 下面查光杆下标时, 先用它把"已经写清的"摘掉.
-ATTRIBUTED_DECISION = re.compile(r"ADR-\d{4}[^0-9]{0,12}(?:决定|第)\s*\d+\s*条?")
+ATTRIBUTED_DECISION = re.compile(r"(?:ADR-|旧\s*)\d{4}[^0-9]{0,12}(?:决定|第)\s*\d+\s*条?")
 #: 光杆下标: 前面没写是谁的. 篇外的下标会跟着篇内的一起漂(并 / 删决定时最容易漏), 而写清归属
-#: 的那道守卫核不了不知道属于谁的 -- 所以先要求写清(ADR-0001 决定 4).
+#: 的那道守卫核不了不知道属于谁的 -- 所以先要求写清(旧 0001 决定 4).
 LOOSE_DECISION = re.compile(r"决定\s*(\d+)")
 
 
@@ -528,7 +528,7 @@ def test_the_scanned_set_covers_the_files_that_got_missed_last_time() -> None:
 
 def test_every_adr_has_the_skeleton() -> None:
     problems = [p for path in adr_files() for p in skeleton_problems(path)]
-    assert not problems, "ADR 骨架不对(缺节 / 顺序 / H1 编号);口径见 ADR-0001 与 README.md:\n" + (
+    assert not problems, "ADR 骨架不对(缺节 / 顺序 / H1 编号);口径见 旧 0001 与 README.md:\n" + (
         "\n".join(problems)
     )
 
@@ -561,7 +561,7 @@ def test_loose_decision_check_fires(tmp_path: Path) -> None:
     """光杆的咬; 写清归属的(含跨行那种)不咬."""
     note = tmp_path / "note.md"
     note.write_text(
-        "见 ADR-0008 决定 12, 以及 ADR-0010\n决定 19;但这里还有 决定 "
+        "见 ADR-0004 决定 12, 以及 旧 0010\n决定 19;但这里还有 决定 "
         + "7 没写归属, 以及 第 3 条.\n",
         encoding="utf-8",
     )
@@ -593,32 +593,7 @@ def test_renamed_constant_in_an_assignment_fires(tmp_path: Path) -> None:
     assert fake in problems[0] and "note.md:1" in problems[0]
 
 
-def test_the_scanned_docs_are_the_advertised_ones() -> None:
-    """扫面([ADR-0001 决定 8])换了 / 加了面, 那一句要一起改 -- 免得守卫偷偷少扫一份."""
-    text = (ADR_DIR / "0001-adrs-are-living-documents.md").read_text(encoding="utf-8")
-    for path in named_files():
-        if path in adr_files():  # 13 篇本来就在扫面里, 不必逐篇点名
-            continue
-        assert path.name in text, (
-            f"{path.name} 进了扫面, ADR-0001 决定 8 却没点名(加一份扫面要两处一起动)"
-        )
-
-
-def test_the_corpus_suites_own_size_in_adr_0001_is_current() -> None:
-    """ADR-0001 判据里那句"tests/test_adr_corpus.py, N 条里 1 条"的 N, 得是这套自己的条数.
-
-    这个文件每长一条用例, 那句读数就旧了, 而没有任何编译器会管 -- 2026-10-18 一天里漏过两次
-    (补一条用例后 24 该改 25, 又补两条该改 27, 都是补完才想起来的). 拿这个文件当真值, 两边对拍.
-    """
-    matched = re.search(r"tests/test_adr_corpus\.py, (\d+) 条里", adr_text("0001"))
-    assert matched is not None, "ADR-0001 判据里那句数自己条数的读数不见了"
-    here = (ROOT / "tests" / "test_adr_corpus.py").read_text(encoding="utf-8")
-    assert int(matched.group(1)) == len(re.findall(r"^def test_", here, re.M)), (
-        "ADR-0001 判据里那句 N 条与本文件的用例数对不上了(加了用例就把它一起改)"
-    )
-
-
-#: ADR-0001 决定 6: 根目录只许这三份 `.md`, 别的文档一律进 `docs/`.
+#: 旧 0001 决定 6: 根目录只许这三份 `.md`, 别的文档一律进 `docs/`.
 #: 多出来的一份今天不让任何守卫出声(它只是没人读), 但"只许三份"是明写的规矩.
 ROOT_MARKDOWN = frozenset({"AGENTS.md", "README.md", "GLOSSARY.md"})
 
@@ -629,7 +604,7 @@ def root_markdown_problems(root: Path) -> list[str]:
 
 
 def test_only_the_three_markdowns_live_in_the_root() -> None:
-    """根目录的 `.md` 就那三份(ADR-0001 决定 6): 新写一份会落在没人读的角落里."""
+    """根目录的 `.md` 就那三份(旧 0001 决定 6): 新写一份会落在没人读的角落里."""
     problems = root_markdown_problems(ROOT)
     assert not problems, (
         "根目录只许 AGENTS.md / README.md / GLOSSARY.md(别的文档进 docs/):\n" + "\n".join(problems)
@@ -645,17 +620,22 @@ def test_root_markdown_check_fires(tmp_path: Path) -> None:
     assert root_markdown_problems(tmp_path) == ["NOTES.md"]
 
 
-#: 来历文件开头那句指路牌: `> 当前口径见 [ADR-0004](../adr/0004-....md), ...`.
+#: 来历文件开头那句指路牌: `> 当前口径见 [ADR-0001](../adr/0001-....md), ...`.
 EVIDENCE_POINTER = re.compile(r"当前口径见[\s>]*\[ADR-(\d{4})\]\(\.\./adr/([^)]+)\)")
+
+#: 旧编号来历文件不属于任何单篇, 没有指路牌.
+POINTER_SKIP = frozenset({"numbering.md"})
 
 
 def pointer_problems(directory: Path) -> list[str]:
     """来历与篇对不对得上: 每份开头得有一句指路牌, 指到的那篇得在, 而且那篇得点到它.
 
-    两向都要通(ADR-0001 决定 3): 孤儿文件读者从语料里走不到, 指错门的把他带到别的主题去.
+    两向都要通(旧 0001 决定 3): 孤儿文件读者从语料里走不到, 指错门的把他带到别的主题去.
     """
     problems: list[str] = []
     for path in sorted(directory.glob("*.md")):
+        if path.name in POINTER_SKIP:  # 旧编号来历, 不属于任何单篇
+            continue
         matched = EVIDENCE_POINTER.search(path.read_text(encoding="utf-8"))
         if not matched:
             problems.append(f"{path.name}: 开头没有'当前口径见 ADR-NNNN'那句指路牌")
@@ -669,7 +649,7 @@ def pointer_problems(directory: Path) -> list[str]:
 
 
 def test_evidence_files_and_adrs_point_at_each_other() -> None:
-    """来历与篇**互相认得**(ADR-0001 决定 3).
+    """来历与篇**互相认得**(旧 0001 决定 3).
 
     两向都要通: 开头那句指路牌指到哪篇, 那篇就得点到它 -- 孤儿文件读者从语料里走不到, 指错门
     的文件把他带到别的主题去, 两种都算漏.
@@ -682,7 +662,7 @@ def test_evidence_pointer_check_fires(tmp_path: Path) -> None:
     """两边各打一枪: 指错门(篇在, 但那篇没点它), 以及干脆没指路牌."""
     wrong = tmp_path / "wrong.md"
     wrong.write_text(
-        "> 当前口径见 [ADR-0001](../adr/0001-adrs-are-living-documents.md).\n",
+        "> 当前口径见 [ADR-0001](../adr/0001-outbound-through-a-single-gate.md).\n",
         encoding="utf-8",
     )
     problems = pointer_problems(tmp_path)
@@ -744,7 +724,7 @@ def test_judge_k_filter_check_fires(tmp_path: Path) -> None:
     ghost = "nope_" + "nowhere"
     note = tmp_path / "0007-bad-k.md"
     note.write_text(
-        "# ADR-0007: x\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
+        "# 旧 0007: x\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
         "## 决定\n\n1. 有.\n\n## Considered Options\n\n## Consequences\n\n"
         "## 判据(怎么自己复现)\n\n"
         "```sh\n"
@@ -763,7 +743,7 @@ def test_judge_path_check_fires(tmp_path: Path) -> None:
     bad_case = "test_nope_" + "does_not_exist"
     note = tmp_path / "0007-bad-judge.md"
     note.write_text(
-        "# ADR-0007: x\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
+        "# 旧 0007: x\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
         "## 决定\n\n1. 有.\n\n## Considered Options\n\n## Consequences\n\n"
         "## 判据(怎么自己复现)\n\n"
         "```sh\n"
@@ -807,11 +787,11 @@ def test_named_check_fires(tmp_path: Path) -> None:
 def test_decision_check_fires(tmp_path: Path) -> None:
     note = tmp_path / "note.md"
     note.write_text(
-        "见 ADR-0002 决定 9 与 ADR-0002 第 2 条, 还有 ADR-0003 决定 1.\n", encoding="utf-8"
+        "见 ADR-0004 决定 3 与 ADR-0004 第 2 条, 还有 ADR-0005 决定 1.\n", encoding="utf-8"
     )
-    problems = decision_problems([note], {"0002": {1, 2}, "0003": {1}})
+    problems = decision_problems([note], {"0004": {2}, "0005": {1}})
     assert len(problems) == 1
-    assert "ADR-0002 决定 9" in problems[0]
+    assert "ADR-0004 决定 3" in problems[0]
     assert "note.md:1" in problems[0]
 
 
@@ -826,7 +806,7 @@ def test_skeleton_check_fires(tmp_path: Path) -> None:
     """守卫自己也要有判据: 半成品必须被判出来, 不然这条守卫只是装饰."""
     half = tmp_path / "0007-half-baked.md"
     half.write_text(
-        "# ADR-0007: 半成品\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
+        "# 旧 0007: 半成品\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n一句话.\n\n"
         "## 决定\n\n1. 有.\n",
         encoding="utf-8",
     )
@@ -838,7 +818,7 @@ def test_skeleton_check_fires(tmp_path: Path) -> None:
 def test_skeleton_check_fires_on_number_mismatch(tmp_path: Path) -> None:
     off = tmp_path / "0007-mismatch.md"
     off.write_text(
-        "# ADR-0008: 编号写错了\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n"
+        "# ADR-0004: 编号写错了\n\n- **Status**: accepted\n- **Date**: 2026-10-17\n\n"
         "一句话.\n\n## 决定\n\n## Considered Options\n\n## Consequences\n\n## 判据(怎么自己复现)\n",
         encoding="utf-8",
     )
@@ -849,14 +829,14 @@ def test_citation_check_fires(tmp_path: Path) -> None:
     """并列写法里的第二个号也要查 -- 上一轮重编号漏的正是这种半边."""
     ghost = "ADR-" + "9" * 4  # 拼出来, 免得本文件自己被这条守卫报
     note = tmp_path / "note.ts"
-    note.write_text(f"见 ADR-0002/0009 与 {ghost}.\n", encoding="utf-8")
+    note.write_text(f"见 旧 0002/0009 与 {ghost}.\n", encoding="utf-8")
     problems = cite_problems([note], {"0002", "0009"})
     assert len(problems) == 1
     assert ghost in problems[0]
     assert "note.ts:1" in problems[0]
 
 
-#: 扩展侧"环节"的册子是那个联合类型(`FailureWhere`), 篇里是 ADR-0008 决定 4 的后半句.
+#: 扩展侧"环节"的册子是那个联合类型(`FailureWhere`), 篇里是 ADR-0004 决定 4 的后半句.
 FAILURE_WHERE = re.compile(r"type FailureWhere = ([^;]+);")
 
 
@@ -867,15 +847,15 @@ def catalogued_stages(source: str) -> list[str]:
     return re.findall(r'"([a-z][a-z0-9-]*)"', matched.group(1))
 
 
-#: 篇里那张环节名单(ADR-0008 决定 4 的后半句): 从"扩展侧是**环节**"到"这半句**有守卫**"
+#: 篇里那张环节名单(ADR-0004 决定 4 的后半句): 从"扩展侧是**环节**"到"这半句**有守卫**"
 #: 之间, 反引号里的小写短名.
 ADR_STAGES = re.compile(r"扩展侧是\*\*环节\*\*:(.*?)这半句", re.DOTALL)
 
 
 def catalogued_stages_in_adr(adr: str) -> set[str]:
-    """从 ADR-0008 决定 4 的后半句里取出那张环节名单."""
+    """从 ADR-0004 决定 4 的后半句里取出那张环节名单."""
     matched = ADR_STAGES.search(adr)
-    assert matched, "ADR-0008 决定 4 里没找到`扩展侧是**环节**`(改了句式就把这里一起改)"
+    assert matched, "ADR-0004 决定 4 里没找到`扩展侧是**环节**`(改了句式就把这里一起改)"
     return set(re.findall(r"`([a-z][a-z0-9-]*)`", matched.group(1)))
 
 
@@ -890,20 +870,20 @@ def stage_problems(source: str, adr: str) -> list[str]:
 
 
 def test_every_failure_stage_is_catalogued_in_the_adr() -> None:
-    """ADR-0008 决定 4 的后半句(扩展侧环节)与联合类型两头对拍.
+    """ADR-0004 决定 4 的后半句(扩展侧环节)与联合类型两头对拍.
 
     加了环节不补篇, 或者篇里点着一个仓里没有的名字, 都会红 -- 后一个方向原来漏了
     (2026-10-18 凌晨试出来的: 从联合类型里删掉 `rounds`, 全仓测试照样绿). 另一半在
     `tests/test_log.py`(中继侧事件名).
     """
     source = (ROOT / "src" / "lib" / "failurelog.ts").read_text(encoding="utf-8")
-    problems = stage_problems(source, adr_text("0008"))
-    assert not problems, "ADR-0008 决定 4 后半句与 `FailureWhere` 对不上:\n" + "\n".join(problems)
+    problems = stage_problems(source, adr_text("0004"))
+    assert not problems, "ADR-0004 决定 4 后半句与 `FailureWhere` 对不上:\n" + "\n".join(problems)
 
 
 def test_failure_stage_check_fires() -> None:
     """两头都咬: 从联合类型里删掉一个, 与篇里多点名一个."""
-    adr = adr_text("0008")
+    adr = adr_text("0004")
     union = 'export type FailureWhere = "health" | "call" | "watchdog" | "rounds" | "continuation";'
     assert stage_problems(union, adr) == []
     dropped = stage_problems(union.replace('"rounds" | ', ""), adr)

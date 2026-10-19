@@ -27,7 +27,7 @@ def load_audit() -> ModuleType:
 
 
 def ghost(number: str) -> str:
-    """拼出来的悬空号: 本仓的引用守卫(ADR-0001 决定 4)扫的是字面 `ADR-NNNN`, 写全了
+    """拼出来的悬空号: 本仓的引用守卫(旧 0001 决定 4)扫的是字面 `ADR-NNNN`, 写全了
     这条测试自己就会把它报出来 -- 它是对的, 所以这里把字面拆开."""
     return "ADR-" + number
 
@@ -39,7 +39,7 @@ def ticket(number: int, body: str, title: str = "一张票") -> dict:
 def test_only_the_numbers_outside_the_corpus_are_reported() -> None:
     module = load_audit()
     issues = [
-        ticket(1, "这条按 ADR-0010 办."),
+        ticket(1, "这条按 旧 0010 办."),
         ticket(2, f"旧号: {ghost('0023')} 与 {ghost('0030')}."),
         ticket(3, "没有引用."),
     ]
@@ -51,9 +51,9 @@ def test_only_the_numbers_outside_the_corpus_are_reported() -> None:
 
 
 def test_the_second_number_of_a_paired_citation_counts() -> None:
-    """并列写法 `ADR-0007/0006` 里的第二个号也要查 -- 上一轮漏的正是这种半边."""
+    """并列写法 `旧 0007/0006` 里的第二个号也要查 -- 上一轮漏的正是这种半边."""
     module = load_audit()
-    found = module.check_citations([ticket(9, f"见 ADR-0007/{ghost('0006')}")], {"0007"})
+    found = module.check_citations([ticket(9, f"见 旧 0007/{ghost('0006')}")], {"0007"})
     assert len(found) == 1
     assert ghost("0006") in found[0]
 
@@ -97,7 +97,7 @@ def test_a_dead_corpus_path_is_reported_and_a_live_one_is_not() -> None:
     """票里点的语料路径要在仓里找得到: 号对了不等于篇路径也对了(上一轮漏的正是路径那一半)."""
     module = load_audit()
     dead = "docs/adr/" + "0012-dsb-ships-its-own-work-tools.md"
-    live = "docs/adr/0001-adrs-are-living-documents.md"
+    live = "docs/adr/0001-outbound-through-a-single-gate.md"
     found = module.check_doc_paths([ticket(4, f"决定记在 `{dead}`."), ticket(5, f"见 `{live}`.")])
     assert len(found) == 1
     assert "#4" in found[0] and dead in found[0]

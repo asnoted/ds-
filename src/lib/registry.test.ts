@@ -18,7 +18,7 @@ const PROBE_SOURCES = import.meta.glob<string>("../../scripts/page-action.py", {
   query: "?raw",
 });
 
-/** 四个标志:每个注册行都得**显式**写着(闸归类不做任何推断,ADR-0006 红线). */
+/** 四个标志:每个注册行都得**显式**写着(闸归类不做任何推断,ADR-0003 红线). */
 const FLAGS = ["toggleExempt", "speak", "backoff", "paced"] as const;
 
 describe("注册表是唯一声明点(名册从它派生)", () => {
@@ -88,7 +88,7 @@ describe("三道闸名单与限速名单回指到注册行(加动作忘归类当
   });
 });
 
-describe("标志是显式写出来的,不靠推断(ADR-0006 红线)", () => {
+describe("标志是显式写出来的,不靠推断(ADR-0003 红线)", () => {
   it("每个注册行四个标志齐备,都是自己的布尔键", () => {
     for (const [name, row] of Object.entries(ACTION_REGISTRY)) {
       for (const flag of FLAGS) {

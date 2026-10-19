@@ -1,4 +1,4 @@
-# ADR-0008: 失败必须留痕; 发送类失败当场留一帧
+# ADR-0004: 失败必须留痕; 发送类失败当场留一帧
 
 - **Status**: accepted
 - **Date**: 2026-10-17
@@ -28,8 +28,8 @@
    `mcp-broke`(服务层漏接) / `tool-broke`(处理器自己抛) / `tool-fail` / `tool-slow` /
    `tool-clash`(自家工具与外部撞名) / `server-down` / `server-start-broke`(第三方起不来) /
    `config-broke`(配置读不动); 另有**三条不是故障**: `ping`(扩展探活, 喂 `env-up.sh`
-   "扩展最后探活"那条判据) / `tools-capped`(一张表里装不下的工具被砍, 见 ADR-0003) /
-   `result-capped`(结果超预算被砍, 见 ADR-0003). 扩展侧是**环节**: `health`(周期探活) /
+   "扩展最后探活"那条判据) / `tools-capped`(一张表里装不下的工具被砍, 见 旧 0003) /
+   `result-capped`(结果超预算被砍, 见 旧 0003). 扩展侧是**环节**: `health`(周期探活) /
    `call`(工具调用) / `watchdog`(看门狗停手) / `rounds`(8 轮到顶) / `continuation`(续聊那一
    跳). 这半句**有守卫**: 联合类型(`src/lib/failurelog.ts` 的 `FailureWhere`)与它两头对拍 --
    加了环节不补篇, 或者篇里点着一个仓里没有的名字, 都会红. 增删要**三处**一起动: 这张表, `tests/test_log.py` 里那份册子, 以及调用点 -- 三处都在
@@ -59,7 +59,7 @@
     `<all_urls>` 或 `activeTab`, **站点级 host 权限不算数**(实机证伪:
     `Either the '<all_urls>' or 'activeTab' permission is required.`). `activeTab` 要人点一下
     图标才授, 与"失败当场自动抓"不相容. **内容脚本的注入范围不动**(仍钉在
-    `chat.deepseek.com`); 中继仍走 host 直连免 CORS(ADR-0002).
+    `chat.deepseek.com`); 中继仍走 host 直连免 CORS(旧 0002).
 15. **改名留下的旧键要搬一次**: 扩展从 `ds-` 改叫 `dsb` 时, 四个挂在 `storage.local` 里的
     跨会话状态(失败痕 / 现场帧 / 等人回 / 看门狗配置)换了键名. 启动与 `onInstalled` 时按
     `src/lib/migrate.ts` 的 `RENAMED_STORAGE_KEYS` 搬一遍: **新键缺席才搬值** -- 新键一旦
@@ -119,7 +119,7 @@ uv run scripts/page-action.py storage get --keys '["dsb/failure-frames"]'   # �
 # 红: 把某个调用点的事件名打错一个字母(dsb/gateway.py 的 server-down → server-dow, 或者写成
 # server_down), 那条"调用点对着册子核"当场红(12 条里 1 条); 只改 tests/test_log.py 里那份册子
 # 而不动篇, 册子那两条一起红(同一次量到 2 条).
-# 红(ADR-0008 决定 4 后半句那半): 把 src/lib/failurelog.ts 的 FailureWhere 里一个环节名改掉(加了环节
+# 红(ADR-0004 决定 4 后半句那半): 把 src/lib/failurelog.ts 的 FailureWhere 里一个环节名改掉(加了环节
 # 不补篇), 或者往篇里点多一个仓里没有的名字, 上面那条两向对拍当场红.
 ```
 

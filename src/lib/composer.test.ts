@@ -196,7 +196,7 @@ describe("等清空(发出去的标志)", () => {
 });
 
 describe("圆键:此刻是什么意图", () => {
-  // 真机抓的原件(ADR-0013 存证):两态 class 一个不换,只有圆键里的图标不同--
+  // 真机抓的原件(ADR-0006 存证):两态 class 一个不换,只有圆键里的图标不同--
   // **所以那不是两个控件,是一个**:它此刻是发送还是停止是页面的意图,不是控件的身份.
   const STOP_HTML = evidenceHtml("circle.stop");
   const SEND_HTML = evidenceHtml("circle.send");
@@ -326,7 +326,7 @@ describe("落草稿(stage):草稿保护,框里有别人的字就不覆盖", () =
 });
 
 describe("把这条发出去:生成期绝不点圆键", () => {
-  // 真机存证(ADR-0013):两态 class 一个不换,只有图标不同;真机抓的是空输入框态
+  // 真机存证(ADR-0006):两态 class 一个不换,只有图标不同;真机抓的是空输入框态
   // (带 ds-button--disabled),去掉禁用 class 即"输入框里有内容"的空闲态.
   const SEND_READY_HTML = evidenceHtml("circle.send").replace("ds-button--disabled ", "");
   const STOP_HTML = evidenceHtml("circle.stop");

@@ -1,4 +1,4 @@
-"""`evidence` 对账那条判据的纯半边(ADR-0013).
+"""`evidence` 对账那条判据的纯半边(ADR-0006).
 
 真机对账(`dsbcli page evidence`)把每条存证的 probe 在页面上读一遍, 再由 `reconcile_entry`
 判"一致 / 过时 / 未比". 判据写错的代价是**两头都错**: 站点真的改版会被说成"未比"放过去,

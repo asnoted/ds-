@@ -257,7 +257,7 @@ def test_post_over_the_wire_round_trips(service: McpService) -> None:
             thread.join(timeout=5)
 
 
-# ---- 工作工具(ADR-0009) ----
+# ---- 工作工具(旧 0009) ----
 
 
 def test_build_tools_lists_the_work_tools_and_said_tools(tmp_path: Path) -> None:
@@ -329,7 +329,7 @@ def test_a_work_tool_out_of_root_returns_a_failed_payload(tmp_path: Path) -> Non
     assert result["content"][0]["text"].startswith("out-of-root")
 
 
-# ---- ADR-0010 那两个数:单独实测(上面那两条用例只验机制,数被 monkeypatch 掉了) ----
+# ---- 旧 0010 那两个数:单独实测(上面那两条用例只验机制,数被 monkeypatch 掉了) ----
 
 
 def test_read_page_limit_is_the_shipped_two_thousand(tmp_path: Path) -> None:
@@ -360,7 +360,7 @@ def test_read_page_limit_is_the_shipped_two_thousand(tmp_path: Path) -> None:
 def test_read_line_cap_is_the_shipped_five_hundred(tmp_path: Path) -> None:
     """单行上限就是 **500 字**,而且**只标不砍**:501 字标出来,500 字一字不动.
 
-    静默截断会让模型以为那就是整行(ADR-0010 的取舍),所以边界两侧都要钉住.
+    静默截断会让模型以为那就是整行(旧 0010 的取舍),所以边界两侧都要钉住.
     """
     service = McpService(work_tools(tmp_path))
     (tmp_path / "long.txt").write_text("a" * 501 + "\n" + "b" * 500, encoding="utf-8")

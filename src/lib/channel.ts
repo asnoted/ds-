@@ -76,7 +76,7 @@ export type AskClearedMessage = {
 
 /**
  * 页面世界报"自动续聊到顶,停手了"(刹车见 `rounds.ts`):报给 background 留一笔
- * (ADR-0008 失败留痕).通知式--不等回话,也不进对话流.
+ * (ADR-0004 失败留痕).通知式--不等回话,也不进对话流.
  */
 export type StopMessage = {
   readonly source: typeof CHAIN_MESSAGE_SOURCE;
@@ -102,7 +102,7 @@ export type EndTaskMessage = {
  * 报给 background 落一笔失败痕,悬停时回看得到.通知式,不等回话,不进对话流.
  *
  * `cause` 是**原因短句**(`continuationfail.ts` 产出),不是错误对象:短句里不含
- * 任何正文(ADR-0008),抛错时只含错误类型名.
+ * 任何正文(ADR-0004),抛错时只含错误类型名.
  */
 export type ContinuationFailMessage = {
   readonly source: typeof CHAIN_MESSAGE_SOURCE;
@@ -244,7 +244,7 @@ export type SaidReport = {
  * 这些失败点都在 MAIN 世界(那里写不了 `storage.local`),沿用与 ask / stop 同款
  * 的上报通道.通知式--不等回话,也不进对话流.
  *
- * **只带原因短句,不带任何正文**(ADR-0008):`cause` 是 `continuationfail.ts` 里
+ * **只带原因短句,不带任何正文**(ADR-0004):`cause` 是 `continuationfail.ts` 里
  * 那些常量拼出的话,`sendToPage` 抛错时只含错误类型名.
  */
 export type ContinuationFailReport = {
@@ -595,7 +595,7 @@ export function actionRequestMessage(frame: ActionFrame): ActionRequest {
 /**
  * 认动作信封:type 对得上,帧的字段都合线协议才收.
  * id / action 必须非空字符串,target 是字符串或 null,params 是对象(缺省当空;
- * 当年并排的是 dsb 的 `parse_action_request`,它随 ADR-0002 那刀一起撤了
+ * 当年并排的是 dsb 的 `parse_action_request`,它随 旧 0002 那刀一起撤了
  * (2026-10-18 核),今天收动作的只剩这一处,这条口径的落点也就只剩这里)
  * --认不出就 null,收信那层因此不响应.
  */

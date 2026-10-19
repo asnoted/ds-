@@ -6,7 +6,7 @@
  * 不再是"碰 5 处代码 + 2 处文档,完整性靠人记".四个标志漏写一个,
  * `registry.test.ts` 的结构守卫当场红.
  *
- * **闸归类必须在行上显式写标志,不做任何推断**:闸只管发送(ADR-0006),
+ * **闸归类必须在行上显式写标志,不做任何推断**:闸只管发送(ADR-0003),
  * 不拿行上别的记述去推闸--推闸等于悄悄改 ADR.
  * `BACKOFF_GATED_ACTIONS` 与 `SPEAK_GATED_ACTIONS` 不再互为子集,各行各写各的.
  *
@@ -54,7 +54,7 @@ export type ActionRow = {
   /** 总开关豁免:开关关着也照常执行(开关自己的读写,关掉后还得能翻回来). */
   readonly toggleExempt: boolean;
   /**
-   * "代你发言"闸(ADR-0006):关着时回 `disabled`,**页面上不留任何东西**--只管
+   * "代你发言"闸(ADR-0003):关着时回 `disabled`,**页面上不留任何东西**--只管
    * **发送**;写草稿放行.原语收窄过一次:原先管"动写作框的",连 `composer.type` /
    * `composer.clear` 都算;现在只管发--往输入框里写字不叫替人开口,协调者写的内容
    * 只落在草稿里,人自己按发送才算.读(`composer.read`)照旧不受管.
@@ -66,11 +66,11 @@ export type ActionRow = {
   /**
    * 退避闸:会改变页面状态的(写动作 + 开启新对话)在账号处罚区时回 `backing-off`;
    * 读动作一律 false--处罚区里人与 agent 仍要能读处境.名单与 `speak` **各写各的**
-   * (ADR-0006:那层"靠在 speak 名单里顺带"的语义已经换了,靠它会跟着漏),
+   * (ADR-0003:那层"靠在 speak 名单里顺带"的语义已经换了,靠它会跟着漏),
    * 新增写动作要显式记进来.
    */
   readonly backoff: boolean;
-  /** 发送限速(ADR-0004 的线,同一分布):与上一次发送之间要隔 3~15 秒的原语. */
+  /** 发送限速(ADR-0001 的线,同一分布):与上一次发送之间要隔 3~15 秒的原语. */
   readonly paced: boolean;
 };
 
@@ -154,7 +154,7 @@ export const ACTION_REGISTRY: Readonly<Record<string, ActionRow>> = {
     backoff: false,
     paced: false,
   },
-  // 写草稿放行(ADR-0006),但仍是写动作,处罚区里照拦(#52).
+  // 写草稿放行(ADR-0003),但仍是写动作,处罚区里照拦(#52).
   "composer.type": {
     run: typeComposer,
     target: "tab",
@@ -393,11 +393,11 @@ export const ACTION_ROSTER: ActionRoster = Object.fromEntries(
 /** 不受总开关管的:开关本身的读写.关掉后还得能把开关翻回来. */
 export const TOGGLE_ACTIONS: ReadonlySet<string> = actionNamesWhere((row) => row.toggleExempt);
 
-/** "代你发言"闸下的动作(ADR-0006):**替你把消息发出去**的那些. */
+/** "代你发言"闸下的动作(ADR-0003):**替你把消息发出去**的那些. */
 export const SPEAK_GATED_ACTIONS: ReadonlySet<string> = actionNamesWhere((row) => row.speak);
 
 /** 退避闸下的动作:会改变页面状态的那些(写动作 + 开启新对话);读不受管. */
 export const BACKOFF_GATED_ACTIONS: ReadonlySet<string> = actionNamesWhere((row) => row.backoff);
 
-/** 发送限速的原语(ADR-0004 的线,同一分布):三次发送之间要合成一条 3~15 秒线的那些. */
+/** 发送限速的原语(ADR-0001 的线,同一分布):三次发送之间要合成一条 3~15 秒线的那些. */
 export const SEND_PRIMITIVES: ReadonlySet<string> = actionNamesWhere((row) => row.paced);

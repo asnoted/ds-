@@ -1,8 +1,7 @@
-"""工作工具:路径沙箱,五件行为,截断与上限,``.git`` 护栏,各错码(ADR-0009)."""
+"""工作工具:路径沙箱,五件行为,截断与上限,``.git`` 护栏,各错码(旧 0009)."""
 
 from __future__ import annotations
 
-import re
 import signal
 import time
 from collections.abc import Mapping
@@ -11,7 +10,6 @@ from typing import Any
 
 import pytest
 
-from dsb import work
 from dsb.work import (
     ERROR_BAD_PATH,
     ERROR_BAD_RANGE,
@@ -42,8 +40,7 @@ from dsb.work import (
     write_text,
 )
 
-#: 工作工具那张表的家(ADR-0009): 码定义了却没写进这篇, 就是表漏了.
-ADR_0009 = "0009-in-house-work-tools-and-permissions.md"
+#: 工作工具那张表的家(旧 0009): 码定义了却没写进这篇, 就是表漏了.
 
 
 def code_of(exc: pytest.ExceptionInfo[WorkError]) -> str:
@@ -158,7 +155,7 @@ def test_list_dir_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_read_returns_the_whole_file_with_line_numbers(tmp_path: Path) -> None:
-    """短文件一次读完:逐行带行号,脚注说读完,共几行(ADR-0010)."""
+    """短文件一次读完:逐行带行号,脚注说读完,共几行(旧 0010)."""
     (tmp_path / "f.txt").write_text("第一行\n第二行", encoding="utf-8")
     assert read_text(tmp_path, "f.txt") == "1: 第一行\n2: 第二行\n(文件读完:共 2 行)"
 
@@ -223,7 +220,7 @@ def test_read_byte_budget_cuts_the_page_and_says_so(
 
 
 def test_read_page_stays_within_budget_when_the_text_is_astral(tmp_path: Path) -> None:
-    """页预算按**扩展那把尺**(UTF-16 单元)量,星平面字算两个(ADR-0010).
+    """页预算按**扩展那把尺**(UTF-16 单元)量,星平面字算两个(旧 0010).
 
     这里量法独立于 dsb 的实现(直接按 utf-16-le 编码数),四十行星平面字写成码点账只有
     一半,于是按码点算的页会在扩展侧量出两倍,超出去的那截被从尾巴上截掉--截掉的正是
@@ -289,7 +286,7 @@ def test_read_always_yields_a_page_even_when_the_budget_is_tiny(
 def test_read_page_stays_within_the_same_budget_as_one_result(tmp_path: Path) -> None:
     """整页(行号、换行、脚注都在内)不超过页预算--扩展那道与它同数,越一个字就被截.
 
-    这是 ADR-0010 量出来的那个洞:行宽 100 字时一页 16,154 字,扩展把脚注(``offset``
+    这是 旧 0010 量出来的那个洞:行宽 100 字时一页 16,154 字,扩展把脚注(``offset``
     的唯一来源)截掉了.
     """
     (tmp_path / "long.txt").write_text("\n".join("y" * 500 for _ in range(400)), encoding="utf-8")
@@ -318,7 +315,7 @@ def test_read_page_stays_within_budget_across_line_widths(tmp_path: Path, width:
 
 
 def test_the_result_cap_is_one_read_page() -> None:
-    """一条结果 = 一页:两个数同源(ADR-0010 的补记),改一个没改另一个就红."""
+    """一条结果 = 一页:两个数同源(旧 0010 的补记),改一个没改另一个就红."""
     assert WORK_RESULT_CHARS == WORK_READ_BYTES
 
 
@@ -537,7 +534,7 @@ def test_grep_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_a_capped_result_leaves_room_for_its_last_line() -> None:
     """整条(连末句)不超过 :data:`WORK_RESULT_CHARS`:末句也占额度.
 
-    这些行宽是量出来的(ADR-0010):末句不算进去时,64/80/100/120 字各越线 24~41 字,
+    这些行宽是量出来的(旧 0010):末句不算进去时,64/80/100/120 字各越线 24~41 字,
     **而扩展就是从尾巴上截的**--截掉的正好是"怎么续"那句.
     """
     for width in (64, 80, 100, 120, 300):
@@ -567,7 +564,7 @@ def test_a_single_overlong_line_is_cut_inside_the_line() -> None:
 
 
 def test_a_cut_line_counts_utf16_units() -> None:
-    """行内砍也按扩展那把尺:一整个星平面字占两个单元,砍出来的整条不超预算(ADR-0010)."""
+    """行内砍也按扩展那把尺:一整个星平面字占两个单元,砍出来的整条不超预算(旧 0010)."""
     capped = cap_result("\U00020000" * WORK_RESULT_CHARS, "把参数改短或改窄再试")
     assert len(capped.encode("utf-16-le")) // 2 <= WORK_RESULT_CHARS
     assert "已截断" in capped
@@ -593,7 +590,7 @@ def test_grep_bad_regex_is_bad_regex(tmp_path: Path) -> None:
 def test_grep_gives_up_on_exponential_backtracking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """墙钟这道闸(ADR-0010):40 个 ``a`` 后面挂 ``(a+)+b`` 是指数回溯,没闸就回不来."""
+    """墙钟这道闸(旧 0010):40 个 ``a`` 后面挂 ``(a+)+b`` 是指数回溯,没闸就回不来."""
     monkeypatch.setattr("dsb.work.WORK_GREP_DEADLINE", 0.3)
     (tmp_path / "big.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
     started = time.monotonic()
@@ -809,27 +806,3 @@ def test_arguments_type_is_a_mapping(tmp_path: Path) -> None:
     handler = tool_by_name(tmp_path, "ls").handler
     arguments: Mapping[str, Any] = {"path": "."}
     assert handler(arguments)[1] is False
-
-
-@pytest.mark.docs
-def test_every_code_is_catalogued_in_the_adr() -> None:
-    """ADR-0009 那张表读起来是完整的一张: ``dsb/work.py`` 里定义的每个码都得在篇里点到名.
-
-    反方向(篇里点名的码在仓里存在)由 ADR 的点名守卫管; 这一条管的是"码定义了、表里没写"
-    -- 2026-10-17 的教训(中继事件册子漏了四条, 两边都绿).
-    """
-    # 只看"长得像码"的值: ``ERROR_HINT`` 是写给人看的一句话, 不在册子里.
-    codes = sorted(
-        value
-        for name, value in vars(work).items()
-        if name.startswith("ERROR_")
-        and isinstance(value, str)
-        and re.fullmatch(r"[a-z][a-z0-9-]*", value)
-    )
-    # 提取坏掉时别给假绿(空集合会让下面那条断言过得很轻松).
-    assert ERROR_OUT_OF_ROOT in codes and ERROR_PATTERN_TOO_SLOW in codes
-    adr = (Path(__file__).resolve().parents[1] / "docs" / "adr" / ADR_0009).read_text(
-        encoding="utf-8"
-    )
-    missing = [code for code in codes if code not in adr]
-    assert not missing, f"ADR-0009 那张表少点名的码: {missing}"

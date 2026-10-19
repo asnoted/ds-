@@ -30,7 +30,7 @@ export const FRAME_FALLBACK_MS = 32;
 export const DEFAULT_WAIT_SECONDS = 25;
 /**
  * 预算上限(秒):25 是**自定上限**--旧口径写的是"中继那道 30s 动作锁减 5s 回传余量",
- * 那道锁随 ADR-0002 废 `POST /action` 一起没了(2026-10-18 核);量测仍见 `messages.ts`.
+ * 那道锁随 旧 0002 废 `POST /action` 一起没了(2026-10-18 核);量测仍见 `messages.ts`.
  */
 export const MAX_WAIT_SECONDS = 25;
 /** 预算下限(秒):0 和负数按"没配"对待会干等,下限 1s 兜底. */

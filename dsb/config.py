@@ -8,7 +8,7 @@
 ``DSB_WORK_ROOT``(工作文件夹 root)用同款口径在 :mod:`dsb.work` 里解析,不走本模块.
 
 ``OPENSESS_ID`` / ``DSB_IDLE_TIMEOUT`` / ``DSB_ACTIONS_ENABLED`` 都随问答后端与动作服务
-一起废了(ADR-0002)--没有会话要起,没有问句要等,没有动作要放行.
+一起废了(旧 0002)--没有会话要起,没有问句要等,没有动作要放行.
 """
 
 from __future__ import annotations

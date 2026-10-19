@@ -21,7 +21,7 @@ from dsb.server import make_server
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: 中继侧事件名的册子(ADR-0008 决定 4 那张表). 加 / 删事件要三处一起动: 这张表, 那张表,
+#: 中继侧事件名的册子(ADR-0004 决定 4 那张表). 加 / 删事件要三处一起动: 这张表, 那张表,
 #: 以及调用点 -- 三处都在下面那两条用例的射程里.
 EVENT_NAMES = frozenset(
     {
@@ -161,33 +161,33 @@ def test_the_call_site_scan_also_reads_odd_shaped_names() -> None:
     assert logged_event_names(source) == {"server_down", "tool-fail", "tool-Fail"}
 
 
-#: 篇里那张名单(ADR-0008 决定 4): 从"中继侧记失败与慢的那几条"到"扩展侧是"之间, 反引号里的
+#: 篇里那张名单(ADR-0004 决定 4): 从"中继侧记失败与慢的那几条"到"扩展侧是"之间, 反引号里的
 #: 小写短名. 要求整段反引号里就是这个形态(`env-up.sh` 那种带点的取不到).
 ADR_EVENTS = re.compile(r"中继侧记失败与慢的那几条(.*?)扩展侧是", re.DOTALL)
 
 
 def catalogued_events(adr: str) -> set[str]:
-    """从 ADR-0008 决定 4 的正文里取出那张事件名单."""
+    """从 ADR-0004 决定 4 的正文里取出那张事件名单."""
     matched = ADR_EVENTS.search(adr)
-    assert matched, "ADR-0008 决定 4 里没找到'中继侧记失败与慢的那几条'(改了句式就把这里一起改)"
+    assert matched, "ADR-0004 决定 4 里没找到'中继侧记失败与慢的那几条'(改了句式就把这里一起改)"
     return set(re.findall(r"`([a-z][a-z0-9-]*)`", matched.group(1)))
 
 
 def test_the_catalogue_is_in_the_adr_too() -> None:
-    """册子的第三处: ADR-0008 决定 4 那张表, **两头**对拍.
+    """册子的第三处: ADR-0004 决定 4 那张表, **两头**对拍.
 
     前两处(这张表 ↔ 调用点)由上面那条钉着; 第三处原来靠自觉 -- 2026-10-17 那次就是它漏了
     四条(码在跑、表在文档里没写), 而两边都绿. 补上之后第一版只查一个方向(册子里的名字在
     篇里点到名就行), 所以**篇里多点了一个仓里没有的名字**照样全绿(2026-10-18 凌晨试出来的);
     现在两头都查.
     """
-    adr = (ROOT / "docs" / "adr" / "0008-failures-leave-a-trace.md").read_text(encoding="utf-8")
+    adr = (ROOT / "docs" / "adr" / "0004-failures-leave-a-trace.md").read_text(encoding="utf-8")
     named = catalogued_events(adr)
     assert named, "提取坏了会给假绿(空名单让下面两条断言过得很轻松)"
     missing = sorted(name for name in EVENT_NAMES if name not in named)
-    assert not missing, f"ADR-0008 决定 4 那张表少点名的: {missing}"
+    assert not missing, f"ADR-0004 决定 4 那张表少点名的: {missing}"
     extra = sorted(name for name in named if name not in EVENT_NAMES)
-    assert not extra, f"ADR-0008 决定 4 那张表多出来的(册子里没有这个名字): {extra}"
+    assert not extra, f"ADR-0004 决定 4 那张表多出来的(册子里没有这个名字): {extra}"
 
 
 def test_body_text_cannot_be_logged_because_it_is_not_in_the_signature() -> None:

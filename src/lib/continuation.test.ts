@@ -37,7 +37,7 @@ describe("truncateResult", () => {
     const text = "x".repeat(MAX_RESULT_CHARS + 10);
     const out = truncateResult(text);
     // 交出去的整条(正文 + 末句)不超过那道闸:多一个字的末句就会在下一个环节被截掉,
-    // 而截掉的正好是"这不是全文"这句(ADR-0005 决定 6).
+    // 而截掉的正好是"这不是全文"这句(ADR-0002 决定 6).
     expect(out.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
     expect(out).toContain("已截断");
     expect(out).toContain(`${MAX_RESULT_CHARS + 10} 字`);
@@ -52,14 +52,14 @@ describe("truncateResult", () => {
     expect(truncateResult("abc", 3)).toBe("abc");
   });
 
-  it("与 dsb 那一页 read 的预算对齐,于是**一页 read 不会被腰斩**(ADR-0010)", () => {
+  it("与 dsb 那一页 read 的预算对齐,于是**一页 read 不会被腰斩**(旧 0010)", () => {
     // 12% 那个窟窿的形状:dsb 交出 16000,这里只放 2000 进去.
     // 两边现在同数,一页 read 的结果能原样进对话--这个不等式别悄悄回去.
     expect(MAX_RESULT_CHARS).toBe(16_000);
     expect(truncateResult("x".repeat(16_000))).toBe("x".repeat(16_000));
   });
 
-  it("贴边那一页一个字都不动:16,000 是**单元**数,星平面字也一样(ADR-0010)", () => {
+  it("贴边那一页一个字都不动:16,000 是**单元**数,星平面字也一样(旧 0010)", () => {
     // dsb 那边也按 UTF-16 单元量(dsb/work.py 的 `_units()`),于是"dsb 交出的每一条
     // 都原样进对话"这条保证在星平面字上也成立:8,000 个星平面字 = 16,000 单元,
     // 贴边但不越线,这里就不该动它.
@@ -74,10 +74,10 @@ describe("truncateResult", () => {
     expect(cut.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
   });
 
-  it("MAX_SAFE_INPUT_TOKENS 就是本仓的上下文预算 90 万,不是实测硬墙(ADR-0011)", () => {
+  it("MAX_SAFE_INPUT_TOKENS 就是本仓的上下文预算 90 万,不是实测硬墙(旧 0011)", () => {
     // 实测硬墙在 [982000, 982700).预算取 90 万,差额 ~82,000 token **是余量**--
     // 用来吸收量不到的部分(站点系统提示词,服务端下发的浮动,上下文压缩).
-    // 改成实测值 = 把余量删掉,不是把精度调准;要改先读 ADR-0011.
+    // 改成实测值 = 把余量删掉,不是把精度调准;要改先读 旧 0011.
     expect(MAX_SAFE_INPUT_TOKENS).toBe(900_000);
     // 余量真的存在:8 轮刹车下的最坏 128,000 字远在它之下,这条闸当前不咬.
     expect(8 * MAX_RESULT_CHARS).toBeLessThan(MAX_SAFE_INPUT_TOKENS / 2);

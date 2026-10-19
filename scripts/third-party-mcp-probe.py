@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """第三方 MCP server 的真机腿: 自起一份中继, 量启动, 真卡死, 重起, 与"收摊后有没有留下孤儿".
 
-**为什么要有它**: ADR-0003 那三道闸里, "超时即换孩子"的现场在真机上 -- 替身 server 量不出
+**为什么要有它**: 旧 0003 那三道闸里, "超时即换孩子"的现场在真机上 -- 替身 server 量不出
 `npx` 那三层形状(中继 → `npm exec` 壳 → `node` 真身). 2026-10-18 这条腿上揪出过"只杀壳,
 孙子留着"的洞(读数见 `docs/evidence/gateway-timeouts.md`), 摊开一次要能重来一遍.
 
@@ -115,7 +115,7 @@ def descendants(table: dict[int, tuple[int, str]], root: int) -> set[int]:
 
 
 def strays(table: dict[int, tuple[int, str]], needle: str, root: int) -> list[tuple[int, str]]:
-    """命令行带着 `needle`,却不是 `root` 后代的那些 -- 换了爹的"还在转的孩子"(ADR-0003)."""
+    """命令行带着 `needle`,却不是 `root` 后代的那些 -- 换了爹的"还在转的孩子"(旧 0003)."""
     mine = descendants(table, root) | {root}
     return [
         (pid, cmd)

@@ -6,7 +6,7 @@ import { CODE_LABELS, CONTROL_ACTIONS, TOOLBAR_POSITIONS } from "./controls";
 import { evidenceHtml } from "./evidence";
 
 /**
- * 原件取自存证(真机 2026-10-07,ADR-0013):`message.toolbar`(assistant 行 6 颗),
+ * 原件取自存证(真机 2026-10-07,ADR-0006):`message.toolbar`(assistant 行 6 颗),
  * `message.toolbar.user`(用户行 2 颗,反例),`code.block`.只在取到的原件上做最小变形,不手抄.
  */
 const ASSISTANT_TOOLBAR = evidenceHtml("message.toolbar");

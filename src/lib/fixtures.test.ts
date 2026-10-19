@@ -29,7 +29,7 @@ const EXPECTED_FILES = [
   "send-pace.json",
 ];
 
-/** 配置只有一种解析分支:认端口 / 会话号那套已随问答后端废掉(ADR-0002). */
+/** 配置只有一种解析分支:认端口 / 会话号那套已随问答后端废掉(旧 0002). */
 const KNOWN_CONFIG_KINDS = ["value"];
 
 function rawCases(filename: string): Record<string, unknown>[] {
@@ -163,7 +163,7 @@ describe("read 限额对拍(两半必须相等的数)", () => {
 
 describe("两边的'字数'单位对拍", () => {
   it("同一段正文:扩展的 `.length` 就是 fixture 里的 UTF-16 单元数", () => {
-    // dsb 那半在 pytest 里用 `work._units()` 对着同一份量(ADR-0010).
+    // dsb 那半在 pytest 里用 `work._units()` 对着同一份量(旧 0010).
     // 星平面字上两个数会分岔,而这正是"交出的每一条都原样进对话"破口的地方.
     for (const oneCase of fixtureCases<ResultUnitsCase>("result-units.json")) {
       expect(oneCase.text.length).toBe(oneCase.utf16Units);

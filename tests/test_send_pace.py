@@ -1,4 +1,4 @@
-"""唯一限速的探针半边(ADR-0004):`scripts/page-action.py` 的抽样与共享规格对拍.
+"""唯一限速的探针半边(ADR-0001):`scripts/page-action.py` 的抽样与共享规格对拍.
 
 与 `src/lib/outbound.test.ts` 是同一判据的两份独立实现:规格改了而哪半没跟上,
 两半都在这里红.

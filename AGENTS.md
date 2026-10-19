@@ -41,6 +41,7 @@ All new tools go `scripts`.
 
 ## 测试要求
 
+- 只有至少有一次通不过的测试留下.
 - 全部嵌入 pre-commit,自动化.
 
 ## IMPORTANT

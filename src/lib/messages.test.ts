@@ -141,7 +141,7 @@ describe("一行 → 一条消息", () => {
   });
 
   it("代码块外框:表头与复制/下载按钮是 `<pre>` 的兄弟,不算正文", () => {
-    // 代码块原件取自存证 `code.block`(真机 2026-10-07,ADR-0013):表头,复制/下载按钮在
+    // 代码块原件取自存证 `code.block`(真机 2026-10-07,ADR-0006):表头,复制/下载按钮在
     // `md-code-block-banner-wrap` 里,`<pre>` 与两个角 svg 是它的兄弟--一字不缩写.
     document.body.innerHTML = `
       <div class="ds-virtual-list">
@@ -936,7 +936,7 @@ describe("不可见页面:一屏也要扫得完", () => {
 describe("预算:params.timeout 一份,就绪与扫描共用", () => {
   it("就绪花掉的时间从扫描里扣(最坏恒等于预算)", async () => {
     // 曾经的坑:就绪 5s + 扫描 25s = 30s,当时正顶着中继那道 30s 的锁 →
-    // 真原因被吞成 timeout;锁随 ADR-0002 废 POST /action 没了(2026-10-18 核).
+    // 真原因被吞成 timeout;锁随 旧 0002 废 POST /action 没了(2026-10-18 核).
     // 现在一份预算:deadline 算一次,两段共用(tests/test_wait_budget.py 扫源码看着).
     const view = virtualScreens([
       [keyRow(1, "user")],

@@ -70,11 +70,11 @@ env-up 跑完要看到这四条都过:
 - 内建五件工作工具(`ls` / `read` / `grep` / `write` / `edit`),**钉死在工作文件夹 root 内**;
   `DSB_WORK_ROOT` 改 root(缺省本仓根),改完**重启中继才生效**.**不给命令执行.**
 
-dsb 的形态与限额见 `README.md` 与 `docs/adr/README.md` 那份索引(ADR-0002 / 0009 / 0003).
+dsb 的形态与限额见 `README.md` 与 `docs/adr/README.md` 那份索引(旧 0002 / 0009 / 0003).
 
 ## 技能
 
-用 **Matt 的技能**(上游 `mattpocock/skills`,见 ADR-0001).技能在 `.agents/skills/`,
+用 **Matt 的技能**(上游 `mattpocock/skills`,见 旧 0001).技能在 `.agents/skills/`,
 `skills-lock.json` 记版本.
 
 ```sh

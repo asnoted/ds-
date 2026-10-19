@@ -5,7 +5,7 @@
 测试都不会红: 模型收到的是**空正文**, 而工具明明答了话.
 
 服务面那条路(HTTP 状态, 唯一端点 `POST /mcp`, 批量与协议错)在 `tests/test_mcp_server.py`;
-这里只管这个纯函数. 正文是两半共同的契约, `isError` 只是给模型看的第二意见(ADR-0012).
+这里只管这个纯函数. 正文是两半共同的契约, `isError` 只是给模型看的第二意见(ADR-0005).
 """
 
 from __future__ import annotations

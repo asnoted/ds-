@@ -11,9 +11,9 @@
  *(`RunEffect`:入队、发送、落草稿、留痕、停手、总开关生效)、把异步结果
  * 作为新事件喂回来.
  *
- * 红线:只管**自动续聊**这一路——另两条发送路不进唯一出站口(ADR-0004);
- * 钥匙仍是短标记逐字相等(ADR-0005);轮数上限与请求体替换口径不动
- * (ADR-0005);失败留痕不进正文(ADR-0008).
+ * 红线:只管**自动续聊**这一路——另两条发送路不进唯一出站口(ADR-0001);
+ * 钥匙仍是短标记逐字相等(ADR-0002);轮数上限与请求体替换口径不动
+ * (ADR-0002);失败留痕不进正文(ADR-0004).
  */
 
 import {
@@ -84,7 +84,7 @@ export type RunEffect =
   | { readonly kind: "send"; readonly message: string; readonly continuation: boolean }
   /** 闸关着:只把短标记写进输入框,**不按发送**;结果喂回 `settled`. */
   | { readonly kind: "stage" }
-  /** 失败留痕(ADR-0008):上报一条 `cont-fail`,`cause` 是已拼好的短句. */
+  /** 失败留痕(ADR-0004):上报一条 `cont-fail`,`cause` 是已拼好的短句. */
   | { readonly kind: "trace"; readonly cause: string }
   /** 刹到轮数上限:上报停手,等用户开口. */
   | { readonly kind: "stop"; readonly cause: string; readonly note: string }
@@ -120,7 +120,7 @@ export type RunEvent =
 export type ClaimOutcome =
   /** 正文已换成工具结果(短标记逐字相等,钥匙认领走了). */
   | { readonly kind: "substituted"; readonly body: string }
-  /** 不归本趟续聊管:接线侧照旧拼协议说明(ADR-0004 的注入说明);钥匙不符与形状认不出都落这里. */
+  /** 不归本趟续聊管:接线侧照旧拼协议说明(ADR-0001 的注入说明);钥匙不符与形状认不出都落这里. */
   | { readonly kind: "protocol" };
 
 export type RunDecision = {
@@ -214,7 +214,7 @@ function onSession(state: RunState, key: string | null): RunDecision {
  *
  * 形状由接线侧的 `recognizeOutgoingShape` 认过一次,钥匙比对与正文替换共用它.
  * **钥匙不符与形状认不出是同一条路径**:原样放行走协议说明那一支、武装撤销、留一笔痕
- * (cause 按 `shapeOk` 分,ADR-0008 两种断点仍能区分)--不再有"认领走了却换不进"
+ * (cause 按 `shapeOk` 分,ADR-0004 两种断点仍能区分)--不再有"认领走了却换不进"
  * 的第三种半通组合.用户发的是他自己的话时,协议说明照旧拼(#49).
  */
 function onClaimed(state: RunState, shape: OutgoingShape, now: number): RunDecision {

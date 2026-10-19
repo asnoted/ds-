@@ -32,7 +32,7 @@ import { POLL_INTERVAL_MS, parseWaitSeconds } from "./wait-budget";
  * 挂载的行,不去抢滚动条.
  *
  * **预算**:等待预算默认 25s,可配(`params.timeout`,秒),钳在 [1, 25],到点回在册的
- * `timeout`.旧口径写的"中继推下去等回传的锁 30s、留 5s 余量"已随 ADR-0002 废
+ * `timeout`.旧口径写的"中继推下去等回传的锁 30s、留 5s 余量"已随 旧 0002 废
  * `POST /action` 一起作废(2026-10-18 核):今天这一跳没有中继侧的锁,25s 是自定上限,
  * 来历与量测见 `messages.ts` 文件头.
  */

@@ -90,7 +90,7 @@ describe("发送失败立刻撤武装(AC③)", () => {
     ]);
   });
 
-  it("发送抛错:同样立刻撤武装,短句只带错误类型名(ADR-0008)", () => {
+  it("发送抛错:同样立刻撤武装,短句只带错误类型名(ADR-0004)", () => {
     const released = releasedRun();
     const settled = decide(released.state, {
       type: "settled",
@@ -114,7 +114,7 @@ describe("发送失败立刻撤武装(AC③)", () => {
     expect(settled.effects).toEqual([]);
   });
 
-  it("不是本趟续聊的发送落定:裁决原样(另两条发送路不归这里管,ADR-0004)", () => {
+  it("不是本趟续聊的发送落定:裁决原样(另两条发送路不归这里管,ADR-0001)", () => {
     const released = releasedRun();
     const settled = decide(released.state, {
       type: "settled",
@@ -264,7 +264,7 @@ describe("出站请求认领:钥匙、过期与处置", () => {
     ]);
   });
 
-  it("首尾空白与 CRLF 不影响钥匙:站点与受控输入框的换行写法差异(ADR-0005 归一化)", () => {
+  it("首尾空白与 CRLF 不影响钥匙:站点与受控输入框的换行写法差异(ADR-0002 归一化)", () => {
     for (const variant of [
       `  ${CONTINUATION_MARKER}\n`,
       CONTINUATION_MARKER.replace(/\n/g, "\r\n"),
@@ -401,7 +401,7 @@ describe("闸与总开关", () => {
     expect(released.state.queued).toBeNull();
   });
 
-  it("队列里明明挂着续聊,放行的却不是那个短标记:逐字不等就不认(ADR-0005 钥匙)", () => {
+  it("队列里明明挂着续聊,放行的却不是那个短标记:逐字不等就不认(ADR-0002 钥匙)", () => {
     const queued = decide(turnOn(true), { type: "result", payload: PAYLOAD });
     expect(queued.state.queued).not.toBeNull();
 

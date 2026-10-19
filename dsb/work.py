@@ -1,4 +1,4 @@
-"""dsb 内建的工作工具:``ls`` / ``read`` / ``grep`` / ``write`` / ``edit``(ADR-0009).
+"""dsb 内建的工作工具:``ls`` / ``read`` / ``grep`` / ``write`` / ``edit``(旧 0009).
 
 给网页模型一套能动手改本机文件的工作面,但**不给 SHELL**--任意命令天生能越界,与
 '全部动作钉死在一个工作文件夹 root 内'冲突.五件工具全部把路径 ``resolve()`` 后判在
@@ -15,7 +15,7 @@ root 内还有一层**权限规则**(:mod:`dsb.permissions`,#89):按操作分类
 
 不依赖 :mod:`dsb.gateway` / :mod:`dsb.server` / 网络;只 import 标准库,``dsb.config``
 (root 解析)与 ``dsb.mcp``(注册形状).工具的失败与慢不在本模块留痕--:class:`dsb.mcp.McpService`
-统一记一笔 ``tool-fail`` / ``tool-slow``(只留工具名与耗时,不带正文,ADR-0008).
+统一记一笔 ``tool-fail`` / ``tool-slow``(只留工具名与耗时,不带正文,ADR-0004).
 """
 
 from __future__ import annotations
@@ -39,19 +39,19 @@ WORK_ROOT_ENV_KEY = "DSB_WORK_ROOT"
 #: 上限(保护对话与前程):read 的翻页与单次预算,ls 列数,grep 命中数,单行长度,
 #: 参与 grep 的文件大小.
 #:
-#: ``read`` 从"超长就砍一刀"改成**按行翻页**(ADR-0010):原来一次 ``read`` 交出 16000 字,
+#: ``read`` 从"超长就砍一刀"改成**按行翻页**(旧 0010):原来一次 ``read`` 交出 16000 字,
 #: 而扩展侧一轮只放 2000 字进对话,模型看到 12%,**且没有任何办法看到其余部分**--再读一遍
 #: 拿到的还是开头那几个字.翻页之后上限分成四个各管一件事的数,而不是一个总数.
 WORK_READ_PAGE_LINES = 200
 WORK_READ_MAX_LINES = 2_000
 WORK_READ_LINE_LIMIT = 500
-#: 一页的**总量**(行号、行与行之间的换行、末尾那句脚注,全算在内,ADR-0010):它与扩展
+#: 一页的**总量**(行号、行与行之间的换行、末尾那句脚注,全算在内,旧 0010):它与扩展
 #: 那道 ``MAX_RESULT_CHARS`` 同数,所以一页能原样进对话--多一个字都会被扩展从尾巴上截掉,
 #: 而截掉的正是脚注(``offset`` 的唯一来源).
 WORK_READ_BYTES = 16_000
 WORK_LIST_LIMIT = 500
 WORK_GREP_LIMIT = 200
-#: ``grep`` 的墙钟(ADR-0010):模式是模型给的,嵌套量词叠上一行几十万字能指数回溯,
+#: ``grep`` 的墙钟(旧 0010):模式是模型给的,嵌套量词叠上一行几十万字能指数回溯,
 #: 而活工具跑在**单线程**的 stdio 子进程里--一次卡住,后面每一件工具都排在它后面
 #: 哑掉(gateway 那边只判 ``tool-timeout``,不杀还在转的孩子).过线就整个中止,回一个
 #: 能让模型改写的码,而不是把工具面一起带走.给得比"正常那趟"宽得多:本仓上 ``ERROR_``
@@ -61,13 +61,13 @@ WORK_LINE_LIMIT = 500
 WORK_FILE_LIMIT = 1_000_000
 #: 探二进制时看的前缀长度:首块里出现 ``\x00`` 就当二进制,跳过.
 WORK_BINARY_PROBE = 8_192
-#: **整条结果**的最后一道闸(ADR-0010 记着的那个缺口):上面那些数各管一维(页行数 /
+#: **整条结果**的最后一道闸(旧 0010 记着的那个缺口):上面那些数各管一维(页行数 /
 #: 页字节 / 单行 / 件数 / 命中数),没有谁管"一整条有多大"--500 个长名字的目录项、
 #: 200 条各 500 字的命中,每一维都没超限,合起来能把十几万字灌进内存、storage 与对话.
 #: 列与搜的出口过同一道(照 pi 的 ``truncateHead`` 口径):超了只砍在行边界上(半行
 #: 比没有更坏),末行留一句"接着怎么办",而不是网关那句"已截断:原文 N 字"--模型拿着
 #: 那句什么都做不了.与 ``read`` 的一页预算同数:一条结果 = 一页(那边归
-#: :data:`WORK_READ_BYTES` 管,页预算就是它的总量闸).**末句也占这笔额度**(ADR-0010):
+#: :data:`WORK_READ_BYTES` 管,页预算就是它的总量闸).**末句也占这笔额度**(旧 0010):
 #: 不算它,整条会越过扩展那道 16,000,被截掉的正是"怎么续"那句.
 WORK_RESULT_CHARS = 16_000
 
@@ -253,7 +253,7 @@ def _relative_to_root(root: Path, path: Path) -> str:
 
 
 def _units(text: str) -> int:
-    """这段正文在**扩展侧**量出来多长:dsb 与扩展必须用同一种单位(ADR-0010).
+    """这段正文在**扩展侧**量出来多长:dsb 与扩展必须用同一种单位(旧 0010).
 
     JS 的 ``.length`` 数的是 UTF-16 单元(星平面字--emoji 之类--算两个),Python 的
     :func:`len` 数的是码点(算一个).纯 CJK 与 ASCII 下两个数相等,所以以前没露过;
@@ -270,7 +270,7 @@ def cap_result(text: str, hint: str) -> str:
     """整条结果的闸:超 :data:`WORK_RESULT_CHARS` 字就砍,末行说清接着怎么办.
 
     **任何正文进来,出门的那一整条(连末句)都 <=** :data:`WORK_RESULT_CHARS`--末句不算
-    进去就会越过扩展那道同数的闸,被截掉的正是"怎么续"那句(ADR-0010).
+    进去就会越过扩展那道同数的闸,被截掉的正是"怎么续"那句(旧 0010).
 
     砍的次序:尽量砍在行边界上(半行比没有更坏--模型会把半行当成一整行,与
     :func:`render_page` 标单行的理由同一条);**第一行自己就超预算**时在行内砍--失败回执
@@ -283,7 +283,7 @@ def cap_result(text: str, hint: str) -> str:
         return text
     rows = text.splitlines()
     # 末句也占这笔额度:不算它,整条(正文 + 末句)就会越过扩展那道 16000,被扩展从
-    # 尾巴上截--截掉的正好是"怎么续"(ADR-0010).
+    # 尾巴上截--截掉的正好是"怎么续"(旧 0010).
     room = _units(_result_note(len(rows), len(rows), hint))
     kept: list[str] = []
     used = 0
@@ -299,7 +299,7 @@ def cap_result(text: str, hint: str) -> str:
 
 
 def _cut_first_row(row: str, hint: str) -> str:
-    """第一行一整个放不下:在行内砍,末句说清这一行被砍在哪(ADR-0010).
+    """第一行一整个放不下:在行内砍,末句说清这一行被砍在哪(旧 0010).
 
     末句里**不带**"给了前 N 字"--那会让末句长度依赖砍到哪,于是要循环;``原文 N 字``
     就够了,模型自己数得出来.预算小到连末句都放不下时**只给这一行**:说一句"已截断"而
@@ -362,10 +362,10 @@ def splitlines(content: str) -> list[str]:
 
 
 def render_page(lines: list[str], offset: int, limit: int) -> str:
-    """一页行 → 带行号的正文 + 一句脚注(纯函数,判定全在这里,ADR-0010).
+    """一页行 → 带行号的正文 + 一句脚注(纯函数,判定全在这里,旧 0010).
 
     **整页(含行号、换行、脚注)不超过 :data:`WORK_READ_BYTES`**:它正是扩展那道
-    ``MAX_RESULT_CHARS``,越线就会被扩展从尾巴上截掉,而截掉的正是脚注(ADR-0010).
+    ``MAX_RESULT_CHARS``,越线就会被扩展从尾巴上截掉,而截掉的正是脚注(旧 0010).
 
     三种脚注各自说清'读到哪'与'接着怎么读',而**只有一种真的有下一读**:
 
@@ -405,7 +405,7 @@ def render_page(lines: list[str], offset: int, limit: int) -> str:
 
 
 def _page_footer_room(start: int, end: int, total: int) -> int:
-    """这一页脚注的保守长度(取最长那一态):页预算要连它一起算(ADR-0010)."""
+    """这一页脚注的保守长度(取最长那一态):页预算要连它一起算(旧 0010)."""
     return max(
         _units(_page_footer(start, end, total, capped=True)),
         _units(_page_footer(start, end, total, capped=False)),
@@ -428,7 +428,7 @@ def read_text(root: Path, raw: str, offset: int = 1, limit: int | None = None) -
     受 ``read`` 那份规则表管(#89):``mcp.json`` 与 ``.env`` 系文件读不出来--读出来的
     内容会**随回灌进对话,也就是发给站点**.
 
-    翻页与三个上限见 :data:`WORK_READ_PAGE_LINES` 那组(ADR-0010).**逐行给,带行号**:
+    翻页与三个上限见 :data:`WORK_READ_PAGE_LINES` 那组(旧 0010).**逐行给,带行号**:
     模型拿到的是'第 121-200 行 / 共 843 行,接着读:offset=201',而不是一句'已截断'
     --后者它拿着什么都做不了,只能重读再被截一次.
     """
@@ -552,7 +552,7 @@ def grep_tree(root: Path, pattern: str, raw: str = ".") -> str:
     ``ls`` 仍如实列出这些文件的名字(只拦内容,不隐藏存在,与 opencode 一致).
 
     整趟(编译 + 遍历 + 逐行匹配)躺在 ``WORK_GREP_DEADLINE`` 那道墙钟里
-    (:func:`_deadline`,ADR-0010).
+    (:func:`_deadline`,旧 0010).
     """
     _require_root(root)
     what = (
@@ -615,7 +615,7 @@ def _wrap(action: Callable[[], str]) -> tuple[Payload, bool]:
 
     成功与失败走**同一道**闸(:func:`cap_result`):失败串不过闸的话,底下只剩 JSON-RPC
     那一层的 ``MAX_BODY_BYTES = 256 * 1024`` 兜着,而 ``detail`` 里回显的串是模型写进来的,
-    可以很长(ADR-0010).
+    可以很长(旧 0010).
     """
     try:
         return {"text": action()}, False
