@@ -205,11 +205,10 @@ export default defineContentScript({
       if (run.waitedMs > 0) {
         console.log(`[dsb] 发送限速:上一条刚发过,等 ${run.waitedMs}ms 再发`);
       }
-      // 比出发前的快照: 等/发的时候另一侧世界的 send-note 可能已经并进来,
-      // 拿实时 sendPace 比会把那条更晚的时刻盖掉.
+      // 等/发的时候另一侧世界的 send-note 可能已经并进来; 把两边的较晚时刻留下.
       if (run.pace !== before) {
-        sendPace = run.pace;
-        window.postMessage(sendNoteMessage("main", sendPace.lastSentAt ?? 0), "*");
+        sendPace = mergeSendPace(run.pace, sendPace.lastSentAt, Math.random);
+        window.postMessage(sendNoteMessage("main", run.pace.lastSentAt ?? 0), "*");
       }
       return run.result;
     }
@@ -472,7 +471,7 @@ export default defineContentScript({
       // 两边的发送节奏合成一条线(#61).不认自己发的通报.
       const note = parseSendNote(event.data);
       if (note !== null && note.world !== "main") {
-        sendPace = mergeSendPace(sendPace, note.at);
+        sendPace = mergeSendPace(sendPace, note.at, Math.random);
       }
     });
 

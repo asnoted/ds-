@@ -113,12 +113,19 @@ export function checkSend(pace: SendPace, now: number, isSend: boolean): SendVer
  * 并进另一侧世界报来的"最近一次发送时刻".
  *
  * 只取**较晚**的那个:两个世界各记各的,谁也不覆盖谁(覆盖会把更早那次丢掉,
- * 紧接着的第二下就少等了).通报带回来的间隔一律不采纳--两个世界各抽各的.
+ * 紧接着的第二下就少等了).通报只有时刻;本地还没抽过间隔时按自己的 random 抽一个,
+ * 不能留着 0--那会让下一发送立刻放行.
  */
-export function mergeSendPace(pace: SendPace, otherLastSentAt: number | null): SendPace {
+export function mergeSendPace(
+  pace: SendPace,
+  otherLastSentAt: number | null,
+  random: () => number,
+): SendPace {
   if (otherLastSentAt === null) return pace;
   if (pace.lastSentAt !== null && pace.lastSentAt >= otherLastSentAt) return pace;
-  return { ...pace, lastSentAt: otherLastSentAt };
+  // 本地还没发过时 intervalMs 是 0; 不抽一个, 下一发送会立刻放行, 跨世界的线就断了.
+  const intervalMs = pace.intervalMs > 0 ? pace.intervalMs : drawWindowInterval(random);
+  return { lastSentAt: otherLastSentAt, intervalMs };
 }
 
 /** 等一会儿.`setTimeout` 在页面与 service worker 里都有;用注入的 sleep 便于测试. */

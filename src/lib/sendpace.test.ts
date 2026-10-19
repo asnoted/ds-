@@ -111,23 +111,29 @@ describe("checkSendIntent / 三种意图各自的口径", () => {
 describe("mergeSendPace / 跨世界并时刻", () => {
   it("对方报来更晚的时刻:取它的", () => {
     const mine = noteSend(newSendPace(), 1000, random0);
-    const merged = mergeSendPace(mine, 5000);
+    const merged = mergeSendPace(mine, 5000, random0);
     expect(merged.lastSentAt).toBe(5000);
+  });
+
+  it("本地还没发过:也要抽一个间隔,下一发送不能立刻放行", () => {
+    const merged = mergeSendPace(newSendPace(), 5000, random0);
+    expect(merged.intervalMs).toBe(WINDOW_MIN_MS);
+    expect(sendWaitMs(merged, 5000)).toBe(WINDOW_MIN_MS);
   });
 
   it("我自己的更晚:不覆盖(否则紧接着那一下会少等)", () => {
     const mine = noteSend(newSendPace(), 5000, random0);
-    expect(mergeSendPace(mine, 1000)).toBe(mine);
+    expect(mergeSendPace(mine, 1000, random0)).toBe(mine);
   });
 
   it("对方没发过(null):原样", () => {
     const mine = newSendPace();
-    expect(mergeSendPace(mine, null)).toBe(mine);
+    expect(mergeSendPace(mine, null, random0)).toBe(mine);
   });
 
   it("对方的通报不覆盖我抽的间隔(各抽各的)", () => {
     const mine = noteSend(newSendPace(), 1000, random1);
-    const merged = mergeSendPace(mine, 2000);
+    const merged = mergeSendPace(mine, 2000, random0);
     expect(merged.intervalMs).toBe(mine.intervalMs);
   });
 });

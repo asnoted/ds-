@@ -288,8 +288,8 @@ export default defineContentScript({
             sleep: realSleep,
           });
           if (result.pace !== before) {
-            sendPace = result.pace;
-            window.postMessage(sendNoteMessage("isolated", sendPace.lastSentAt ?? 0), "*");
+            sendPace = mergeSendPace(result.pace, sendPace.lastSentAt, Math.random);
+            window.postMessage(sendNoteMessage("isolated", result.pace.lastSentAt ?? 0), "*");
           }
           return result.result;
         };
@@ -313,7 +313,7 @@ export default defineContentScript({
       if (event.source !== window) return;
       const note = parseSendNote(event.data);
       if (note === null || note.world === "isolated") return; // 不认自己发的
-      sendPace = mergeSendPace(sendPace, note.at);
+      sendPace = mergeSendPace(sendPace, note.at, Math.random);
     });
 
     // background 打过来的动作帧(走 `tabs.sendMessage`):当场交回一个 ActionOutcome;
