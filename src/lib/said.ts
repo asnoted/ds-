@@ -19,7 +19,14 @@ export const SAID_ADD_TOOL = "said_add";
  *
  * 一条消息可以既有围栏(转给 MCP servers)又有别的话(说给人)--那些别的话
  * 不能跟着围栏一起被吞掉.摘完是空的就什么都不报.
+ *
+ * 摘的判据与 `fence.ts` 的 `isOpeningLine` **是同一条**:起始行在行首、`` ```send ``
+ * 后面只能是空白,闭合行单独一行.两处口径一漂就两头出错--正文里提一句 ```send
+ * (不在行首)会被当围栏切开,把**围栏里的调用正文漏进人话**、把人话砍掉半截;
+ * 反过来围栏正文里带 ``` 时按字符找闭合会切在半路.围栏那半边用哪条,这边就用哪条.
  */
+const SEND_FENCE = /^```send(?=\s|$)[\s\S]*?^[^\S\n]*```[^\S\n]*$/gm;
+
 export function outsideFences(text: string): string {
-  return text.replace(/```send[\s\S]*?```/g, "").trim();
+  return text.replace(SEND_FENCE, "").trim();
 }
