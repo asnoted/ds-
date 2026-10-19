@@ -226,7 +226,7 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     expect(clock.slept).toBe(0);
   });
 
-  it('圆键:动手前是"发送",等完变成"停止"→ 记一笔但那趟不等(口径的两头)', async () => {
+  it('圆键:等之前是"发送",等的时候变成"停止"→ 不记账', async () => {
     const clock = fakeClock();
     let intent: SendIntent = "send";
     const pace = noteSend(newSendPace(), clock.now(), random0);
@@ -234,17 +234,43 @@ describe("runPaced / 过检查点的完整时序(#61 的 AC)", () => {
     const result = await runPaced({
       pace,
       readIntent: () => intent,
-      execute: () => {
+      execute: () => undefined,
+      shouldRecord: (_result, atAction) => atAction !== "stop",
+      now: clock.now,
+      random: random0,
+      sleep: async (ms) => {
+        await clock.sleep(ms);
         intent = "stop"; // 等的时候站点进生成期,圆键变成停止
+      },
+    });
+    expect(result.waitedMs).toBeGreaterThan(0); // 等之前读到的是发送,照限速等
+    expect(result.pace).toBe(pace); // 动手前重读是停止 → 不记账
+  });
+
+  it("圆键:动手前是发送,点下去才翻成停止 → 照记账", async () => {
+    const clock = fakeClock();
+    let intent: SendIntent = "send";
+    const pace = noteSend(newSendPace(), clock.now(), random0);
+    clock.advance(10);
+    let atAction: SendIntent | undefined;
+    const result = await runPaced({
+      pace,
+      readIntent: () => intent,
+      execute: () => {
+        intent = "stop"; // 发送成功,站点进生成期:翻成停止是点击的结果
         return undefined;
       },
-      shouldRecord: () => intent !== "stop",
+      shouldRecord: (_result, read) => {
+        atAction = read;
+        return read !== "stop";
+      },
       now: clock.now,
       random: random0,
       sleep: clock.sleep,
     });
-    expect(result.waitedMs).toBeGreaterThan(0); // 动手前读到的是发送,照限速等
-    expect(result.pace).toBe(pace); // 发完重读是停止 → 不记账
+    expect(result.waitedMs).toBeGreaterThan(0);
+    expect(atAction).toBe("send"); // 读到的是点击前的意图,不是点击后的图标
+    expect(result.pace.lastSentAt).toBe(clock.now());
   });
 
   it("没真发出去的不记账(页面世界那条:sendToPage 返回 false)", async () => {

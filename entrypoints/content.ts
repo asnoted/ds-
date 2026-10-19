@@ -271,7 +271,8 @@ export default defineContentScript({
       for (const action of SEND_PRIMITIVES) {
         const run = roster[action];
         if (run === undefined) continue;
-        // 圆键那一下的意图要**动手前**与**发完后**各读一次:等的时候它可能变成了"停止".
+        // 圆键的意图读两次:第一次决定等不等,第二次在等完、动手前--
+        // 等的时候它可能变成了"停止".
         const readIntent = (): SendIntent =>
           action === "button.click" ? readCircleIntent() : "send";
         paced[action] = async (frame: ActionFrame) => {
@@ -280,8 +281,8 @@ export default defineContentScript({
             pace: before,
             readIntent,
             execute: () => run(frame),
-            // 圆键重读一次,判出"停止"就不记账;另两种原语恒是发送.
-            shouldRecord: () => readIntent() !== "stop",
+            // 动手前读到"停止"就不记账;另两种原语恒是发送.
+            shouldRecord: (_result, intent) => intent !== "stop",
             now: () => Date.now(),
             random: () => Math.random(),
             sleep: realSleep,
