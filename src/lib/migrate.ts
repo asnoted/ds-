@@ -16,6 +16,13 @@ export const RENAMED_STORAGE_KEYS = {
   "ds-/watchdog": "dsb/watchdog",
 } as const;
 
+/** 迁移要读的那几个键:新旧都读,才判得出"新键缺席". 别用 get(null) -- 那会把几帧
+ * JPEG 也读进来,而 service worker 每次醒来都跑这一遍. */
+export const MIGRATION_KEYS: readonly string[] = [
+  ...Object.keys(RENAMED_STORAGE_KEYS),
+  ...Object.values(RENAMED_STORAGE_KEYS),
+];
+
 export type RenamedStorageKey = keyof typeof RENAMED_STORAGE_KEYS;
 
 export type Migration = {

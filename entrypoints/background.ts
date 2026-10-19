@@ -88,7 +88,7 @@ import {
   type ReplyPayload,
 } from "../src/lib/reply";
 import { SAID_ADD_TOOL } from "../src/lib/said";
-import { isEmptyMigration, planStorageMigration } from "../src/lib/migrate";
+import { isEmptyMigration, MIGRATION_KEYS, planStorageMigration } from "../src/lib/migrate";
 import { readSpeak, readToggle, SPEAK_STORAGE_KEY, TOGGLE_STORAGE_KEY } from "../src/lib/toggle";
 import {
   ASKS_STORAGE_KEY,
@@ -904,7 +904,7 @@ export default defineBackground(() => {
 
   /** 把 `ds-` 时代留下的挂起状态搬到 `dsb/` 名下,只搬一次(搬完旧键就删). */
   async function migrateLegacyStorage(): Promise<void> {
-    const plan = planStorageMigration(await browser.storage.local.get(null));
+    const plan = planStorageMigration(await browser.storage.local.get([...MIGRATION_KEYS]));
     if (isEmptyMigration(plan)) return;
     await browser.storage.local.set({ ...plan.write });
     await browser.storage.local.remove([...plan.remove]);

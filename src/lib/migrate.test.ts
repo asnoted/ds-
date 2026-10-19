@@ -5,6 +5,7 @@ import { FAILURE_FRAME_STORAGE_KEY } from "./failureframe";
 import { FAILURE_LOG_STORAGE_KEY } from "./failurelog";
 import {
   isEmptyMigration,
+  MIGRATION_KEYS,
   planStorageMigration,
   RENAMED_STORAGE_KEYS,
   type RenamedStorageKey,
@@ -70,5 +71,11 @@ describe("RENAMED_STORAGE_KEYS", () => {
       expect(oldKey.startsWith("ds-/")).toBe(true);
       expect(RENAMED_STORAGE_KEYS[oldKey].startsWith("dsb/")).toBe(true);
     }
+  });
+
+  it("迁移只读这几把键,不整库读(帧可能几 MB)", () => {
+    expect([...MIGRATION_KEYS].sort()).toEqual(
+      [...OLD, ...OLD.map((oldKey) => RENAMED_STORAGE_KEYS[oldKey])].sort(),
+    );
   });
 });
