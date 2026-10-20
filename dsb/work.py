@@ -194,7 +194,8 @@ def _dotenv_text() -> str:
         return ""
     try:
         return dotenv.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # 坏编码也只当没配:否则每次读/写/搜都在这儿炸成 tool-broke.
         return ""
 
 

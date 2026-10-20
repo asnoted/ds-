@@ -189,6 +189,14 @@ class Test真实生效的那一个:
         monkeypatch.setenv("DSB_MCP_CONFIG", str(composed))
         assert code_of(lambda: write_text(root, str(decomposed), "{}")) == ERROR_PROTECTED
 
+    def test_生效的_env_不是_UTF8_时工具照常可用(
+        self, root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """读不出的 .env 只该当没配:不能让每次工具调用都落成内部错."""
+        monkeypatch.chdir(root)
+        (root / ".env").write_bytes(b"TOKEN=\xff\n")
+        assert "普通文件" in read_text(root, "README.md")
+
 
 class TestGrep:
     def test_模式命中保护文件时结果里没有它(self, root: Path) -> None:
