@@ -106,8 +106,11 @@ DEFAULT_RULES: dict[Operation, tuple[Rule, ...]] = {
         Rule("*.env.example", "allow"),
         Rule("mcp.json", "deny"),
         # `.git/` 收口:里面没有一样东西该被写,放在最后才盖得住上面那些 allow.
+        # 嵌套仓库 (sub/.git) 的 hooks 一样会执行, `*` 跨 `/` 所以两条就盖住任意层.
         Rule(".git", "deny"),
         Rule(".git/*", "deny"),
+        Rule("*/.git", "deny"),
+        Rule("*/.git/*", "deny"),
     ),
 }
 

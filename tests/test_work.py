@@ -421,6 +421,17 @@ def test_write_to_dot_git_itself_is_protected(tmp_path: Path) -> None:
     assert code_of(exc) == ERROR_PROTECTED
 
 
+def test_write_into_nested_dot_git_is_protected(tmp_path: Path) -> None:
+    """子仓库也有 hooks: 嵌套 .git/ 与顶层一样只写不读."""
+    (tmp_path / "sub" / ".git").mkdir(parents=True)
+    target = tmp_path / "sub" / ".git" / "config"
+    target.write_text("原样", encoding="utf-8")
+    with pytest.raises(WorkError) as exc:
+        write_text(tmp_path, "sub/.git/config", "改过了")
+    assert code_of(exc) == ERROR_PROTECTED
+    assert target.read_text(encoding="utf-8") == "原样"
+
+
 def test_write_refuses_out_of_root(tmp_path: Path) -> None:
     root = tmp_path / "root"
     root.mkdir()
