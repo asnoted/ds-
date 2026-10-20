@@ -1,0 +1,44 @@
+from,to,kind,note,render
+D2,D3,domain,"限速挂在发送动作上, 闸也读发送动作",graph
+D1,D2,domain,续聊发的那一条必须过 speak 闸与唯一限速,graph
+D1,D3,domain,续聊落草稿/发送要用写作框与页面动作,graph
+D1,D8,domain,续聊的工具结果经 MCP 中继回灌,graph
+D4,D3,domain,"`send.page` 是本地工具, 但落点是页面动作",graph
+D4,D8,domain,工作工具由扩展经 MCP 网关调用,graph
+D5,D1,domain,ask 围栏与续聊共用同一套围栏解析/轮次,graph
+D5,D3,domain,角标与 hover 问题挂在聊天消息工具栏上,graph
+D6,D1,domain,催办走续聊那条发送路,graph
+D6,D2,domain,催办也过闸/限速; 生成中/闸关跳过,graph
+D6,D3,domain,漂移回退与页面状态读取要页面动作,graph
+D7,D3,domain,动作失败是失败痕的事件来源之一,graph
+D7,D8,domain,中继/健康失败也是失败痕的事件来源,graph
+D9,D1,evidence,"截图/帧要对上这些域的真实状态, 状态不出现就补不了",graph
+D9,D2,evidence,"截图/帧要对上这些域的真实状态, 状态不出现就补不了",graph
+D9,D3,evidence,"截图/帧要对上这些域的真实状态, 状态不出现就补不了",graph
+D9,D6,evidence,"截图/帧要对上这些域的真实状态, 状态不出现就补不了",graph
+D9,D7,evidence,"截图/帧要对上这些域的真实状态, 状态不出现就补不了",graph
+D3,A_READ,ownership,,graph
+D3,A_WRITE,ownership,,graph
+D3,A_BG,ownership,,graph
+D3,A_MSG,ownership,,graph
+D3,A_SEND,ownership,,graph
+D3,A_WAIT,ownership,,graph
+D1,A_WRITE,call,续聊落草稿,graph
+D1,A_SEND,call,续聊发送,graph
+D4,A_WRITE,call,send.page 写草稿,graph
+D4,A_SEND,call,send.page 发送,graph
+D6,A_READ,call,催办前读草稿/读按钮,graph
+D6,A_WRITE,call,催办写草稿,graph
+D6,A_SEND,call,催办发送,graph
+D2,A_SEND,call,发送闸与唯一限速,graph
+A_READ,A_WRITE,order,chats.list -> chat.switch; page.state 退避探针,graph
+A_READ,A_SEND,order,button.get -> button.click; page.state 退避探针,graph
+A_READ,A_MSG,probe,page.state 退避探针,graph
+A_WRITE,A_SEND,order,composer.type -> send.enter,graph
+chats.list,chat.switch,order,先拿会话 id 再切,detail
+button.get,button.click,order,先读按钮意图/状态再点,detail
+composer.type,send.enter,order,先落草稿再按发送,detail
+composer.type,composer.read,readback,写完读回,detail
+think.set,think.get,readback,写完读回,detail
+search.set,search.get,readback,写完读回,detail
+sidebar.set,sidebar.get,readback,写完读回,detail

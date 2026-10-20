@@ -18,3 +18,5 @@ pnpm typecheck
 pnpm test
 pnpm relay:lint
 uv run pytest -m "not docs"
+# 依赖图是生成物, 与 CSV 漂移会直接骗读图的人; 这条很快, 留在提交前.
+uv run scripts/wayfinder-graph.py --check

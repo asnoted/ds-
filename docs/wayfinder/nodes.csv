@@ -1,0 +1,50 @@
+id,label,kind,parent,status
+D1,1 开启与续聊,domain,,
+D2,2 发言闸与发送限速,domain,,
+D3,3 页面动作与聊天读取 (34 动作),domain,,
+D4,4 本地工作工具,domain,,
+D5,5 said/ask,domain,,
+D6,6 看门狗,domain,,
+D7,7 失败留痕与图标/现场帧,domain,,
+D8,8 MCP 网关,domain,,
+D9,9 存证与真机探针,domain,,
+A_READ,读: 不改页面,group,D3,
+A_WRITE,写: 改页面状态,group,D3,
+A_BG,后台: target=null,group,D3,
+A_MSG,消息/代码控件,group,D3,
+A_SEND,发送,group,D3,
+A_WAIT,等待,group,D3,
+page.state,,action,A_READ,read
+chats.list,,action,A_READ,read
+messages.list,,action,A_READ,read
+messages.last,,action,A_READ,read
+composer.read,,action,A_READ,read
+think.get,,action,A_READ,read
+search.get,,action,A_READ,read
+button.get,,action,A_READ,read
+sidebar.get,,action,A_READ,read
+composer.type,,action,A_WRITE,clicked
+composer.clear,,action,A_WRITE,clicked
+think.set,,action,A_WRITE,clicked
+search.set,,action,A_WRITE,clicked
+sidebar.set,,action,A_WRITE,clicked
+chat.new,,action,A_WRITE,clicked
+chat.switch,,action,A_WRITE,clicked
+tabs.list,,action,A_BG,background
+toggle.get,,action,A_BG,background
+toggle.set,,action,A_BG,background
+storage.get,,action,A_BG,background
+storage.set,,action,A_BG,background
+storage.remove,,action,A_BG,background
+message.copy,,action,A_MSG,clicked
+message.like,,action,A_MSG,unclicked
+message.dislike,,action,A_MSG,unclicked
+message.read,,action,A_MSG,unclicked
+message.share,,action,A_MSG,unclicked
+code.copy,,action,A_MSG,clicked
+code.download,,action,A_MSG,unclicked
+button.click,,action,A_SEND,unclicked
+send.enter,,action,A_SEND,unclicked
+message.retry,,action,A_SEND,unclicked
+wait.fence,,action,A_WAIT,unclicked
+wait.reply,,action,A_WAIT,unclicked

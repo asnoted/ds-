@@ -27,6 +27,12 @@
 拉散; 每个动作名都在组节点里, 逐动作的边看下面的动作边表. 组节点按读/写/后台/消息/发送/
 等待分组, 并标出 #119 的真机边界.
 
+图的源数据是 [nodes.csv](./nodes.csv) 与 [edges.csv](./edges.csv). `edges.csv` 的
+`render=graph` 进图, `render=detail` 是逐动作边, 不画进组图. 改 CSV 后跑
+`uv run scripts/wayfinder-graph.py`; `--check` 在 pre-commit 与 CI 拦漂移.
+
+<!-- wayfinder:graph:start -->
+
 ```mermaid
 flowchart TB
   D1["1 开启与续聊"]
@@ -38,7 +44,6 @@ flowchart TB
   D7["7 失败留痕与图标/现场帧"]
   D8["8 MCP 网关"]
   D9["9 存证与真机探针"]
-
   A_READ["读: 不改页面<br/>page.state [读]<br/>chats.list [读]<br/>messages.list [读]<br/>messages.last [读]<br/>composer.read [读]<br/>think.get [读]<br/>search.get [读]<br/>button.get [读]<br/>sidebar.get [读]"]
   A_WRITE["写: 改页面状态<br/>composer.type [点]<br/>composer.clear [点]<br/>think.set [点]<br/>search.set [点]<br/>sidebar.set [点]<br/>chat.new [点]<br/>chat.switch [点]"]
   A_BG["后台: target=null<br/>tabs.list [后台]<br/>toggle.get [后台]<br/>toggle.set [后台]<br/>storage.get [后台]<br/>storage.set [后台]<br/>storage.remove [后台]"]
@@ -46,7 +51,6 @@ flowchart TB
   A_SEND["发送<br/>button.click [未点]<br/>send.enter [未点]<br/>message.retry [未点]"]
   A_WAIT["等待<br/>wait.fence [未点]<br/>wait.reply [未点]"]
 
-  %% 域级依赖
   D2 --> D3
   D1 --> D2
   D1 --> D3
@@ -65,16 +69,12 @@ flowchart TB
   D9 -.-> D3
   D9 -.-> D6
   D9 -.-> D7
-
-  %% D3 -> 组是归属, 不是调用
   D3 --> A_READ
   D3 --> A_WRITE
   D3 --> A_BG
   D3 --> A_MSG
   D3 --> A_SEND
   D3 --> A_WAIT
-
-  %% 1/4/6 真正落到的动作组
   D1 --> A_WRITE
   D1 --> A_SEND
   D4 --> A_WRITE
@@ -82,16 +82,14 @@ flowchart TB
   D6 --> A_READ
   D6 --> A_WRITE
   D6 --> A_SEND
-
-  %% 2 管住发送组
   D2 --> A_SEND
-
-  %% 组级先后与读回/退避
   A_READ --> A_WRITE
   A_READ --> A_SEND
   A_READ -.-> A_MSG
   A_WRITE --> A_SEND
 ```
+
+<!-- wayfinder:graph:end -->
 
 ## 边读法
 
@@ -135,6 +133,7 @@ flowchart TB
 | `button.get` -> `button.click`                       | 先读按钮意图/状态再点               |
 | `composer.type` -> `send.enter`                      | 先落草稿再按发送                    |
 | `*.set` -.-> `*.get`                                 | 写完读回, 认页面有没有照做          |
+| `composer.type` -.-> `composer.read`                 | 写完读回, 认输入框有没有照做        |
 | `page.state` -.-> 写/消息/发送组                     | 退避闸先探账号处境, 再决定放不放行  |
 
 ### 动作标记
