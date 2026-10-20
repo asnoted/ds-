@@ -542,21 +542,25 @@ export async function readMessages(
 ): Promise<Message[]> {
   const seen = new Map<string, Message>();
   const home = view.scrollTop;
-  view.scrollTop = 0;
-  if (home !== 0) await settle();
-  for (let guard = 0; guard < MAX_SWEEPS; guard += 1) {
-    sweepInto(view, seen);
-    if (view.scrollTop + view.clientHeight >= view.scrollHeight - 1) break;
-    const before = view.scrollTop;
-    const was = keysOf(view);
-    view.scrollTop += Math.max(1, view.clientHeight);
-    await settleUntilMounted(view, was, settle);
-    if (view.scrollTop <= before) throw new PageError(ACTION_ERROR_PAGE_CHANGED, "滚不动消息列表");
-    // 越往下内容越多(边滚边加载)就会一直不到底;到点收手,别让中继替我们报 timeout
-    if (now() >= deadline) throw new PageError(ACTION_ERROR_READ_FAILED, "扫不完这段对话");
+  try {
+    view.scrollTop = 0;
+    if (home !== 0) await settle();
+    for (let guard = 0; guard < MAX_SWEEPS; guard += 1) {
+      sweepInto(view, seen);
+      if (view.scrollTop + view.clientHeight >= view.scrollHeight - 1) break;
+      const before = view.scrollTop;
+      const was = keysOf(view);
+      view.scrollTop += Math.max(1, view.clientHeight);
+      await settleUntilMounted(view, was, settle);
+      if (view.scrollTop <= before)
+        throw new PageError(ACTION_ERROR_PAGE_CHANGED, "滚不动消息列表");
+      // 越往下内容越多(边滚边加载)就会一直不到底;到点收手,别让中继替我们报 timeout
+      if (now() >= deadline) throw new PageError(ACTION_ERROR_READ_FAILED, "扫不完这段对话");
+    }
+    return [...seen.values()];
+  } finally {
+    view.scrollTop = home; // 成功归位;扫到一半失败也不把人留在半空
   }
-  view.scrollTop = home;
-  return [...seen.values()];
 }
 
 /**

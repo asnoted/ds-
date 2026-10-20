@@ -588,6 +588,30 @@ describe("虚拟列表:只有视口里的行在 DOM", () => {
     expect(writes).toContain(100); // 真试过往下滚,不是一上来就卡住
   });
 
+  it("扫不完/滚不动要抛时也把滚动位置还回去:别把人留在半空", async () => {
+    const host = document.createElement("div");
+    host.innerHTML = keyRow(1, "user");
+    let top = 50;
+    const view: ListViewport = {
+      querySelectorAll: (selector: string) => host.querySelectorAll(selector),
+      get scrollTop(): number {
+        return top;
+      },
+      set scrollTop(value: number) {
+        top = value;
+      },
+      get clientHeight(): number {
+        return 100;
+      },
+      get scrollHeight(): number {
+        return 9_999;
+      },
+    };
+
+    await expect(readMessages(view, settleNow, Date.now() - 1)).rejects.toThrow("扫不完这段对话");
+    expect(top).toBe(50);
+  });
+
   it("只读最后一条:跳到底扫那一屏就够", async () => {
     const view = virtualScreens([[keyRow(1, "user")], [keyRow(2, "assistant"), keyRow(3, "user")]]);
 
