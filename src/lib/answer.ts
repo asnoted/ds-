@@ -224,6 +224,14 @@ function cutFencedBlock(block: string, opening: string): string {
   }
 }
 
+/** 兜底路径找起始处:与 `fence.ts` 同一条口径,围栏起始行必须占行首(`\n` 后或原文开头). */
+function openingAtLineStart(text: string, opening: string): number {
+  for (let at = text.indexOf(opening); at !== -1; at = text.indexOf(opening, at + 1)) {
+    if (at === 0 || text[at - 1] === "\n") return at;
+  }
+  return -1;
+}
+
 function unescapeOnce(raw: string): string {
   return raw.replace(/\\(n|r|t|"|\\|\/)/g, (match, char: string) => JSON_ESCAPES[char] ?? match);
 }
@@ -251,10 +259,11 @@ function detectFences(
 
   // 兜底:正文形状认不出时,把原文转义还原一层,从围栏起始处切进来,**切到收尾行**
   // 再交给围栏解析(原文末尾拖着 JSON 残渣,不切的话收尾行认不出来).
+  // 起始处必须占行首--行内提一句 ```send 只是正文,不是围栏.
   // 这条路只认第一块:它的活儿是"别把整段回答丢了",一次多块本来就走上面两条
   // 正常路径--OT 流会先拼成完整正文,直出 JSON 会先取出回答正文.
   const restored = unescapeOnce(raw);
-  const start = restored.indexOf(opening);
+  const start = openingAtLineStart(restored, opening);
   if (start === -1) return [];
   return parse(cutFencedBlock(restored.slice(start), opening));
 }

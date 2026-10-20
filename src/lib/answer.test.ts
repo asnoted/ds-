@@ -109,6 +109,27 @@ describe("detectToolCalls / 检测点", () => {
     expect(detectToolCalls("<html>502</html>")).toEqual([]);
   });
 
+  it("正文里提一句 ```send(不在行首)不算围栏,兜底路径也不切开", () => {
+    const raw = JSON.stringify({
+      choices: [
+        {
+          message: {
+            content:
+              '想调用工具就写 ```send\n{"tool":"read","arguments":{"path":"a.md"}}\n``` 这样的块.',
+          },
+        },
+      ],
+    });
+    expect(detectToolCalls(raw)).toEqual([]);
+  });
+
+  it("正文里提一句 ```ask(不在行首)不算举手,兜底路径也不切开", () => {
+    const raw = JSON.stringify({
+      choices: [{ message: { content: "要举手就写 ```ask\n选 A 还是 B?\n``` 这样的块." } }],
+    });
+    expect(detectAskQuestion(raw)).toBeNull();
+  });
+
   it("兜底路径也认没闭合的围栏不算数", () => {
     const raw = `data: ${JSON.stringify({
       unknown_shape: "看这里\n```send\n问题没收尾\n```js\nconst a = 1;",
