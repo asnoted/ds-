@@ -139,12 +139,19 @@ export type ListViewport = {
   readonly scrollHeight: number;
 };
 
-/** 视口里此刻挂着的行的 key 序列:拿它当"这一屏换没换"的凭据. */
+/** 无 key 的行(新版站点)拿正文前一段当身份;只当"换没换"的凭据,碰撞的代价是多等几帧. */
+const KEYLESS_WITNESS_CHARS = 64;
+
+/** 视口里此刻挂着的行的身份序列:拿它当"这一屏换没换"的凭据. */
 export function keysOf(view: ListViewport): string {
   const rows = view.querySelectorAll(ROW_SELECTOR);
   let out = "";
   for (let index = 0; index < rows.length; index += 1) {
-    out += `${rows[index]?.getAttribute("data-virtual-list-item-key") ?? ""},`;
+    const row = rows[index];
+    const id =
+      row?.getAttribute("data-virtual-list-item-key") ??
+      (row?.textContent ?? "").slice(0, KEYLESS_WITNESS_CHARS);
+    out += `${id},`;
   }
   return out;
 }

@@ -7,6 +7,7 @@ import { parseWaitSeconds } from "./wait-budget";
 import {
   conversation,
   conversationList,
+  keysOf,
   lastMessage,
   listMessages,
   nextFrame,
@@ -638,6 +639,44 @@ describe("虚拟列表:只有视口里的行在 DOM", () => {
       "第 3 答",
       "第 4 问",
     ]);
+  });
+
+  it("无 key 的行换了一屏也算换:行数没变时不能当成旧屏干等 30 帧", async () => {
+    const HEIGHT = 100;
+    const host = document.createElement("div");
+    const screens = [
+      `<div class="ds-virtual-list-visible-items">${keylessRow("甲一")}${keylessRow("甲二")}</div>`,
+      `<div class="ds-virtual-list-visible-items">${keylessRow("乙一")}${keylessRow("乙二")}</div>`,
+    ];
+    let index = 0;
+    const paint = (): void => {
+      host.innerHTML = screens[index] ?? "";
+    };
+    paint();
+    const view: ListViewport = {
+      get scrollTop(): number {
+        return index * HEIGHT;
+      },
+      set scrollTop(value: number) {
+        index = value > 0 ? 1 : 0;
+      },
+      get clientHeight(): number {
+        return HEIGHT;
+      },
+      get scrollHeight(): number {
+        return screens.length * HEIGHT;
+      },
+      querySelectorAll: (selector: string) => host.querySelectorAll(selector),
+    };
+    let frames = 0;
+    const settle = async (): Promise<void> => {
+      frames += 1;
+      paint(); // 第一帧就把新一屏挂上
+    };
+    const was = keysOf(view);
+    view.scrollTop = HEIGHT;
+    await settleUntilMounted(view, was, settle);
+    expect(frames).toBe(1);
   });
 
   it("scrollTop 写在真的会滚那一层--两层都能滚时用最里层", async () => {
