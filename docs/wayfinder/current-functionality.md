@@ -18,8 +18,8 @@
 | 8   | MCP 网关              | `/mcp` 端点, 第三方 server 聚合, 超时/配额              | #117   |
 | 9   | 存证与真机探针        | 控件原件, 截图, 真机对账, probe                         | #118   |
 
-域 3 的安全子集点击矩阵读数见 [evidence/page-actions.md](../evidence/page-actions.md);
-有副作用的动作仍未点, 缺口保留.
+域 3 的安全子集点击矩阵读数见 [evidence/controls.md](../evidence/controls.md) 的
+"真机点击矩阵"节; 有副作用的动作仍未点, 缺口保留.
 
 ## 依赖图
 
