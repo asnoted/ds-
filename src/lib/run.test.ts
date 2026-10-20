@@ -208,6 +208,26 @@ describe("换会话:轮数归零且待发作废(AC④)", () => {
     expect(released.effects).toEqual([{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
   });
 
+  it("结果还在队列里时先看见新会话(detect 先到):放行仍作废,标记不送进新对话", () => {
+    const queued = decide(decide(turnOn(true), { type: "session", key: "s1" }).state, {
+      type: "result",
+      payload: PAYLOAD,
+    });
+    // 新会话的 detect 先到:run 里的 session 已经翻成 s2,门里那条标记还在.
+    const moved = decide(queued.state, { type: "session", key: "s2" });
+    expect(moved.state.queued).not.toBeNull();
+
+    const released = decide(moved.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+      session: "s2",
+    });
+    expect(released.state.queued).toBeNull();
+    expect(released.state.armed).toEqual({ phase: "idle" });
+    expect(released.effects).toEqual([{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
+  });
+
   it("放行时会话已经认不出(null):同样作废(URL 已经不在会话页上)", () => {
     const queued = decide(decide(turnOn(true), { type: "session", key: "s1" }).state, {
       type: "result",

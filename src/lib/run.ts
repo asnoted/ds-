@@ -52,6 +52,8 @@ export type RunState = {
   readonly rounds: RoundState;
   /** 已入队、还没到出站窗口的续聊正文;放行那一刻才武装. */
   readonly queued: string | null;
+  /** 这份排队正文是在哪个页面会话里生成的(放行时判"用户是不是已经切走"). */
+  readonly queuedSession: string | null;
   /** 上一次见过的页面会话 id:换了会话 = 换了条任务. */
   readonly session: string | null;
   /** "代你发言"闸:关 = 放行时只落草稿,不发送(#52). */
@@ -65,6 +67,7 @@ export function newRun(): RunState {
     armed: idleArmed(),
     rounds: INITIAL_ROUNDS,
     queued: null,
+    queuedSession: null,
     session: null,
     speak: false,
     enabled: false,
@@ -173,7 +176,15 @@ function onResult(state: RunState, payload: ReplyPayload): RunDecision {
   // 一条没有正文可换的**裸标记**(裸标记会被当成用户自己发的话,还吃下协议说明).
   // 单槽记着最新那份,标记照旧只有一条.
   const effects: RunEffect[] = state.queued === null ? [{ kind: "enqueue" }] : [];
-  return step({ ...state, rounds: verdict.next, queued: buildContinuation(payload) }, effects);
+  return step(
+    {
+      ...state,
+      rounds: verdict.next,
+      queued: buildContinuation(payload),
+      queuedSession: state.session,
+    },
+    effects,
+  );
 }
 
 /**
@@ -184,6 +195,7 @@ function onResult(state: RunState, payload: ReplyPayload): RunDecision {
  *
  * 结果进队到放行之间用户切走了会话:这条结果写给的是上一条会话,放出去只会在新对话
  * 里多一条可见标记、工具结果也接错上下文--静默作废(用户自己换的,不算故障留痕).
+ * 判据用**入队时**记下的会话 id:新会话的 detect 可能先到,不能让它把旧队列洗白.
  */
 function onReleased(
   state: RunState,
@@ -195,11 +207,13 @@ function onReleased(
   if (!isRun) {
     return step(state, [{ kind: "send", message, continuation: false }]);
   }
-  if (session !== undefined && state.session !== null && session !== state.session) {
-    return step({ ...state, queued: null }, [{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
+  if (session !== undefined && state.queuedSession !== null && session !== state.queuedSession) {
+    return step({ ...state, queued: null, queuedSession: null }, [
+      { kind: "log", note: "换会话了,还没放行的续聊作废" },
+    ]);
   }
   const continuation = state.queued;
-  const base = { ...state, queued: null };
+  const base = { ...state, queued: null, queuedSession: null };
   if (planContinuation(state.speak).action === "arm-and-send") {
     return step({ ...base, armed: arm(continuation, now) }, [
       { kind: "send", message: CONTINUATION_MARKER, continuation: true },
@@ -301,6 +315,7 @@ function onToggle(state: RunState, speak: boolean, enabled: boolean): RunDecisio
         ...next,
         armed: idleArmed(),
         queued: null,
+        queuedSession: null,
         rounds: resetRounds(),
         session: null,
       };
