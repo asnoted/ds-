@@ -1,6 +1,7 @@
 import { defineContentScript } from "wxt/utils/define-content-script";
 
 import { detectAskQuestion, detectToolCalls, extractAssistantAnswer } from "../src/lib/answer";
+import { nextAskState } from "../src/lib/ask";
 import {
   askClearedMessage,
   askMessage,
@@ -319,6 +320,8 @@ export default defineContentScript({
       const current = pageSessionIdOf(location.href);
       dispatch({ type: "session", key: current });
       const calls = detectToolCalls(raw);
+      const ask = detectAskQuestion(raw);
+      const nextAsk = nextAskState(pendingAsk, calls.length > 0, ask !== null);
       // **围栏之外的话**一律报给协调者:有围栏时围栏转网关,围栏以外那些别的话不能被吞掉.
       // 回灌自己(首行是 `agent:`)不算:那是桥送回去的,再报就成了回声.
       const said = outsideFences(extractAssistantAnswer(raw));
@@ -330,7 +333,12 @@ export default defineContentScript({
         console.log(`[dsb] 认出 ${calls.length} 块 send 围栏(${id}),交给中继`);
         fenceCalls = expectResult(fenceCalls, id, roundSession ?? current);
         window.postMessage(callMessage(id, calls), "*");
-        pendingAsk = false;
+        if (nextAsk.clear) {
+          const askId = nextMessageId("ask");
+          console.log(`[dsb] send 围栏优先,ask(${askId})作废`);
+          window.postMessage(askClearedMessage(askId), "*");
+        }
+        pendingAsk = nextAsk.pending;
         return;
       }
       // 这一轮答复里没有围栏 = 任务收尾:轮数归零,下一次任务重新有满额;
@@ -338,16 +346,15 @@ export default defineContentScript({
       // 是重复的,收信那层幂等,所以不看轮数一律报(没开活就没人等这条).
       run = endTask(run);
       window.postMessage(endTaskMessage(nextMessageId("end-task")), "*");
-      const ask = detectAskQuestion(raw);
       if (ask !== null) {
-        pendingAsk = true;
+        pendingAsk = nextAsk.pending;
         const id = nextMessageId("ask");
         console.log(`[dsb] 认出 ask 围栏(${id}),网页在等人回`);
         window.postMessage(askMessage(id, ask), "*");
         return;
       }
-      if (pendingAsk) {
-        pendingAsk = false;
+      if (nextAsk.clear) {
+        pendingAsk = nextAsk.pending;
         const id = nextMessageId("ask");
         console.log(`[dsb] 对话继续了,ask(${id})作废`);
         window.postMessage(askClearedMessage(id), "*");

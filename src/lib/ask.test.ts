@@ -6,6 +6,7 @@ import {
   clearPendingAsk,
   describePendingAsks,
   hasPendingAsk,
+  nextAskState,
   readPendingAsks,
   recordPendingAsk,
   type PendingAsks,
@@ -137,5 +138,27 @@ describe("describePendingAsks", () => {
 describe("存储键", () => {
   it("值与版本绑死:改名等于把挂着的等人回丢在旧键里", () => {
     expect(ASKS_STORAGE_KEY).toBe("dsb/asks");
+  });
+});
+
+describe("nextAskState", () => {
+  it("send 围栏优先:清掉旧的等人回,不挂新 ask", () => {
+    expect(nextAskState(true, true, true)).toEqual({ pending: false, clear: true, ask: false });
+  });
+
+  it("没有旧 ask 时 send 不报清除", () => {
+    expect(nextAskState(false, true, true)).toEqual({ pending: false, clear: false, ask: false });
+  });
+
+  it("普通答复里的 ask:挂上,不报清除", () => {
+    expect(nextAskState(false, false, true)).toEqual({ pending: true, clear: false, ask: true });
+  });
+
+  it("没有围栏且旧 ask 还挂着:对话继续,清掉", () => {
+    expect(nextAskState(true, false, false)).toEqual({ pending: false, clear: true, ask: false });
+  });
+
+  it("没有围栏也没有旧 ask:什么都不报", () => {
+    expect(nextAskState(false, false, false)).toEqual({ pending: false, clear: false, ask: false });
   });
 });

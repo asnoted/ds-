@@ -26,6 +26,23 @@ export const ASK_BADGE_TEXT = "人";
 /** 悬停里问题正文的上限:问长了裁掉,悬停不是日志. */
 const QUESTION_LIMIT = 60;
 
+/** 一轮答复之后,页面世界对"等人回"该做什么. */
+export type AskTransition = {
+  readonly pending: boolean;
+  readonly clear: boolean;
+  readonly ask: boolean;
+};
+
+/**
+ * send 围栏优先;没有 send 时,有 ask 就挂新的,没有就清旧的.
+ * `clear` 只在**之前挂着**时为真,免得上报无中生有的清除.
+ */
+export function nextAskState(pending: boolean, hasSend: boolean, hasAsk: boolean): AskTransition {
+  if (hasSend) return { pending: false, clear: pending, ask: false };
+  if (hasAsk) return { pending: true, clear: false, ask: true };
+  return { pending: false, clear: pending, ask: false };
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
