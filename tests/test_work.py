@@ -102,6 +102,14 @@ def test_a_path_that_cannot_be_encoded_is_bad_path(tmp_path: Path) -> None:
     assert code_of(exc) == ERROR_BAD_PATH
 
 
+def test_a_path_with_a_nul_byte_is_bad_path(tmp_path: Path) -> None:
+    # 同一条来路:JSON 里的 \u0000 也是模型写得出来的字.Path.resolve() 抛
+    # ValueError(embedded null byte),漏出去同样是"内部错"加一笔 tool-broke.
+    with pytest.raises(WorkError) as exc:
+        resolve_in_root(tmp_path, "a\u0000b.txt")
+    assert code_of(exc) == ERROR_BAD_PATH
+
+
 # ---- list_dir ----
 
 

@@ -144,7 +144,7 @@ def resolve_in_root(root: Path, raw: Any) -> Path:
         root_real = root.resolve()
     except UnicodeError as exc:  # JSON 里的孤立代理字符:落不成文件系统编码
         raise WorkError(ERROR_BAD_PATH, detail=f"路径 {raw}") from exc
-    except (OSError, RuntimeError) as exc:  # 符号链接成环之类:解析不了就是坏路径
+    except (OSError, RuntimeError, ValueError) as exc:  # 符号链接成环 / 内嵌 NUL 之类
         raise WorkError(ERROR_BAD_PATH, detail=f"路径 {raw}") from exc
     if not _inside(root_real, resolved):
         raise WorkError(ERROR_OUT_OF_ROOT, detail=f"路径 {raw}")
