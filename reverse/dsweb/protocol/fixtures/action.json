@@ -1,0 +1,636 @@
+{
+  "description": "页面动作协议（扩展内部）：background 把一件动作帧 {\"action\",\"params\",\"target\"} 经 browser.tabs.sendMessage 投给目标标签页的内容脚本（信封 type=dsb/action，见 src/lib/channel.ts），按 target 标签页串行执行，当场回一个同构结果。response 成功 {\"ok\":true,\"result\"}，失败 {\"ok\":false,\"error\"}；error 只取下面册子里的码。谁在用：出站与看门狗（src/lib/action.ts 的 runAction）。",
+  "errorCodes": [
+    {
+      "code": "disabled",
+      "when": "总开关关着"
+    },
+    {
+      "code": "unknown-action",
+      "when": "动作名不在册"
+    },
+    {
+      "code": "timeout",
+      "when": "动作推给扩展后超时未回传"
+    },
+    {
+      "code": "tab-gone",
+      "when": "目标标签页已不存在，或这一跳没走通（执行口没接、载荷不合形状）"
+    },
+    {
+      "code": "backing-off",
+      "when": "账号在站点处罚区（禁言 / 退避中），写动作没推给页面"
+    },
+    {
+      "code": "composer-absent",
+      "when": "页面上没有写作框：禁言 / 未登录 / 页面没渲染（配 page.state 的 account 读得清是哪一种）"
+    },
+    {
+      "code": "page-changed",
+      "when": "页面还在，但上面找不到认得的那个东西：发送键、停止键、「开启新对话」、消息列表、滚动层"
+    },
+    {
+      "code": "read-failed",
+      "when": "读到了也读不完：一趟扫不完这个对话（成本天花板）"
+    }
+  ],
+  "cases": [
+    {
+      "name": "tabs.list 成功",
+      "request": {
+        "action": "tabs.list",
+        "params": {},
+        "target": null
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "tabs": [
+            {
+              "id": 42,
+              "title": "DeepSeek - 深度求索",
+              "url": "https://chat.deepseek.com/a/chat/s/abc123"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "page.state 成功",
+      "request": {
+        "action": "page.state",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "url": "https://chat.deepseek.com/a/chat/s/abc123",
+          "title": "DeepSeek - 深度求索",
+          "composerPresent": true,
+          "account": {
+            "kind": "ready"
+          }
+        }
+      }
+    },
+    {
+      "name": "composer.type 指定标签页成功",
+      "request": {
+        "action": "composer.type",
+        "params": {
+          "text": "你好"
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "composer.read 成功",
+      "request": {
+        "action": "composer.read",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "text": "你好"
+        }
+      }
+    },
+    {
+      "name": "messages.list 成功",
+      "request": {
+        "action": "messages.list",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "messages": [
+            {
+              "role": "user",
+              "text": "帮我看一眼这段代码"
+            },
+            {
+              "role": "assistant",
+              "text": "答案是 4271。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "messages.list 带 timeout（预算由入参定，就绪与扫描共用一份）",
+      "request": {
+        "action": "messages.list",
+        "params": {
+          "timeout": 25
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "messages": [
+            {
+              "role": "user",
+              "text": "帮我看一眼这段代码"
+            },
+            {
+              "role": "assistant",
+              "text": "答案是 4271。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "messages.last 角色认不出（unknown）",
+      "request": {
+        "action": "messages.last",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "messages": [
+            {
+              "role": "unknown",
+              "text": "认不出角色的那条"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "messages.last 带 timeout（不因为只读一屏就另立特例）",
+      "request": {
+        "action": "messages.last",
+        "params": {
+          "timeout": 5
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "答案是 4271。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "messages.last 成功",
+      "request": {
+        "action": "messages.last",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "答案是 4271。"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "chat.new 成功",
+      "request": {
+        "action": "chat.new",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "chats.list 成功",
+      "request": {
+        "action": "chats.list",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "chats": [
+            {
+              "id": "f9108f6a-d7b6-4238-93c8-56f0c0d5d62a",
+              "title": "列出工作目录文件",
+              "current": true
+            },
+            {
+              "id": "976c5618-ed42-4cdb-be6b-61343d8b3b7c",
+              "title": "列出工作目录文件",
+              "current": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "chat.switch 成功",
+      "request": {
+        "action": "chat.switch",
+        "params": {
+          "id": "976c5618-ed42-4cdb-be6b-61343d8b3b7c"
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "chat.switch 标题重名",
+      "request": {
+        "action": "chat.switch",
+        "params": {
+          "title": "列出工作目录文件"
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "unknown-action"
+      }
+    },
+    {
+      "name": "chat.switch 找不到",
+      "request": {
+        "action": "chat.switch",
+        "params": {
+          "id": "no-such-chat"
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "page-changed"
+      }
+    },
+    {
+      "name": "message.copy 成功",
+      "request": {
+        "action": "message.copy",
+        "params": {
+          "index": -1
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "message.like 点到用户消息",
+      "request": {
+        "action": "message.like",
+        "params": {
+          "index": 0
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "page-changed"
+      }
+    },
+    {
+      "name": "message.copy index 越界",
+      "request": {
+        "action": "message.copy",
+        "params": {
+          "index": 99
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "page-changed"
+      }
+    },
+    {
+      "name": "message.copy index 不是整数",
+      "request": {
+        "action": "message.copy",
+        "params": {
+          "index": "last"
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "unknown-action"
+      }
+    },
+    {
+      "name": "code.download 成功",
+      "request": {
+        "action": "code.download",
+        "params": {
+          "index": 0
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "sidebar.get 成功",
+      "request": {
+        "action": "sidebar.get",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "collapsed": false
+        }
+      }
+    },
+    {
+      "name": "sidebar.set 成功",
+      "request": {
+        "action": "sidebar.set",
+        "params": {
+          "collapsed": true
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "collapsed": true
+        }
+      }
+    },
+    {
+      "name": "sidebar.set 顶栏结构对不上",
+      "request": {
+        "action": "sidebar.set",
+        "params": {
+          "collapsed": true
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "page-changed"
+      }
+    },
+    {
+      "name": "sidebar.set 参数不是布尔",
+      "request": {
+        "action": "sidebar.set",
+        "params": {
+          "collapsed": "yes"
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "unknown-action"
+      }
+    },
+    {
+      "name": "think.get 成功",
+      "request": {
+        "action": "think.get",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "think.set 成功",
+      "request": {
+        "action": "think.set",
+        "params": {
+          "enabled": true
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "search.get 成功",
+      "request": {
+        "action": "search.get",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "name": "search.set 成功",
+      "request": {
+        "action": "search.set",
+        "params": {
+          "enabled": false
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "name": "button.click 成功（可用就点，点下去是发送还是停止由页面决定）",
+      "request": {
+        "action": "button.click",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "button.get 成功：箭头（空闲态）",
+      "request": {
+        "action": "button.get",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "pressed": "send"
+        }
+      }
+    },
+    {
+      "name": "button.get：方块（生成中）",
+      "request": {
+        "action": "button.get",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "pressed": "stop"
+        }
+      }
+    },
+    {
+      "name": "button.get：图标认不出是成功返回 unknown，不是失败",
+      "request": {
+        "action": "button.get",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "pressed": "unknown"
+        }
+      }
+    },
+    {
+      "name": "send.enter 成功",
+      "request": {
+        "action": "send.enter",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "composer.clear 成功",
+      "request": {
+        "action": "composer.clear",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {}
+      }
+    },
+    {
+      "name": "wait.fence 成功",
+      "request": {
+        "action": "wait.fence",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "question": "查一下今天的天气"
+        }
+      }
+    },
+    {
+      "name": "wait.reply 成功",
+      "request": {
+        "action": "wait.reply",
+        "params": {},
+        "target": "42"
+      },
+      "response": {
+        "ok": true,
+        "result": {
+          "text": "agent:\nstatus: ok\nanswer[1]{text}:\n  查到了"
+        }
+      }
+    },
+    {
+      "name": "wait.fence 超时失败",
+      "request": {
+        "action": "wait.fence",
+        "params": {
+          "timeout": 1
+        },
+        "target": "42"
+      },
+      "response": {
+        "ok": false,
+        "error": "timeout"
+      }
+    },
+    {
+      "name": "总开关关闭失败",
+      "request": {
+        "action": "tabs.list",
+        "params": {},
+        "target": null
+      },
+      "response": {
+        "ok": false,
+        "error": "disabled"
+      }
+    },
+    {
+      "name": "未知动作失败",
+      "request": {
+        "action": "page.nope",
+        "params": {},
+        "target": null
+      },
+      "response": {
+        "ok": false,
+        "error": "unknown-action"
+      }
+    },
+    {
+      "name": "目标标签页不存在失败",
+      "request": {
+        "action": "page.state",
+        "params": {},
+        "target": "99999"
+      },
+      "response": {
+        "ok": false,
+        "error": "tab-gone"
+      }
+    }
+  ]
+}

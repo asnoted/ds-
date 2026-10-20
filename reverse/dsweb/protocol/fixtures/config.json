@@ -1,0 +1,54 @@
+{
+  "description": ".env 解析对拍：键值现读、注释与别的变量忽略（只做解析纯函数，不发任何请求）。",
+  "cases": [
+    {
+      "name": ".env 读端口",
+      "kind": "value",
+      "key": "DSB_PORT",
+      "input": "# 本机配置，不进版本库\nDSB_PORT=1234\n",
+      "expected": { "value": "1234" }
+    },
+    {
+      "name": "该键不在 .env 里",
+      "kind": "value",
+      "key": "DSB_PORT",
+      "input": "# 只有别的变量\nOTHER=1\n",
+      "expected": { "value": null }
+    },
+    {
+      "name": "带引号的值",
+      "kind": "value",
+      "key": "DSB_TOOL_TIMEOUT",
+      "input": "DSB_TOOL_TIMEOUT=\"30\"\n",
+      "expected": { "value": "30" }
+    },
+    {
+      "name": "注释行不算数",
+      "kind": "value",
+      "key": "DSB_TOOL_TIMEOUT",
+      "input": "# DSB_TOOL_TIMEOUT=99\nOTHER=1\n",
+      "expected": { "value": null }
+    },
+    {
+      "name": "值是空的等于没有",
+      "kind": "value",
+      "key": "DSB_TOOL_TIMEOUT",
+      "input": "DSB_TOOL_TIMEOUT=\n",
+      "expected": { "value": null }
+    },
+    {
+      "name": "键与值两边的空白不算",
+      "kind": "value",
+      "key": "DSB_PORT",
+      "input": "  DSB_PORT  =  1234  \n",
+      "expected": { "value": "1234" }
+    },
+    {
+      "name": "同一个键写两次头一条赢",
+      "kind": "value",
+      "key": "DSB_PORT",
+      "input": "DSB_PORT=1234\nDSB_PORT=5678\n",
+      "expected": { "value": "1234" }
+    }
+  ]
+}
