@@ -21,27 +21,48 @@ export const MAX_PENDING_CALLS = 16;
 export type FenceCalls = {
   /** 排出去、还没等到答复的围栏轮 id,按排出的先后. */
   readonly pending: readonly string[];
+  /** id → 排出去那一刻所在的页面会话;答复回来时用它判这轮续聊归谁. */
+  readonly sessions: Readonly<Record<string, string | null>>;
 };
 
 export function newFenceCalls(): FenceCalls {
-  return { pending: [] };
+  return { pending: [], sessions: {} };
 }
 
-/** 排出一条围栏轮的 `call`:把 id 记上,等它的答复回来认领. */
-export function expectResult(calls: FenceCalls, id: string): FenceCalls {
+/** 排出一条围栏轮的 `call`:把 id 与当时的会话记上,等它的答复回来认领. */
+export function expectResult(
+  calls: FenceCalls,
+  id: string,
+  session: string | null = null,
+): FenceCalls {
   const pending = [...calls.pending, id];
   const overflow = pending.length - MAX_PENDING_CALLS;
-  return { pending: overflow > 0 ? pending.slice(overflow) : pending };
+  const kept = overflow > 0 ? pending.slice(overflow) : pending;
+  // 只给还在名单上的 id 留会话:挤掉的那些不会再有答复.
+  const sessions: Record<string, string | null> = {};
+  for (const keptId of kept) {
+    sessions[keptId] = keptId === id ? session : (calls.sessions[keptId] ?? null);
+  }
+  return { pending: kept, sessions };
 }
 
-/** 认领一条 `result` 的结论:名单(收下就划掉那个 id)+ 认不认这条. */
+/** 认领一条 `result` 的结论:名单(收下就划掉那个 id)+ 认不认这条 + 它归属的会话. */
 export type ClaimedResult = {
   readonly calls: FenceCalls;
   /** false = 不是我们排出去那一轮(或已经收过了),调用方丢掉它,别排进续聊. */
   readonly accepted: boolean;
+  /** 排出这一轮时所在的页面会话(`accepted` 为 false 时是 null). */
+  readonly session: string | null;
 };
 
 export function claimResult(calls: FenceCalls, id: string): ClaimedResult {
-  if (!calls.pending.includes(id)) return { calls, accepted: false };
-  return { calls: { pending: calls.pending.filter((kept) => kept !== id) }, accepted: true };
+  if (!calls.pending.includes(id)) return { calls, accepted: false, session: null };
+  const sessions = { ...calls.sessions };
+  const session = sessions[id] ?? null;
+  delete sessions[id];
+  return {
+    calls: { pending: calls.pending.filter((kept) => kept !== id), sessions },
+    accepted: true,
+    session,
+  };
 }

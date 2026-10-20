@@ -228,6 +228,22 @@ describe("换会话:轮数归零且待发作废(AC④)", () => {
     expect(released.effects).toEqual([{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
   });
 
+  it("结果带着发起那一轮的会话:回来时人已在 B, 也按 A 记,放行照样作废", () => {
+    let run = decide(turnOn(true), { type: "session", key: "s1" }).state;
+    run = decide(run, { type: "session", key: "s2" }).state;
+    const queued = decide(run, { type: "result", payload: PAYLOAD, session: "s1" });
+    expect(queued.state.queuedSession).toBe("s1");
+
+    const released = decide(queued.state, {
+      type: "released",
+      message: CONTINUATION_MARKER,
+      now: 1_000,
+      session: "s2",
+    });
+    expect(released.state.queued).toBeNull();
+    expect(released.effects).toEqual([{ kind: "log", note: "换会话了,还没放行的续聊作废" }]);
+  });
+
   it("放行时会话已经认不出(null):同样作废(URL 已经不在会话页上)", () => {
     const queued = decide(decide(turnOn(true), { type: "session", key: "s1" }).state, {
       type: "result",

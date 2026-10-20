@@ -102,8 +102,13 @@ export type SettleOutcome =
   | { readonly thrown: unknown };
 
 export type RunEvent =
-  /** 中继回灌的结果到达(总开关关着、载荷不可注入时不入队). */
-  | { readonly type: "result"; readonly payload: ReplyPayload }
+  /**
+   * 中继回灌的结果到达(总开关关着、载荷不可注入时不入队).
+   *
+   * `session` 是**排出这一轮时**所在的页面会话(认不出传 null,不知道就缺省):工具调用
+   * 可能跑很久,结果回来时人可能已经切到别的会话,续聊仍然归发起那一轮.
+   */
+  | { readonly type: "result"; readonly payload: ReplyPayload; readonly session?: string | null }
   /**
    * 出站窗口放行了这一条:武装与发送的走向在这一刻定(放行才武装).
    *
@@ -157,7 +162,7 @@ function step(
 }
 
 /** 结果到达:入队不武装--放行那一刻才武装(早武装会把用户自己在发的消息顶掉). */
-function onResult(state: RunState, payload: ReplyPayload): RunDecision {
+function onResult(state: RunState, payload: ReplyPayload, session?: string | null): RunDecision {
   if (!state.enabled) return step(state, []);
   if (!isInjectableReply(payload)) {
     return step(state, [{ kind: "log", note: "中继没问成,失败不进对话流" }]);
@@ -181,7 +186,8 @@ function onResult(state: RunState, payload: ReplyPayload): RunDecision {
       ...state,
       rounds: verdict.next,
       queued: buildContinuation(payload),
-      queuedSession: state.session,
+      // 归发起那一轮,不按结果回来那一刻的页面算.
+      queuedSession: session !== undefined ? session : state.session,
     },
     effects,
   );
@@ -327,7 +333,7 @@ function onToggle(state: RunState, speak: boolean, enabled: boolean): RunDecisio
 export function decide(state: RunState, event: RunEvent): RunDecision {
   switch (event.type) {
     case "result":
-      return onResult(state, event.payload);
+      return onResult(state, event.payload, event.session);
     case "released":
       return onReleased(state, event.message, event.now, event.session);
     case "sending":

@@ -311,7 +311,8 @@ export default defineContentScript({
       if (!run.enabled) return;
       // 换了页面会话 = 换了条任务:轮数归零、待发的那条作废,判据在 `run.ts` 的
       // `session` 裁决里(同 key 它自己不动).
-      dispatch({ type: "session", key: pageSessionIdOf(location.href) });
+      const session = pageSessionIdOf(location.href);
+      dispatch({ type: "session", key: session });
       const calls = detectToolCalls(raw);
       // **围栏之外的话**一律报给协调者:有围栏时围栏转网关,围栏以外那些别的话不能被吞掉.
       // 回灌自己(首行是 `agent:`)不算:那是桥送回去的,再报就成了回声.
@@ -322,7 +323,7 @@ export default defineContentScript({
       if (calls.length > 0) {
         const id = nextMessageId("send");
         console.log(`[dsb] 认出 ${calls.length} 块 send 围栏(${id}),交给中继`);
-        fenceCalls = expectResult(fenceCalls, id);
+        fenceCalls = expectResult(fenceCalls, id, session);
         window.postMessage(callMessage(id, calls), "*");
         pendingAsk = false;
         return;
@@ -468,7 +469,7 @@ export default defineContentScript({
           console.log(`[dsb] 收到一条不是我们那轮的 result(${chain.id}),丢掉`);
           return;
         }
-        dispatch({ type: "result", payload: chain.payload });
+        dispatch({ type: "result", payload: chain.payload, session: claimed.session });
         return;
       }
       if (chain?.kind === "tools") {

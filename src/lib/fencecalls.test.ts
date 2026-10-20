@@ -25,6 +25,11 @@ describe("在途围栏轮的 id 名册", () => {
     expect(claimResult(first.calls, "send-1").accepted).toBe(false);
   });
 
+  it("认领时把排出那一轮所在的会话一起还回来", () => {
+    const calls = expectResult(newFenceCalls(), "send-1", "s1");
+    expect(claimResult(calls, "send-1").session).toBe("s1");
+  });
+
   it("空名单上来的任何答复都不认", () => {
     expect(claimResult(newFenceCalls(), "send-1").accepted).toBe(false);
   });
