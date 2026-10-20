@@ -76,6 +76,99 @@ flowchart TD
 | 7 -> 8           | 中继/健康失败也是失败痕的事件来源                 |
 | 9 -.-> 1,2,3,6,7 | 截图/帧要对上这些域的真实状态, 状态不出现就补不了 |
 
+## 页面动作层
+
+全 34 个动作都在域 3. 下面按读/写/后台/消息/发送/等待分组, 标出 #119 真机点过的动作和
+仍未点的动作. 外部只画当前代码真的调用这些动作的域: 1/4/6 的续聊/催办/`send.page`,
+以及 2 的发送闸与限速.
+
+```mermaid
+flowchart TB
+  D1["1 开启与续聊"]
+  D2["2 发言闸与发送限速"]
+  D4["4 本地工作工具"]
+  D6["6 看门狗"]
+
+  subgraph READ["读: 不改页面"]
+    STATE["page.state [读]"]
+    CHATS["chats.list [读]"]
+    MSGS["messages.list [读]"]
+    MSGL["messages.last [读]"]
+    CREAD["composer.read [读]"]
+    TGET["think.get [读]"]
+    SGET["search.get [读]"]
+    BGET["button.get [读]"]
+    SBGET["sidebar.get [读]"]
+  end
+
+  subgraph WRITE["写: 改页面状态"]
+    CTYPE["composer.type [点]"]
+    CCLEAR["composer.clear [点]"]
+    TSET["think.set [点]"]
+    SSET["search.set [点]"]
+    SBSET["sidebar.set [点]"]
+    CNEW["chat.new [点]"]
+    CSWITCH["chat.switch [点]"]
+  end
+
+  subgraph BG["后台: target=null"]
+    TABS["tabs.list [后台]"]
+    TGET2["toggle.get [后台]"]
+    TSET2["toggle.set [后台]"]
+    SGET2["storage.get [后台]"]
+    SSET2["storage.set [后台]"]
+    SREM["storage.remove [后台]"]
+  end
+
+  subgraph MSG["消息/代码控件"]
+    MCOPY["message.copy [点]"]
+    MLIKE["message.like [未点]"]
+    MDISLIKE["message.dislike [未点]"]
+    MREAD["message.read [未点]"]
+    MSHARE["message.share [未点]"]
+    CCOPY["code.copy [点]"]
+    CDOWN["code.download [未点]"]
+  end
+
+  subgraph SEND["发送"]
+    BCLICK["button.click [未点]"]
+    SENTER["send.enter [未点]"]
+    MRETRY["message.retry [未点]"]
+  end
+
+  subgraph WAIT["等待"]
+    WFENCE["wait.fence [未点]"]
+    WREPLY["wait.reply [未点]"]
+  end
+
+  D1 --> CTYPE
+  D1 --> SENTER
+  D4 --> CTYPE
+  D4 --> SENTER
+  D6 --> CREAD
+  D6 --> CTYPE
+  D6 --> SENTER
+  D6 --> BGET
+  D2 --> SENTER
+  D2 --> BCLICK
+  D2 --> MRETRY
+
+  CHATS --> CSWITCH
+  CTYPE --> SENTER
+  BGET --> BCLICK
+  CTYPE -.-> CREAD
+  TSET -.-> TGET
+  SSET -.-> SGET
+  SBSET -.-> SBGET
+```
+
+读法:
+
+- `[点]` = #119 真机点过; `[未点]` = #112 仍缺的真机点击; `[读]` / `[后台]` = 只读或
+  target=null, 不在点击矩阵里.
+- 实线 = 调用/先后; 虚线 = 读回对拍 (`*.set` 后用 `*.get` 认页面有没有照做).
+- `D5 said/ask` 不直接调用页面动作, 它与消息工具栏共用位置, 域级边仍是 5 -> 3.
+
 ## 开图顺序
 
 1. 第一批: **3** 与 **8** (根, 可并行).
