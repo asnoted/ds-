@@ -1,7 +1,0 @@
-# pnpm 11+ 的构建脚本审批表（取代 onlyBuiltDependencies）。
-#
-# 留这份文件是为了让它**始终有效**：一旦 `allowBuilds` 的值还是占位文本
-# `set this to true or false`，pnpm 下次 `pnpm add` 重写时会把整份文件删掉（实测；
-# 占位值如此，缺键也如此）。有包需要审批时 pnpm 会在这里写占位值，
-# 把对应包改成 true / false 再提交即可。
-allowBuilds: {}

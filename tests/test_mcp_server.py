@@ -454,10 +454,10 @@ def test_a_body_that_cannot_be_read_closes_the_connection(service: McpService) -
 
 
 def test_build_tools_lists_the_work_tools_and_said_tools(tmp_path: Path) -> None:
-    """``build_tools`` 把五件工作工具挂上,``said_*`` 仍在最后(撞名时自家说了算)."""
+    """``build_tools`` 把工作工具挂上,``said_*`` 仍在最后(撞名时自家说了算)."""
     service = McpService(build_tools(Gateway({}), SaidLog(), tmp_path))
     names = service.tool_names
-    for name in ("ls", "read", "grep", "write", "edit"):
+    for name in ("glob", "read", "grep", "write", "edit"):
         assert name in names, names
     assert names.index("said_add") > names.index("read")
     assert not {"shell", "bash", "sh", "exec", "run"} & set(names)
@@ -466,7 +466,7 @@ def test_build_tools_lists_the_work_tools_and_said_tools(tmp_path: Path) -> None
 def test_work_tools_are_described_in_the_catalog(tmp_path: Path) -> None:
     service = McpService(build_tools(Gateway({}), SaidLog(), tmp_path))
     tools = result_of(call(service, 1, "tools/list"))["tools"]
-    work = [tool for tool in tools if tool["name"] in {"ls", "read", "grep", "write", "edit"}]
+    work = [tool for tool in tools if tool["name"] in {"glob", "read", "grep", "write", "edit"}]
     assert len(work) == 5
     assert all("[工作目录]" in tool["description"] for tool in work)
 
@@ -496,7 +496,10 @@ def test_a_work_tool_round_trips_over_the_service(tmp_path: Path) -> None:
             "tools/call",
             {
                 "name": "edit",
-                "arguments": {"path": "a/b.txt", "old_string": "你好", "new_string": "再见"},
+                "arguments": {
+                    "path": "a/b.txt",
+                    "edits": [{"old": "你好", "new": "再见"}],
+                },
             },
         )
     )

@@ -1,4 +1,4 @@
-"""工作工具:路径沙箱,五件行为,截断与上限,``.git`` 护栏,各错码(旧 0009)."""
+"""工作工具:路径沙箱,重做后的 glob/read/write/edit 行为,截断与上限,``.git`` 护栏,各错码."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from dsb.work import (
     ERROR_BAD_REGEX,
     ERROR_EDIT_NO_MATCH,
     ERROR_EDIT_NOT_UNIQUE,
+    ERROR_EXISTS,
     ERROR_HINT,
     ERROR_IO_FAILED,
-    ERROR_NOT_A_DIRECTORY,
     ERROR_NOT_A_FILE,
     ERROR_NOT_FOUND,
     ERROR_OUT_OF_ROOT,
@@ -30,8 +30,8 @@ from dsb.work import (
     WorkError,
     cap_result,
     edit_text,
+    glob_tree,
     grep_tree,
-    list_dir,
     protected_git,
     read_text,
     resolve_in_root,
@@ -96,7 +96,7 @@ def test_an_empty_path_is_bad_path(tmp_path: Path) -> None:
 
 def test_a_path_that_cannot_be_encoded_is_bad_path(tmp_path: Path) -> None:
     # 与正文同一条来路:JSON 里的孤立代理字符.路径落不成 UTF-8 时 resolve() 抛的是
-    # UnicodeEncodeError--它漏出这层就是"内部错"加一笔 tool-broke(五件工具都过这儿).
+    # UnicodeEncodeError--它漏出这层就是"内部错"加一笔 tool-broke(工作工具都过这儿).
     with pytest.raises(WorkError) as exc:
         resolve_in_root(tmp_path, "a\ud800b.txt")
     assert code_of(exc) == ERROR_BAD_PATH
@@ -110,58 +110,78 @@ def test_a_path_with_a_nul_byte_is_bad_path(tmp_path: Path) -> None:
     assert code_of(exc) == ERROR_BAD_PATH
 
 
-# ---- list_dir ----
+# ---- glob_tree ----
 
 
-def test_list_dir_sorts_and_marks_directories(tmp_path: Path) -> None:
+def test_glob_lists_direct_children_and_marks_directories(tmp_path: Path) -> None:
     (tmp_path / "sub").mkdir()
     (tmp_path / "b.txt").write_text("b", encoding="utf-8")
     (tmp_path / "a.txt").write_text("a", encoding="utf-8")
-    assert list_dir(tmp_path, ".") == "a.txt\nb.txt\nsub/"
+    assert glob_tree(tmp_path, "*") == "a.txt\nb.txt\nsub/"
 
 
-def test_list_dir_of_an_empty_directory_says_so(tmp_path: Path) -> None:
-    assert list_dir(tmp_path) == "(空)"
+def test_glob_of_an_empty_directory_says_no_match(tmp_path: Path) -> None:
+    assert glob_tree(tmp_path, "*") == "(无匹配)"
 
 
-def test_list_dir_missing_is_not_found(tmp_path: Path) -> None:
+def test_glob_matches_recursively(tmp_path: Path) -> None:
+    (tmp_path / "src" / "deep").mkdir(parents=True)
+    (tmp_path / "src" / "a.ts").write_text("a", encoding="utf-8")
+    (tmp_path / "src" / "deep" / "b.ts").write_text("b", encoding="utf-8")
+    (tmp_path / "x.py").write_text("x", encoding="utf-8")
+    assert glob_tree(tmp_path, "**/*.ts") == "src/a.ts\nsrc/deep/b.ts"
+
+
+def test_glob_skips_dot_git_contents(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("x", encoding="utf-8")
+    (tmp_path / "ok.txt").write_text("x", encoding="utf-8")
+    assert glob_tree(tmp_path, "**/*") == "ok.txt"
+
+
+def test_glob_does_not_follow_symlink_directories(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("别碰", encoding="utf-8")
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    out = glob_tree(root, "**/*")
+    assert out == "link/"
+    assert "secret.txt" not in out
+
+
+@pytest.mark.parametrize("pattern", ["", "   ", "../x", "/etc/passwd", "a/../b", "a\x00b"])
+def test_glob_pattern_must_be_relative_inside_the_root(tmp_path: Path, pattern: str) -> None:
     with pytest.raises(WorkError) as exc:
-        list_dir(tmp_path, "nope")
-    assert code_of(exc) == ERROR_NOT_FOUND
+        glob_tree(tmp_path, pattern)
+    assert code_of(exc) == ERROR_BAD_PATH
 
 
-def test_list_dir_on_a_file_is_not_a_directory(tmp_path: Path) -> None:
-    (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+def test_glob_missing_root_is_bad_path(tmp_path: Path) -> None:
     with pytest.raises(WorkError) as exc:
-        list_dir(tmp_path, "f.txt")
-    assert code_of(exc) == ERROR_NOT_A_DIRECTORY
+        glob_tree(tmp_path / "nope", "*")
+    assert code_of(exc) == ERROR_BAD_PATH
 
 
-def test_list_dir_truncates_at_the_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("dsb.work.WORK_LIST_LIMIT", 2)
+def test_glob_truncates_at_the_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("dsb.work.WORK_GLOB_LIMIT", 2)
     for name in ("a", "b", "c"):
         (tmp_path / name).write_text(name, encoding="utf-8")
-    listing = list_dir(tmp_path)
+    listing = glob_tree(tmp_path, "*")
     assert listing.splitlines() == ["a", "b", "...(已截断,共 3 项)"]
 
 
-def test_list_dir_refuses_out_of_root(tmp_path: Path) -> None:
-    root = tmp_path / "root"
-    root.mkdir()
-    with pytest.raises(WorkError) as exc:
-        list_dir(root, "..")
-    assert code_of(exc) == ERROR_OUT_OF_ROOT
-
-
-def test_list_dir_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_glob_caps_the_whole_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """件数上限每维都不超时,整条仍可能很大:总量闸按整行砍,并在末行说怎么续."""
     monkeypatch.setattr("dsb.work.WORK_RESULT_CHARS", 100)
     for index in range(20):
         (tmp_path / f"{index:05d}").write_text("x", encoding="utf-8")
-    result = list_dir(tmp_path)
+    result = glob_tree(tmp_path, "*")
     rows = result.splitlines()
-    assert rows[:9] == [f"{index:05d}" for index in range(9)]
-    assert rows[-1] == "...(整条超 100 字,已截断:给了前 9 行 / 共 20 行;换个更小的目录再列)"
+    assert rows[0] == "00000"
+    assert rows[-1].startswith("...(整条超 100 字,已截断")
+    assert "收窄 pattern" in rows[-1]
     assert len(result) <= 100
 
 
@@ -381,20 +401,45 @@ def test_write_creates_parents_and_reports_bytes(tmp_path: Path) -> None:
     assert (tmp_path / "a" / "b" / "c.txt").read_text(encoding="utf-8") == "你好"
 
 
-def test_write_overwrites(tmp_path: Path) -> None:
+def test_write_refuses_an_existing_file_without_overwrite(tmp_path: Path) -> None:
+    (tmp_path / "f.txt").write_text("旧", encoding="utf-8")
+    with pytest.raises(WorkError) as exc:
+        write_text(tmp_path, "f.txt", "新")
+    assert code_of(exc) == ERROR_EXISTS
+    assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "旧"
+
+
+def test_write_overwrites_only_when_asked(tmp_path: Path) -> None:
     write_text(tmp_path, "f.txt", "旧")
-    write_text(tmp_path, "f.txt", "新")
+    write_text(tmp_path, "f.txt", "新", overwrite=True)
     assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "新"
 
 
 def test_write_of_text_that_cannot_be_encoded_leaves_the_old_file_alone(tmp_path: Path) -> None:
-    # JSON 里的孤立代理字符(模型写坏的 \ud800)落不成 UTF-8,而 write_text 是
-    # 先截断再编码:不先挡一道,原文件会被掏成 0 字节,报出去的却只是"内部错".
+    # JSON 里的孤立代理字符(模型写坏的 \ud800)落不成 UTF-8.即使允许覆盖,也要在
+    # 动旧文件之前挡住;临时文件 + replace 让失败路径没有截断窗口.
     (tmp_path / "f.txt").write_text("原样", encoding="utf-8")
     with pytest.raises(WorkError) as exc:
-        write_text(tmp_path, "f.txt", "a\ud800b")
+        write_text(tmp_path, "f.txt", "a\ud800b", overwrite=True)
     assert code_of(exc) == ERROR_IO_FAILED
     assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "原样"
+
+
+def test_write_replace_failure_leaves_the_old_file_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "f.txt"
+    target.write_text("原样", encoding="utf-8")
+
+    def fail(_src: str, _dst: str) -> None:
+        raise OSError("replace 失败")
+
+    monkeypatch.setattr("dsb.work.os.replace", fail)
+    with pytest.raises(WorkError) as exc:
+        write_text(tmp_path, "f.txt", "新", overwrite=True)
+    assert code_of(exc) == ERROR_IO_FAILED
+    assert target.read_text(encoding="utf-8") == "原样"
+    assert [item.name for item in tmp_path.iterdir()] == ["f.txt"]
 
 
 def test_write_onto_a_directory_is_not_a_file(tmp_path: Path) -> None:
@@ -445,15 +490,41 @@ def test_write_refuses_out_of_root(tmp_path: Path) -> None:
 
 def test_edit_replaces_a_unique_match(tmp_path: Path) -> None:
     (tmp_path / "f.txt").write_text("alpha beta", encoding="utf-8")
-    assert edit_text(tmp_path, "f.txt", "beta", "gamma") == 1
+    assert edit_text(tmp_path, "f.txt", [{"old": "beta", "new": "gamma"}]) == 1
     assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "alpha gamma"
+
+
+def test_edit_applies_multiple_edits_in_order(tmp_path: Path) -> None:
+    (tmp_path / "f.txt").write_text("alpha beta gamma", encoding="utf-8")
+    assert (
+        edit_text(
+            tmp_path,
+            "f.txt",
+            [{"old": "alpha", "new": "A"}, {"old": "gamma", "new": "G"}],
+        )
+        == 2
+    )
+    assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "A beta G"
+
+
+def test_edit_is_all_or_nothing(tmp_path: Path) -> None:
+    target = tmp_path / "f.txt"
+    target.write_text("alpha beta", encoding="utf-8")
+    with pytest.raises(WorkError) as exc:
+        edit_text(
+            tmp_path,
+            "f.txt",
+            [{"old": "alpha", "new": "A"}, {"old": "nope", "new": "N"}],
+        )
+    assert code_of(exc) == ERROR_EDIT_NO_MATCH
+    assert target.read_text(encoding="utf-8") == "alpha beta"
 
 
 def test_edit_with_text_that_cannot_be_encoded_leaves_the_file_alone(tmp_path: Path) -> None:
     # 同上一条:替换后的正文要能落成 UTF-8 才动文件,不然掏空的原文件就是唯一剩下的东西.
     (tmp_path / "f.txt").write_text("alpha beta", encoding="utf-8")
     with pytest.raises(WorkError) as exc:
-        edit_text(tmp_path, "f.txt", "beta", "b\ud800")
+        edit_text(tmp_path, "f.txt", [{"old": "beta", "new": "b\ud800"}])
     assert code_of(exc) == ERROR_IO_FAILED
     assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "alpha beta"
 
@@ -462,7 +533,7 @@ def test_edit_without_a_match_leaves_the_file_alone(tmp_path: Path) -> None:
     target = tmp_path / "f.txt"
     target.write_text("alpha", encoding="utf-8")
     with pytest.raises(WorkError) as exc:
-        edit_text(tmp_path, "f.txt", "nope", "x")
+        edit_text(tmp_path, "f.txt", [{"old": "nope", "new": "x"}])
     assert code_of(exc) == ERROR_EDIT_NO_MATCH
     assert target.read_text(encoding="utf-8") == "alpha"
 
@@ -471,7 +542,7 @@ def test_edit_with_multiple_matches_leaves_the_file_alone(tmp_path: Path) -> Non
     target = tmp_path / "f.txt"
     target.write_text("x x", encoding="utf-8")
     with pytest.raises(WorkError) as exc:
-        edit_text(tmp_path, "f.txt", "x", "y")
+        edit_text(tmp_path, "f.txt", [{"old": "x", "new": "y"}])
     assert code_of(exc) == ERROR_EDIT_NOT_UNIQUE
     assert target.read_text(encoding="utf-8") == "x x"
 
@@ -479,7 +550,7 @@ def test_edit_with_multiple_matches_leaves_the_file_alone(tmp_path: Path) -> Non
 def test_edit_with_an_empty_old_string_is_no_match(tmp_path: Path) -> None:
     (tmp_path / "f.txt").write_text("abc", encoding="utf-8")
     with pytest.raises(WorkError) as exc:
-        edit_text(tmp_path, "f.txt", "", "x")
+        edit_text(tmp_path, "f.txt", [{"old": "", "new": "x"}])
     assert code_of(exc) == ERROR_EDIT_NO_MATCH
 
 
@@ -487,13 +558,13 @@ def test_edit_on_a_directory_is_not_a_file(tmp_path: Path) -> None:
     """指着目录说"改这里"要回 not-a-file: 落到 io-failed 就把"路径不对"说成了"改坏了"."""
     (tmp_path / "d").mkdir()
     with pytest.raises(WorkError) as exc:
-        edit_text(tmp_path, "d", "a", "b")
+        edit_text(tmp_path, "d", [{"old": "a", "new": "b"}])
     assert code_of(exc) == ERROR_NOT_A_FILE
 
 
 def test_edit_missing_file_is_not_found(tmp_path: Path) -> None:
     with pytest.raises(WorkError) as exc:
-        edit_text(tmp_path, "nope.txt", "a", "b")
+        edit_text(tmp_path, "nope.txt", [{"old": "a", "new": "b"}])
     assert code_of(exc) == ERROR_NOT_FOUND
 
 
@@ -502,7 +573,7 @@ def test_edit_inside_dot_git_is_protected(tmp_path: Path) -> None:
     target = tmp_path / ".git" / "config"
     target.write_text("原样", encoding="utf-8")
     with pytest.raises(WorkError) as exc:
-        edit_text(tmp_path, ".git/config", "原样", "改过")
+        edit_text(tmp_path, ".git/config", [{"old": "原样", "new": "改过"}])
     assert code_of(exc) == ERROR_PROTECTED
     assert target.read_text(encoding="utf-8") == "原样"
 
@@ -792,7 +863,7 @@ def tool_by_name(root: Path, name: str) -> Any:
 
 def test_work_tools_are_exactly_the_five_and_no_shell(tmp_path: Path) -> None:
     names = [tool.name for tool in work_tools(tmp_path)]
-    assert names == ["ls", "read", "grep", "write", "edit"]
+    assert names == ["glob", "read", "grep", "write", "edit"]
     assert not {"shell", "bash", "sh", "exec", "run"} & set(names)
 
 
@@ -830,7 +901,24 @@ def test_grep_tool_reports_a_pattern_that_blew_up(
     assert "缩小范围" in payload["text"]
 
 
-def test_handlers_round_trip_through_the_tools(tmp_path: Path) -> None:
+def test_read_text_streams_the_file_instead_of_calling_path_read_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """读一页不该把整文件拉进内存;这里用 ``Path.read_text`` 当探针."""
+    target = tmp_path / "f.txt"
+    target.write_text("a\nb\n", encoding="utf-8")
+    original = Path.read_text
+
+    def guarded(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self.resolve() == target.resolve():
+            raise AssertionError("read_text loaded the whole file")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded)
+    assert read_text(tmp_path, "f.txt") == "1: a\n2: b\n(文件读完:共 2 行)"
+
+
+def test_handler_round_trips_through_the_tools(tmp_path: Path) -> None:
     tools = {tool.name: tool for tool in work_tools(tmp_path)}
     payload, failed = tools["write"].handler({"path": "a/b.txt", "content": "你好"})
     assert failed is False and "已写入" in payload["text"]
@@ -838,11 +926,11 @@ def test_handlers_round_trip_through_the_tools(tmp_path: Path) -> None:
     payload, failed = tools["read"].handler({"path": "a/b.txt"})
     assert (payload["text"], failed) == ("1: 你好\n(文件读完:共 1 行)", False)
 
-    payload, failed = tools["ls"].handler({"path": "a"})
-    assert (payload["text"], failed) == ("b.txt", False)
+    payload, failed = tools["glob"].handler({"pattern": "a/*"})
+    assert (payload["text"], failed) == ("a/b.txt", False)
 
     payload, failed = tools["edit"].handler(
-        {"path": "a/b.txt", "old_string": "你好", "new_string": "再见"}
+        {"path": "a/b.txt", "edits": [{"old": "你好", "new": "再见"}]}
     )
     assert (payload["text"], failed) == ("已替换 1 处:a/b.txt", False)
     assert (tmp_path / "a" / "b.txt").read_text(encoding="utf-8") == "再见"
@@ -865,6 +953,26 @@ def test_handler_protected_write_is_a_failure(tmp_path: Path) -> None:
     assert payload["text"].startswith(ERROR_PROTECTED)
 
 
+def test_handler_write_needs_an_explicit_overwrite(tmp_path: Path) -> None:
+    (tmp_path / "f.txt").write_text("旧", encoding="utf-8")
+    payload, failed = tool_by_name(tmp_path, "write").handler({"path": "f.txt", "content": "新"})
+    assert failed is True
+    assert payload["text"].startswith(ERROR_EXISTS)
+    assert (tmp_path / "f.txt").read_text(encoding="utf-8") == "旧"
+
+
+def test_handler_edit_needs_a_nonempty_edits_array(tmp_path: Path) -> None:
+    tools = tool_by_name(tmp_path, "edit").handler
+    for arguments in (
+        {"path": "f.txt"},
+        {"path": "f.txt", "edits": []},
+        {"path": "f.txt", "edits": "old"},
+    ):
+        payload, failed = tools(arguments)
+        assert failed is True
+        assert payload["text"].startswith(ERROR_BAD_PATH)
+
+
 def test_handler_missing_arguments_are_bad_path(tmp_path: Path) -> None:
     tools = {tool.name: tool for tool in work_tools(tmp_path)}
     for name, arguments in (
@@ -883,14 +991,15 @@ def test_handler_grep_pattern_must_be_a_string(tmp_path: Path) -> None:
     assert payload["text"].startswith(ERROR_BAD_REGEX)
 
 
-def test_ls_accepts_a_missing_path(tmp_path: Path) -> None:
+def test_glob_handler_requires_a_non_empty_pattern(tmp_path: Path) -> None:
     (tmp_path / "f.txt").write_text("x", encoding="utf-8")
-    payload, failed = tool_by_name(tmp_path, "ls").handler({})
-    assert (payload["text"], failed) == ("f.txt", False)
+    payload, failed = tool_by_name(tmp_path, "glob").handler({})
+    assert failed is True
+    assert payload["text"].startswith(ERROR_BAD_PATH)
 
 
 def test_arguments_type_is_a_mapping(tmp_path: Path) -> None:
     """处理器只认 ``Mapping``(与 :data:`dsb.mcp.ToolHandler` 一致)."""
-    handler = tool_by_name(tmp_path, "ls").handler
-    arguments: Mapping[str, Any] = {"path": "."}
+    handler = tool_by_name(tmp_path, "glob").handler
+    arguments: Mapping[str, Any] = {"pattern": "*"}
     assert handler(arguments)[1] is False

@@ -1,4 +1,4 @@
-"""五件工作工具的权限规则(#89):读写两侧对 ``mcp.json`` / ``.env`` 系一律拒绝.
+"""工作工具的权限规则(#89):读写两侧对 ``mcp.json`` / ``.env`` 系一律拒绝.
 
 判定逻辑本身在 :mod:`dsb.permissions`(那里测通配语义),这里是**接线**的对拍:每个
 失败点都走真实文件,真实 ``resolve()``.
@@ -16,8 +16,9 @@ from dsb.work import (
     ERROR_PROTECTED,
     WorkError,
     edit_text,
+    glob_tree,
     grep_tree,
-    list_dir,
+    is_protected,
     read_text,
     write_text,
 )
@@ -75,7 +76,8 @@ class Test写侧:
     @pytest.mark.parametrize("path", ["mcp.json", ".env", ".env.local", "sub/dir/.env"])
     def test_拒写_mcp_json_与_env_系(self, root: Path, path: str) -> None:
         assert code_of(lambda: write_text(root, path, "x")) == ERROR_PROTECTED
-        assert code_of(lambda: edit_text(root, path, "TOKEN", "y")) == ERROR_PROTECTED
+        edit = lambda: edit_text(root, path, [{"old": "TOKEN", "new": "y"}])  # noqa: E731
+        assert code_of(edit) == ERROR_PROTECTED
 
     def test_拒写时文件原样未动(self, root: Path) -> None:
         before = (root / "mcp.json").read_text(encoding="utf-8")
@@ -220,10 +222,20 @@ class TestGrep:
         assert SECRET not in out
 
 
-class TestLs:
+class TestGlob:
     def test_仍如实列出名字(self, root: Path) -> None:
-        out = list_dir(root)
+        out = glob_tree(root, "*")
         assert "mcp.json" in out
         assert ".env" in out
-        assert "mcp.json" in out
-        assert ".env" in out
+
+
+def test_protection_check_fails_closed_when_it_cannot_resolve(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """解析不了生效配置时按受保护收场,不能把 mcp.json / .env 放出去."""
+
+    def boom(_root: Path) -> tuple[Path, ...]:
+        raise OSError("配置路径坏了")
+
+    monkeypatch.setattr("dsb.work._effective_sensitive", boom)
+    assert is_protected(root, root / "README.md", "read") is True

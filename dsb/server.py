@@ -85,8 +85,8 @@ def build_tools(gateway: Gateway, said: SaidLog, root: Path) -> list[Tool]:
     """注册给 :class:`dsb.mcp.McpService` 的全表:网关汇总的 + 自家工作工具 + 说给人听的两件.
 
     顺序即话语权:``said_*`` 在后,撞名时自家说了算(网关内部的撞名在
-    :meth:`dsb.gateway.Gateway.tools` 里已经记过一笔 ``tool-clash``).五件工作工具是裸名
-    (``ls`` / ``read`` / ...),第三方工具名恒带 ``<server>_`` 前缀,正常不会相撞.
+    :meth:`dsb.gateway.Gateway.tools` 里已经记过一笔 ``tool-clash``).工作工具是裸名
+    (``glob`` / ``read`` / ...),第三方工具名恒带 ``<server>_`` 前缀,正常不会相撞.
     """
     return [*gateway.tools(), *work_tools(root), *said_tools(said)]
 

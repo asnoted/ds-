@@ -1,14 +1,15 @@
-"""dsb 内建的工作工具:``ls`` / ``read`` / ``grep`` / ``write`` / ``edit``(旧 0009).
+"""dsb 内建的工作工具:``glob`` / ``read`` / ``grep`` / ``write`` / ``edit``.
 
 给网页模型一套能动手改本机文件的工作面,但**不给 SHELL**--任意命令天生能越界,与
-'全部动作钉死在一个工作文件夹 root 内'冲突.五件工具全部把路径 ``resolve()`` 后判在
-root 内,越界当场拒绝(``out-of-root``),相对路径以 root 为基准.
+'全部动作钉死在一个工作文件夹 root 内'冲突.工作工具全部把路径 ``resolve()`` 后判在
+root 内,越界当场拒绝(``out-of-root``),相对路径以 root 为基准.``grep`` 的接口与实现
+保持原样;其余四件是这一轮重做的面.
 
 root 内还有一层**权限规则**(:mod:`dsb.permissions`,#89):按操作分类,最后一条命中的
 规则赢,默认拒读写 ``mcp.json`` 与 ``.env`` 系文件,写/改另拒 ``.git/``.原先 ``.git/``
 是写死在代码里的一条特例,现已收进那张表.
 
-模块自己一件事:路径沙箱,权限规则与五件工具的**纯逻辑**(对 ``root: Path`` 的函数),
+模块自己一件事:路径沙箱,权限规则与工作工具的**纯逻辑**(对 ``root: Path`` 的函数),
 与 MCP 信封解耦.``work_tools(root)`` 是唯一的薄适配层,把纯函数包成
 ``参数 -> (载荷, 这算不算失败)`` 的处理器(见 :class:`dsb.mcp.Tool`).dsb 只在
 :func:`dsb.server.build_tools` 一处挂上它--将来换实现或挪进程,只动那一行.
@@ -24,11 +25,13 @@ import multiprocessing
 import os
 import re
 import signal
+import stat
+import tempfile
 import threading
 import unicodedata
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
-from pathlib import Path
+from contextlib import contextmanager, suppress
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from dsb.config import env_value, find_dotenv, repo_root, resolve_config_path
@@ -38,7 +41,7 @@ from dsb.permissions import Operation, is_allowed
 #: 工作文件夹 root 的配置键:进程环境变量优先,其次 ``.env``,最后本仓根.
 WORK_ROOT_ENV_KEY = "DSB_WORK_ROOT"
 
-#: 上限(保护对话与前程):read 的翻页与单次预算,ls 列数,grep 命中数,单行长度,
+#: 上限(保护对话与前程):read 的翻页与单次预算,glob 列数,grep 命中数,单行长度,
 #: 参与 grep 的文件大小.
 #:
 #: ``read`` 从"超长就砍一刀"改成**按行翻页**(旧 0010):原来一次 ``read`` 交出 16000 字,
@@ -51,7 +54,7 @@ WORK_READ_LINE_LIMIT = 500
 #: 那道 ``MAX_RESULT_CHARS`` 同数,所以一页能原样进对话--多一个字都会被扩展从尾巴上截掉,
 #: 而截掉的正是脚注(``offset`` 的唯一来源).
 WORK_READ_BYTES = 16_000
-WORK_LIST_LIMIT = 500
+WORK_GLOB_LIMIT = 500
 WORK_GREP_LIMIT = 200
 #: ``grep`` 的墙钟(旧 0010):模式是模型给的,嵌套量词叠上一行几十万字能指数回溯.请求跑在
 #: ``ThreadingHTTPServer`` 的工作线程里,而 ``re`` 的指数回溯**攥着 GIL**--留在本进程里跑,
@@ -81,7 +84,7 @@ ERROR_PROTECTED = "protected-path"
 ERROR_BAD_RANGE = "bad-range"
 ERROR_NOT_FOUND = "not-found"
 ERROR_NOT_A_FILE = "not-a-file"
-ERROR_NOT_A_DIRECTORY = "not-a-directory"
+ERROR_EXISTS = "file-exists"
 ERROR_EDIT_NO_MATCH = "edit-no-match"
 ERROR_EDIT_NOT_UNIQUE = "edit-not-unique"
 ERROR_BAD_REGEX = "bad-regex"
@@ -89,7 +92,7 @@ ERROR_PATTERN_TOO_SLOW = "pattern-too-slow"
 ERROR_IO_FAILED = "io-failed"
 
 #: 失败回执被 :func:`cap_result` 砍掉之后给模型的那一步:``detail`` 是参数回显, 变小 =
-#: 把参数改短(与 ``ls`` / ``grep`` 各自的 hint 同一条口径).
+#: 把参数改短(与 glob / grep 各自的 hint 同一条口径).
 ERROR_HINT = "把参数改短或改窄再试"
 
 #: 只写不读的护栏:``<root>/.git`` 之下(含 ``.git`` 本身,worktree 里 ``.git`` 是文件也算).
@@ -219,7 +222,8 @@ def is_protected(root: Path, resolved: Path, operation: Operation) -> bool:
         target = resolved.resolve()
         sensitive_paths = _effective_sensitive(root)
     except (OSError, RuntimeError):
-        return False
+        # 判不了就按"受保护"收场:这里放行等于在解析失败时把 mcp.json / .env 让出去.
+        return True
     for sensitive in sensitive_paths:
         # 还没落盘的文件没有 inode 可比,按规范化后的路径比:macOS 上换个大小写 / Unicode
         # 写法(NFC 与 NFD)打开 / 写的是同一份,只折大小写仍会漏.
@@ -339,25 +343,56 @@ def _result_note(kept: int, total: int, hint: str) -> str:
     return f"...(整条超 {WORK_RESULT_CHARS} 字,已截断:给了前 {kept} 行 / 共 {total} 行;{hint})"
 
 
-def list_dir(root: Path, raw: str = ".") -> str:
-    """``ls``:直接子项,目录带尾 ``/``,按名排序;超 :data:`WORK_LIST_LIMIT` 截断."""
+def _clean_glob_pattern(pattern: str) -> str:
+    """``glob`` 的模式只收 root 内的相对路径:反斜杠折成 ``/``,拒绝绝对路径与 ``..``."""
+    if not isinstance(pattern, str) or not pattern.strip():
+        raise WorkError(ERROR_BAD_PATH, detail="pattern 不能为空")
+    normalized = pattern.replace("\\", "/").rstrip("/")
+    if not normalized:
+        raise WorkError(ERROR_BAD_PATH, detail="pattern 不能为空")
+    if normalized.startswith("/") or any(part == ".." for part in normalized.split("/")):
+        raise WorkError(ERROR_BAD_PATH, detail="pattern 必须是工作目录内的相对路径")
+    if "\x00" in normalized:
+        raise WorkError(ERROR_BAD_PATH, detail="pattern 不能含 NUL")
+    return normalized
+
+
+def glob_tree(root: Path, pattern: str) -> str:
+    """``glob``:按模式找 root 内的路径,目录带尾 ``/``,排序;跳过 ``.git``.
+
+    模式用 ``/`` 分隔,支持 ``*`` / ``?`` / ``**``(与 :class:`pathlib.PurePath` 的
+    ``full_match`` 同一套语义).只列名字,不读内容,所以受保护的 ``mcp.json`` / ``.env``
+    仍会出现;内容侧由 :func:`read_text` / :func:`grep_tree` 各自拦.
+    """
     _require_root(root)
-    path = resolve_in_root(root, raw)
-    if not path.exists():
-        raise WorkError(ERROR_NOT_FOUND, detail=f"路径 {raw}")
-    if not path.is_dir():
-        raise WorkError(ERROR_NOT_A_DIRECTORY, detail=f"路径 {raw}")
+    cleaned = _clean_glob_pattern(pattern)
     try:
-        entries = sorted(path.iterdir(), key=lambda item: item.name)
-    except OSError as exc:
-        raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
-    lines = [
-        f"{entry.name}/" if entry.is_dir() else entry.name for entry in entries[:WORK_LIST_LIMIT]
-    ]
-    if len(entries) > WORK_LIST_LIMIT:
-        lines.append(f"...(已截断,共 {len(entries)} 项)")
-    listing = "\n".join(lines) if lines else "(空)"
-    return cap_result(listing, "换个更小的目录再列")
+        root_real = root.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise WorkError(ERROR_BAD_PATH, detail=f"工作目录:{root}") from exc
+    matches: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root_real, followlinks=False):
+        # .git 整个不列:它不是工作内容,grep 也不进去.
+        dirnames[:] = sorted(name for name in dirnames if name != PROTECTED_DIR)
+        base = Path(dirpath).relative_to(root_real).as_posix()
+        prefix = "" if base == "." else f"{base}/"
+        for name in dirnames:
+            relative = f"{prefix}{name}"
+            if PurePosixPath(relative).full_match(cleaned):
+                matches.append(f"{relative}/")
+        for name in filenames:
+            if name == PROTECTED_DIR:
+                continue
+            relative = f"{prefix}{name}"
+            if PurePosixPath(relative).full_match(cleaned):
+                matches.append(relative)
+    matches.sort()
+    total = len(matches)
+    shown = matches[:WORK_GLOB_LIMIT]
+    if total > WORK_GLOB_LIMIT:
+        shown.append(f"...(已截断,共 {total} 项)")
+    listing = "\n".join(shown) if shown else "(无匹配)"
+    return cap_result(listing, "收窄 pattern,或换一个更具体的目录")
 
 
 def splitlines(content: str) -> list[str]:
@@ -389,8 +424,18 @@ def render_page(lines: list[str], offset: int, limit: int) -> str:
     total = len(lines)
     if offset > total:
         return f"(空:offset={offset} 超出文件总行数 {total})"
+    window = lines[offset - 1 : offset - 1 + limit]
+    return render_window(window, offset, limit, total)
+
+
+def render_window(window: list[str], offset: int, limit: int, total: int) -> str:
+    """``render_page`` 的流式版本:只给这一页的窗口,总行数单独传.
+
+    ``read_text`` 不再把整文件读进内存:边扫边数总行数,只留窗口里的那几行.
+    """
+    if offset > total:
+        return f"(空:offset={offset} 超出文件总行数 {total})"
     start = offset
-    window = lines[start - 1 : start - 1 + limit]
     out: list[str] = []
     used = 0
     capped = False
@@ -458,18 +503,48 @@ def read_text(root: Path, raw: str, offset: int = 1, limit: int | None = None) -
     if page > WORK_READ_MAX_LINES:
         page = WORK_READ_MAX_LINES
     try:
-        content = path.read_text(encoding="utf-8")
+        window: list[str] = []
+        total = 0
+        with path.open("r", encoding="utf-8") as handle:
+            for number, line in enumerate(handle, start=1):
+                total = number
+                if offset <= number < offset + page:
+                    # 与旧 ``Path.read_text`` 的口径一致:universal newline 已把 CRLF 折成 LF,
+                    # 这里只摘掉行尾那一个换行;splitlines 的"末尾换行不多算一行"由流式行数自然保住.
+                    window.append(line.removesuffix("\n"))
     except UnicodeDecodeError as exc:
         raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}(不是文本)") from exc
     except OSError as exc:
         raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
-    return render_page(splitlines(content), offset, page)
+    return render_window(window, offset, page, total)
 
 
-def write_text(root: Path, raw: str, content: str) -> int:
-    """``write``:在 root 内新建/覆盖文件(自动建父目录),回写入的字节数.
+def _write_atomic(path: Path, data: bytes, raw: str) -> None:
+    """同目录临时文件 + ``os.replace``:写失败时旧文件还在,不会先被截断."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
+        handle_fd, temp_name = tempfile.mkstemp(prefix=".dsb-write-", dir=path.parent)
+        try:
+            with os.fdopen(handle_fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temp_name, mode)
+            os.replace(temp_name, path)
+        except BaseException:
+            with suppress(OSError):
+                os.unlink(temp_name)
+            raise
+    except OSError as exc:
+        raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
 
-    受 ``edit`` 那份规则表管(#89):``.git/`` 与 ``mcp.json`` / ``.env`` 系文件写不进去.
+
+def write_text(root: Path, raw: str, content: str, overwrite: bool = False) -> int:
+    """``write``:在 root 内新建文件;已存在时只有 ``overwrite=True`` 才覆盖.
+
+    自动建父目录,原子替换:编码或写入失败时旧文件原样不动.受 ``edit`` 那份规则表管
+    (#89):``.git/`` 与 ``mcp.json`` / ``.env`` 系文件写不进去.
     """
     _require_root(root)
     path = resolve_in_root(root, raw)
@@ -477,24 +552,24 @@ def write_text(root: Path, raw: str, content: str) -> int:
         raise WorkError(ERROR_PROTECTED, detail=f"路径 {raw}")
     if path.is_dir():
         raise WorkError(ERROR_NOT_A_FILE, detail=f"路径 {raw}")
+    if path.exists() and not overwrite:
+        raise WorkError(ERROR_EXISTS, detail=f"路径 {raw}(要覆盖请传 overwrite=true)")
     try:
         data = content.encode("utf-8")
     except UnicodeEncodeError as exc:
         # 孤立代理字符(JSON 里的 \ud800:模型偶尔写坏的半个 emoji 转义)落不成 UTF-8.
-        # 必须先挡在 open 之前--write_text 是"先按 w 截断,再编码",空了才抛.
+        # 必须先挡在写之前--否则临时文件写不进,再 replace 也没用.
         raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}(正文不是文本)") from exc
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-    except OSError as exc:
-        raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
+    _write_atomic(path, data, raw)
     return len(data)
 
 
-def edit_text(root: Path, raw: str, old_string: str, new_string: str) -> int:
-    """``edit``:``old_string`` 在文件里**唯一命中**才替换;0 处/多处回错码且文件不变.
+def edit_text(root: Path, raw: str, edits: list[Mapping[str, Any]]) -> int:
+    """``edit``:按顺序应用多段 ``{old, new}``,每段都必须唯一命中;**全成或全不改**.
 
-    受 ``edit`` 那份规则表管(#89),与 :func:`write_text` 同一份表.
+    受 ``edit`` 那份规则表管(#89),与 :func:`write_text` 同一份表.写入同样原子,失败时
+    磁盘上的文件保持调用前的样子.每段 ``old`` 在当前正文里必须恰好出现一次;前面几段
+    的替换会改变后面几段看到的正文.
     """
     _require_root(root)
     path = resolve_in_root(root, raw)
@@ -504,28 +579,37 @@ def edit_text(root: Path, raw: str, old_string: str, new_string: str) -> int:
         raise WorkError(ERROR_NOT_FOUND, detail=f"路径 {raw}")
     if not path.is_file():
         raise WorkError(ERROR_NOT_A_FILE, detail=f"路径 {raw}")
-    if not old_string:
-        raise WorkError(ERROR_EDIT_NO_MATCH, detail="old_string 为空")
+    if not isinstance(edits, list) or not edits:
+        raise WorkError(ERROR_EDIT_NO_MATCH, detail="edits 为空")
     try:
         content = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
-    count = content.count(old_string)
-    if count == 0:
-        raise WorkError(ERROR_EDIT_NO_MATCH, detail=f"路径 {raw}")
-    if count > 1:
-        raise WorkError(ERROR_EDIT_NOT_UNIQUE, detail=f"路径 {raw}(命中 {count} 处)")
-    updated = content.replace(old_string, new_string, 1)
+    updated = content
+    for index, edit in enumerate(edits, start=1):
+        if not isinstance(edit, Mapping):
+            raise WorkError(ERROR_BAD_PATH, detail=f"第 {index} 段不是对象")
+        old = edit.get("old")
+        new = edit.get("new")
+        if not isinstance(old, str) or not isinstance(new, str):
+            raise WorkError(ERROR_BAD_PATH, detail=f"第 {index} 段缺少 old/new 字符串")
+        if not old:
+            raise WorkError(ERROR_EDIT_NO_MATCH, detail=f"第 {index} 段 old 为空")
+        count = updated.count(old)
+        if count == 0:
+            raise WorkError(ERROR_EDIT_NO_MATCH, detail=f"路径 {raw}(第 {index} 段未命中)")
+        if count > 1:
+            raise WorkError(
+                ERROR_EDIT_NOT_UNIQUE, detail=f"路径 {raw}(第 {index} 段命中 {count} 处)"
+            )
+        updated = updated.replace(old, new, 1)
     try:
-        updated.encode("utf-8")
+        data = updated.encode("utf-8")
     except UnicodeEncodeError as exc:
-        # 同上:替换后的正文落不成 UTF-8 时别动文件(截断在前,编码在后).
+        # 同上:替换后的正文落不成 UTF-8 时别动文件.
         raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}(正文不是文本)") from exc
-    try:
-        path.write_text(updated, encoding="utf-8")
-    except OSError as exc:
-        raise WorkError(ERROR_IO_FAILED, detail=f"路径 {raw}") from exc
-    return 1
+    _write_atomic(path, data, raw)
+    return len(edits)
 
 
 def _walk_files(base: Path) -> Iterator[Path]:
@@ -714,11 +798,13 @@ def _bad_path(detail: str) -> tuple[Payload, bool]:
 
 
 def work_tools(root: Path) -> list[Tool]:
-    """五件工作工具:把纯函数包成 :class:`dsb.mcp.Tool`(相对路径以 ``root`` 为基准)."""
+    """工作工具面:把纯函数包成 :class:`dsb.mcp.Tool`(相对路径以 ``root`` 为基准)."""
 
-    def ls_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
-        raw = arguments.get("path")
-        return _wrap(lambda: list_dir(root, "." if raw is None else raw))
+    def glob_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
+        pattern = arguments.get("pattern")
+        if not isinstance(pattern, str) or not pattern.strip():
+            return _bad_path("缺少 pattern")
+        return _wrap(lambda: glob_tree(root, pattern))
 
     def read_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
         raw = arguments.get("path")
@@ -742,33 +828,39 @@ def work_tools(root: Path) -> list[Tool]:
     def write_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
         raw = arguments.get("path")
         content = arguments.get("content")
+        overwrite = arguments.get("overwrite", False)
         if not isinstance(raw, str) or not raw.strip():
             return _bad_path("缺少 path")
         if not isinstance(content, str):
             return _bad_path("content 必须是字符串")
-        return _wrap(lambda: f"已写入 {write_text(root, raw, content)} 字节:{raw}")
+        if not isinstance(overwrite, bool):
+            return _bad_path("overwrite 必须是布尔值")
+        return _wrap(lambda: f"已写入 {write_text(root, raw, content, overwrite)} 字节:{raw}")
 
     def edit_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
         raw = arguments.get("path")
-        old = arguments.get("old_string")
-        new = arguments.get("new_string")
+        edits = arguments.get("edits")
         if not isinstance(raw, str) or not raw.strip():
             return _bad_path("缺少 path")
-        if not isinstance(old, str):
-            return _bad_path("缺少 old_string")
-        if not isinstance(new, str):
-            return _bad_path("缺少 new_string")
-        return _wrap(lambda: f"已替换 {edit_text(root, raw, old, new)} 处:{raw}")
+        if not isinstance(edits, list) or not edits:
+            return _bad_path("edits 必须是非空数组")
+        return _wrap(lambda: f"已替换 {edit_text(root, raw, edits)} 处:{raw}")
 
     return [
         Tool(
-            name="ls",
-            description="[工作目录] 列出工作目录内某个目录的直接子项(目录带尾 /).path 缺省 ..",
+            name="glob",
+            description=(
+                "[工作目录] 按模式找文件/目录,回 相对路径(目录带尾 /). "
+                "模式相对工作目录,用 / 分隔,支持 *、?、**;例如 `**/*.ts`."
+            ),
             input_schema={
                 "type": "object",
-                "properties": {"path": {"type": "string"}},
+                "properties": {
+                    "pattern": {"type": "string", "description": "例如 **/*.ts 或 src/*."}
+                },
+                "required": ["pattern"],
             },
-            handler=ls_handler,
+            handler=glob_handler,
         ),
         Tool(
             name="read",
@@ -817,12 +909,19 @@ def work_tools(root: Path) -> list[Tool]:
         ),
         Tool(
             name="write",
-            description="[工作目录] 在工作目录内新建/覆盖文件(自动建父目录),回写入字节数.",
+            description=(
+                "[工作目录] 在工作目录内新建文件(自动建父目录),回写入字节数. "
+                "已存在时不覆盖;要整文件覆盖请显式传 overwrite=true. 写入是原子的."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
                     "content": {"type": "string"},
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "文件已存在时是否覆盖;默认 false.",
+                    },
                 },
                 "required": ["path", "content"],
             },
@@ -830,15 +929,27 @@ def work_tools(root: Path) -> list[Tool]:
         ),
         Tool(
             name="edit",
-            description="[工作目录] 在工作目录内把唯一命中的 old_string 替换成 new_string.",
+            description=(
+                "[工作目录] 按顺序应用多段 old→new 替换;每段 old 必须唯一命中, "
+                "任一段失败则整个文件不改. 成功回替换段数."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "old_string": {"type": "string"},
-                    "new_string": {"type": "string"},
+                    "edits": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old": {"type": "string"},
+                                "new": {"type": "string"},
+                            },
+                            "required": ["old", "new"],
+                        },
+                    },
                 },
-                "required": ["path", "old_string", "new_string"],
+                "required": ["path", "edits"],
             },
             handler=edit_handler,
         ),
@@ -851,8 +962,8 @@ __all__ = [
     "ERROR_BAD_REGEX",
     "ERROR_EDIT_NO_MATCH",
     "ERROR_EDIT_NOT_UNIQUE",
+    "ERROR_EXISTS",
     "ERROR_IO_FAILED",
-    "ERROR_NOT_A_DIRECTORY",
     "ERROR_NOT_A_FILE",
     "ERROR_NOT_FOUND",
     "ERROR_OUT_OF_ROOT",
@@ -864,10 +975,10 @@ __all__ = [
     "is_protected",
     "root_relative",
     "WORK_FILE_LIMIT",
+    "WORK_GLOB_LIMIT",
     "WORK_GREP_DEADLINE",
     "WORK_GREP_LIMIT",
     "WORK_LINE_LIMIT",
-    "WORK_LIST_LIMIT",
     "WORK_READ_BYTES",
     "WORK_READ_LINE_LIMIT",
     "WORK_READ_MAX_LINES",
@@ -875,11 +986,12 @@ __all__ = [
     "WORK_ROOT_ENV_KEY",
     "WorkError",
     "edit_text",
+    "glob_tree",
     "grep_tree",
-    "list_dir",
     "protected_git",
     "read_text",
     "render_page",
+    "render_window",
     "resolve_in_root",
     "splitlines",
     "resolve_work_root",
