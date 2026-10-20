@@ -530,6 +530,51 @@ function laggingScreens(
   return { view, settle };
 }
 
+/** 同 `laggingScreens`,但从对话底部(浏览器打开对话的默认位置)起步,滚动位置本身立刻生效. */
+function laggingFromBottom(
+  screens: string[][],
+  lag: number,
+): {
+  view: ListViewport;
+  settle: () => Promise<void>;
+} {
+  const HEIGHT = 100;
+  const host = document.createElement("div");
+  let at = screens.length - 1;
+  let painted = at;
+  let target = at;
+  let left = 0;
+  const paint = (): void => {
+    host.innerHTML = screens[painted]?.join("") ?? "";
+  };
+  paint();
+  const view: ListViewport = {
+    get scrollTop(): number {
+      return at * HEIGHT;
+    },
+    set scrollTop(value: number) {
+      at = Math.min(screens.length - 1, Math.max(0, Math.round(value / HEIGHT)));
+      target = at;
+      left = lag;
+    },
+    get clientHeight(): number {
+      return HEIGHT;
+    },
+    get scrollHeight(): number {
+      return screens.length * HEIGHT;
+    },
+    querySelectorAll: (selector: string) => host.querySelectorAll(selector),
+  };
+  const settle = async (): Promise<void> => {
+    if (left > 0) left -= 1;
+    if (left === 0 && target !== painted) {
+      painted = target;
+      paint();
+    }
+  };
+  return { view, settle };
+}
+
 const settleNow = async (): Promise<void> => {};
 
 describe("虚拟列表:只有视口里的行在 DOM", () => {
@@ -677,6 +722,15 @@ describe("虚拟列表:只有视口里的行在 DOM", () => {
     view.scrollTop = HEIGHT;
     await settleUntilMounted(view, was, settle);
     expect(frames).toBe(1);
+  });
+
+  it("从底部跳回顶上要等首屏挂上:一帧不够会把底下的先收进来、顶上的漏掉", async () => {
+    const screens = [[keyRow(1, "user")], [keyRow(2, "assistant")], [keyRow(3, "user")]];
+    const { view, settle } = laggingFromBottom(screens, 3);
+
+    const messages = await readMessages(view, settle);
+
+    expect(messages.map((message) => message.text)).toEqual(["第 1 问", "第 2 答", "第 3 问"]);
   });
 
   it("scrollTop 写在真的会滚那一层--两层都能滚时用最里层", async () => {

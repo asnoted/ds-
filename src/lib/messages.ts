@@ -550,8 +550,10 @@ export async function readMessages(
   const seen = new Map<string, Message>();
   const home = view.scrollTop;
   try {
+    const homeKeys = keysOf(view);
     view.scrollTop = 0;
-    if (home !== 0) await settle();
+    // 跳回顶上也要等首屏真的挂上:只等一帧会先扫到还没卸的底部行,接着直接跳去第二屏,首屏就丢了.
+    if (home !== 0) await settleUntilMounted(view, homeKeys, settle);
     for (let guard = 0; guard < MAX_SWEEPS; guard += 1) {
       sweepInto(view, seen);
       if (view.scrollTop + view.clientHeight >= view.scrollHeight - 1) break;
