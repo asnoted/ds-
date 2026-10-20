@@ -185,6 +185,13 @@ def test_load_config_reads_mcp_servers_and_tolerates_the_missing(tmp_path: Path)
     assert load_config(broken) == {}
 
 
+def test_load_config_tolerates_a_non_utf8_config(tmp_path: Path) -> None:
+    # 配置里一个坏字节不该让整个网关起不来:当空表,留一笔 config-broke 就够了.
+    target = tmp_path / "mcp.json"
+    target.write_bytes(b'{"mcpServers": {"fs": {"command": ["x"]}}}\xff')
+    assert load_config(target) == {}
+
+
 def test_from_config_stops_started_servers_when_startup_is_interrupted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

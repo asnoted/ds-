@@ -94,7 +94,8 @@ def load_config(path: Path | None = None) -> dict[str, dict[str, Any]]:
         return {}
     try:
         data = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        # 坏编码与坏 JSON 一样只当没配:一个字节不该让整个网关起不来.
         log_event("config-broke", path=str(target), exc=exc)
         return {}
     if not isinstance(data, Mapping):
