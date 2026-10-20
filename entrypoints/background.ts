@@ -907,12 +907,15 @@ export default defineBackground(() => {
   /** 总开关变了就跟图标:关了即"关",开了先按可达摆,再探一次中继. */
   async function syncFromStorage(): Promise<void> {
     switchEpoch += 1; // 这一代之前的探活回话一律作废(关掉又打开也算)
+    const epoch = switchEpoch;
     const stored = await browser.storage.local.get([
       TOGGLE_STORAGE_KEY,
       FAILURE_LOG_STORAGE_KEY,
       ASKS_STORAGE_KEY,
       FAILURE_FRAME_STORAGE_KEY,
     ]);
+    // 读盘期间来了新的一代(关掉又打开):这份旧快照一个字都不许落,否则会把"关"盖回"开".
+    if (epoch !== switchEpoch) return;
     const enabled = readToggle(stored[TOGGLE_STORAGE_KEY]);
     failureLog = readFailureLog(stored[FAILURE_LOG_STORAGE_KEY]); // 留痕先上手,标题才拼得出历史
     pendingAsks = readPendingAsks(stored[ASKS_STORAGE_KEY]); // 等人回先上手,角标与悬停才拼得出
@@ -921,6 +924,7 @@ export default defineBackground(() => {
     failureFrames = pruneFailureFrames(loadedFrames, failureLog);
     if (failureFrames !== loadedFrames) persistFailureFrames();
     await syncHealthAlarm(enabled); // 排班先跟着开关走,图标再跟着探测结果走
+    if (epoch !== switchEpoch) return; // 等排班期间换了代:别拿旧开关值改状态
     if (!enabled) {
       state = "off";
       notice = null;
@@ -933,8 +937,10 @@ export default defineBackground(() => {
     state = "on-reachable";
     notice = null;
     await paintIcon();
+    if (epoch !== switchEpoch) return; // 画图标期间换了代:这一趟探活也不用发了
 
     const probe = await pingRelay();
+    if (epoch !== switchEpoch) return; // 回话落地时已经不是这一代:不改状态,不记账
     if (!probe.reachable) {
       if (state !== "on-reachable") return; // 等待期间开关被关掉了,别再翻红
       state = "on-unreachable";

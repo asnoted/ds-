@@ -52,6 +52,31 @@ def test_health_probe_drops_a_reply_from_before_the_switch_moved() -> None:
     assert text.find("switchEpoch += 1;", sync) > sync, "syncFromStorage 每跑一次要换代"
 
 
+def test_sync_from_storage_drops_a_reply_from_before_the_switch_moved() -> None:
+    """关掉又打开也是换了一代: 上一代的读盘 / 探活不许把新状态盖回去(2026-10-20).
+
+    只认 `state === "off"` 挡不住这一路: 旧的一趟在新的一趟又把开关打开之后才落地,
+    状态看着正常, 但它手里的开关值是上一代的. 读盘后与探活回话后都要对一代.
+    """
+    text = BACKGROUND.read_text(encoding="utf-8")
+    start = text.find("async function syncFromStorage(")
+    end = text.find("async function migrateLegacyStorage(", start)
+    assert start >= 0 and end > start, "background.ts 里找不到 syncFromStorage"
+    body = text[start:end]
+    epoch = body.find("const epoch = switchEpoch;")
+    read = body.find("await browser.storage.local.get(", epoch)
+    read_guard = body.find("if (epoch !== switchEpoch) return;", read)
+    alarm = body.find("await syncHealthAlarm(", read_guard)
+    alarm_guard = body.find("if (epoch !== switchEpoch) return;", alarm)
+    state_on = body.find('state = "on-reachable"', alarm_guard)
+    ping = body.find("await pingRelay()", state_on)
+    ping_guard = body.find("if (epoch !== switchEpoch) return;", ping)
+    record = body.find('recordFailure("health"', ping)
+    assert (
+        0 <= epoch < read < read_guard < alarm < alarm_guard < state_on < ping < ping_guard < record
+    ), "每一段 await 之后都要先认这一代, 再改状态或记账"
+
+
 def test_a_sweep_that_outlives_the_alarm_does_not_nudge_twice() -> None:
     """闹钟 30s 一拍, 带催办的一扫可能更久: 上一扫没完就跳过这一拍(2026-10-20)."""
     text = BACKGROUND.read_text(encoding="utf-8")
