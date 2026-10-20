@@ -106,6 +106,8 @@ export default defineContentScript({
     let sendPace: SendPace = newSendPace();
 
     const xhrTargets = new WeakMap<XMLHttpRequest, XhrTarget>();
+    /** send 那一刻页面所在的会话:回答等用户切走之后才回来的话,这一轮仍归它. */
+    const xhrSessions = new WeakMap<XMLHttpRequest, string | null>();
     const watchingXhrs = new WeakSet<XMLHttpRequest>();
 
     /** 取事件 → 调裁决(纯)→ 状态写回 → 照效果清单执行(副作用全在 perform 里). */
@@ -301,18 +303,21 @@ export default defineContentScript({
     /**
      * 检测:只从"发消息那条出站的响应体"里认围栏,认出就把围栏正文交出去.
      *
+     * `roundSession` 是**发出这条请求时**页面所在的会话:回答可能在用户切走之后才
+     * 读完,按读完那一刻的 URL 算会把这轮记到新会话头上(工具结果再回来就串会话了).
+     *
      * send 围栏(一段工具调用 JSON)照旧转给网关;ask 围栏(#26)**不转**--它是网页向人
      * 举手,交给隔离世界上报 background 挂"等人回".同一回答里两种
      * 围栏都排了以 send 为准(一次最多一块的口径);本轮没有任何围栏,
      * 而此前挂着 ask,说明对话继续了(人答了或模型自己往下走了),
      * "等人回"自己清掉.
      */
-    function detect(raw: string): void {
+    function detect(raw: string, roundSession: string | null): void {
       if (!run.enabled) return;
       // 换了页面会话 = 换了条任务:轮数归零、待发的那条作废,判据在 `run.ts` 的
-      // `session` 裁决里(同 key 它自己不动).
-      const session = pageSessionIdOf(location.href);
-      dispatch({ type: "session", key: session });
+      // `session` 裁决里(同 key 它自己不动). 这里看的是**此刻**的页面,不是发起那一轮.
+      const current = pageSessionIdOf(location.href);
+      dispatch({ type: "session", key: current });
       const calls = detectToolCalls(raw);
       // **围栏之外的话**一律报给协调者:有围栏时围栏转网关,围栏以外那些别的话不能被吞掉.
       // 回灌自己(首行是 `agent:`)不算:那是桥送回去的,再报就成了回声.
@@ -323,7 +328,7 @@ export default defineContentScript({
       if (calls.length > 0) {
         const id = nextMessageId("send");
         console.log(`[dsb] 认出 ${calls.length} 块 send 围栏(${id}),交给中继`);
-        fenceCalls = expectResult(fenceCalls, id, session);
+        fenceCalls = expectResult(fenceCalls, id, roundSession ?? current);
         window.postMessage(callMessage(id, calls), "*");
         pendingAsk = false;
         return;
@@ -354,12 +359,12 @@ export default defineContentScript({
     }
 
     /** 读响应体;读不出来就这轮不检测,不猜. */
-    async function watchResponse(response: Response): Promise<void> {
+    async function watchResponse(response: Response, roundSession: string | null): Promise<void> {
       try {
         const raw = await response.text();
         // 与"检测没跑"区分:跑没跑先有个数.
         console.log(`[dsb] 读到出站响应(${raw.length} 字)`);
-        detect(raw);
+        detect(raw, roundSession);
       } catch (error) {
         console.log("[dsb] 响应读不出来,这轮不检测", error);
       }
@@ -392,6 +397,8 @@ export default defineContentScript({
 
         const bodyText = init !== undefined && typeof init.body === "string" ? init.body : null;
         const nextBody = outgoing && bodyText !== null ? rewriteOutgoing(bodyText) : null;
+        // 这条请求是哪个会话发出的,就在这一刻定下:回答可能等用户切走之后才读完.
+        const roundSession = outgoing ? pageSessionIdOf(location.href) : null;
         const requestInit =
           nextBody !== null && init !== undefined ? { ...init, body: nextBody } : init;
 
@@ -399,7 +406,7 @@ export default defineContentScript({
         if (!outgoing) return request;
         return request.then((response) => {
           // 模型的回答只走这条路回来:克隆一份自己读,页面那一份照常流走.
-          void watchResponse(response.clone());
+          void watchResponse(response.clone(), roundSession);
           return response;
         });
       };
@@ -419,6 +426,7 @@ export default defineContentScript({
       XMLHttpRequest.prototype.send = function (
         body?: Document | XMLHttpRequestBodyInit | null,
       ): void {
+        xhrSessions.set(this, pageSessionIdOf(location.href));
         const target = xhrTargets.get(this);
         if (target === undefined) {
           originalSend.call(this, body);
@@ -433,7 +441,7 @@ export default defineContentScript({
             const latest = xhrTargets.get(this);
             if (latest === undefined || !isOutgoingChatRequest(latest.method, latest.url)) return;
             const raw = readXhrResponse(this);
-            if (raw !== null) detect(raw);
+            if (raw !== null) detect(raw, xhrSessions.get(this) ?? null);
           });
         }
         if (typeof body === "string") {
