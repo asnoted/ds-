@@ -21,22 +21,32 @@
 域 3 的安全子集点击矩阵读数见 [evidence/controls.md](../evidence/controls.md) 的
 "真机点击矩阵"节; 有副作用的动作仍未点, 缺口保留.
 
-## 依赖图
+## 全依赖图
 
-实线 = 运行时/行为依赖. 虚线 = 证据依赖: 9 的真机状态/帧需要这些域先有可复现的现场.
+一张图看全: 9 个域 + 域 3 的 34 个动作. 34 个动作收在 6 个组节点里, 避免 43 个节点把图
+拉散; 每个动作名都在组节点里, 逐动作的边看下面的动作边表. 组节点按读/写/后台/消息/发送/
+等待分组, 并标出 #119 的真机边界.
 
 ```mermaid
-flowchart TD
-  D3["3 页面动作与聊天读取"]
-  D8["8 MCP 网关"]
-  D2["2 发言闸与发送限速"]
-  D4["4 本地工作工具"]
-  D7["7 失败留痕与图标/现场帧"]
+flowchart TB
   D1["1 开启与续聊"]
+  D2["2 发言闸与发送限速"]
+  D3["3 页面动作与聊天读取 (34 动作)"]
+  D4["4 本地工作工具"]
   D5["5 said/ask"]
   D6["6 看门狗"]
+  D7["7 失败留痕与图标/现场帧"]
+  D8["8 MCP 网关"]
   D9["9 存证与真机探针"]
 
+  A_READ["读: 不改页面<br/>page.state [读]<br/>chats.list [读]<br/>messages.list [读]<br/>messages.last [读]<br/>composer.read [读]<br/>think.get [读]<br/>search.get [读]<br/>button.get [读]<br/>sidebar.get [读]"]
+  A_WRITE["写: 改页面状态<br/>composer.type [点]<br/>composer.clear [点]<br/>think.set [点]<br/>search.set [点]<br/>sidebar.set [点]<br/>chat.new [点]<br/>chat.switch [点]"]
+  A_BG["后台: target=null<br/>tabs.list [后台]<br/>toggle.get [后台]<br/>toggle.set [后台]<br/>storage.get [后台]<br/>storage.set [后台]<br/>storage.remove [后台]"]
+  A_MSG["消息/代码控件<br/>message.copy [点]<br/>message.like [未点]<br/>message.dislike [未点]<br/>message.read [未点]<br/>message.share [未点]<br/>code.copy [点]<br/>code.download [未点]"]
+  A_SEND["发送<br/>button.click [未点]<br/>send.enter [未点]<br/>message.retry [未点]"]
+  A_WAIT["等待<br/>wait.fence [未点]<br/>wait.reply [未点]"]
+
+  %% 域级依赖
   D2 --> D3
   D1 --> D2
   D1 --> D3
@@ -55,9 +65,38 @@ flowchart TD
   D9 -.-> D3
   D9 -.-> D6
   D9 -.-> D7
+
+  %% D3 -> 组是归属, 不是调用
+  D3 --> A_READ
+  D3 --> A_WRITE
+  D3 --> A_BG
+  D3 --> A_MSG
+  D3 --> A_SEND
+  D3 --> A_WAIT
+
+  %% 1/4/6 真正落到的动作组
+  D1 --> A_WRITE
+  D1 --> A_SEND
+  D4 --> A_WRITE
+  D4 --> A_SEND
+  D6 --> A_READ
+  D6 --> A_WRITE
+  D6 --> A_SEND
+
+  %% 2 管住发送组
+  D2 --> A_SEND
+
+  %% 组级先后与读回/退避
+  A_READ --> A_WRITE
+  A_READ --> A_SEND
+  A_READ -.-> A_MSG
+  A_WRITE --> A_SEND
 ```
 
 ## 边读法
+
+域级实线 = 运行时/行为依赖; 域级虚线 = 证据依赖: 9 的真机状态/帧需要这些域先有可复现的现场.
+动作级实线 = 调用/先后; 动作级虚线 = 读回对拍或退避探针.
 
 | 边               | 为什么                                            |
 | ---------------- | ------------------------------------------------- |
@@ -76,98 +115,34 @@ flowchart TD
 | 7 -> 8           | 中继/健康失败也是失败痕的事件来源                 |
 | 9 -.-> 1,2,3,6,7 | 截图/帧要对上这些域的真实状态, 状态不出现就补不了 |
 
-## 页面动作层
+### 组边
 
-全 34 个动作都在域 3. 下面按读/写/后台/消息/发送/等待分组, 标出 #119 真机点过的动作和
-仍未点的动作. 外部只画当前代码真的调用这些动作的域: 1/4/6 的续聊/催办/`send.page`,
-以及 2 的发送闸与限速.
+| 组边         | 聚合了什么                                            |
+| ------------ | ----------------------------------------------------- |
+| 读 -> 写     | `chats.list` -> `chat.switch`; `page.state` 退避探针  |
+| 读 -> 发送   | `button.get` -> `button.click`; `page.state` 退避探针 |
+| 读 -.-> 消息 | `page.state` 退避探针                                 |
+| 写 -> 发送   | `composer.type` -> `send.enter`                       |
 
-```mermaid
-flowchart TB
-  D1["1 开启与续聊"]
-  D2["2 发言闸与发送限速"]
-  D4["4 本地工作工具"]
-  D6["6 看门狗"]
+### 动作边
 
-  subgraph READ["读: 不改页面"]
-    STATE["page.state [读]"]
-    CHATS["chats.list [读]"]
-    MSGS["messages.list [读]"]
-    MSGL["messages.last [读]"]
-    CREAD["composer.read [读]"]
-    TGET["think.get [读]"]
-    SGET["search.get [读]"]
-    BGET["button.get [读]"]
-    SBGET["sidebar.get [读]"]
-  end
+| 边                                                   | 为什么                              |
+| ---------------------------------------------------- | ----------------------------------- |
+| 1/4/6 -> `composer.type` / `send.enter`              | 续聊落草稿或发送; 催办; `send.page` |
+| 6 -> `composer.read` / `button.get`                  | 催办前读草稿; 停下按钮先读再点      |
+| 2 -> `send.enter` / `button.click` / `message.retry` | 发送动作过 speak 闸与唯一限速       |
+| `chats.list` -> `chat.switch`                        | 先拿会话 id 再切                    |
+| `button.get` -> `button.click`                       | 先读按钮意图/状态再点               |
+| `composer.type` -> `send.enter`                      | 先落草稿再按发送                    |
+| `*.set` -.-> `*.get`                                 | 写完读回, 认页面有没有照做          |
+| `page.state` -.-> 写/消息/发送组                     | 退避闸先探账号处境, 再决定放不放行  |
 
-  subgraph WRITE["写: 改页面状态"]
-    CTYPE["composer.type [点]"]
-    CCLEAR["composer.clear [点]"]
-    TSET["think.set [点]"]
-    SSET["search.set [点]"]
-    SBSET["sidebar.set [点]"]
-    CNEW["chat.new [点]"]
-    CSWITCH["chat.switch [点]"]
-  end
-
-  subgraph BG["后台: target=null"]
-    TABS["tabs.list [后台]"]
-    TGET2["toggle.get [后台]"]
-    TSET2["toggle.set [后台]"]
-    SGET2["storage.get [后台]"]
-    SSET2["storage.set [后台]"]
-    SREM["storage.remove [后台]"]
-  end
-
-  subgraph MSG["消息/代码控件"]
-    MCOPY["message.copy [点]"]
-    MLIKE["message.like [未点]"]
-    MDISLIKE["message.dislike [未点]"]
-    MREAD["message.read [未点]"]
-    MSHARE["message.share [未点]"]
-    CCOPY["code.copy [点]"]
-    CDOWN["code.download [未点]"]
-  end
-
-  subgraph SEND["发送"]
-    BCLICK["button.click [未点]"]
-    SENTER["send.enter [未点]"]
-    MRETRY["message.retry [未点]"]
-  end
-
-  subgraph WAIT["等待"]
-    WFENCE["wait.fence [未点]"]
-    WREPLY["wait.reply [未点]"]
-  end
-
-  D1 --> CTYPE
-  D1 --> SENTER
-  D4 --> CTYPE
-  D4 --> SENTER
-  D6 --> CREAD
-  D6 --> CTYPE
-  D6 --> SENTER
-  D6 --> BGET
-  D2 --> SENTER
-  D2 --> BCLICK
-  D2 --> MRETRY
-
-  CHATS --> CSWITCH
-  CTYPE --> SENTER
-  BGET --> BCLICK
-  CTYPE -.-> CREAD
-  TSET -.-> TGET
-  SSET -.-> SGET
-  SBSET -.-> SBGET
-```
-
-读法:
+### 动作标记
 
 - `[点]` = #119 真机点过; `[未点]` = #112 仍缺的真机点击; `[读]` / `[后台]` = 只读或
   target=null, 不在点击矩阵里.
-- 实线 = 调用/先后; 虚线 = 读回对拍 (`*.set` 后用 `*.get` 认页面有没有照做).
 - `D5 said/ask` 不直接调用页面动作, 它与消息工具栏共用位置, 域级边仍是 5 -> 3.
+- `D3` 指向 6 个组是归属边, 不是调用; 组级箭头是聚合, 逐动作的先后与读回看上面的表.
 
 ## 开图顺序
 
