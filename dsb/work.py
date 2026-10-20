@@ -648,7 +648,7 @@ def _grep_scan(root: Path, pattern: str, raw: str) -> str:
     """真搜的那一趟(单独成函数,好让整个扫描躺在墙钟里)."""
     try:
         regex = re.compile(pattern)
-    except re.error as exc:
+    except (re.error, OverflowError) as exc:  # 超大的 {n} 抛 OverflowError,不是 re.error
         raise WorkError(ERROR_BAD_REGEX, detail=f"正则 {pattern!r}") from exc
     base = resolve_in_root(root, raw)
     if not base.exists():

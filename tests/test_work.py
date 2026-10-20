@@ -652,6 +652,14 @@ def test_grep_bad_regex_is_bad_regex(tmp_path: Path) -> None:
     assert code_of(exc) == ERROR_BAD_REGEX
 
 
+def test_grep_too_large_repetition_is_bad_regex(tmp_path: Path) -> None:
+    # re 对超大的 {n} 抛 OverflowError 而不是 re.error;不认它就在孩子那层
+    # 折成 io-failed,模型会以为文件系统坏了而不是模式写得太大.
+    with pytest.raises(WorkError) as exc:
+        grep_tree(tmp_path, "a{1000000000000}")
+    assert code_of(exc) == ERROR_BAD_REGEX
+
+
 def test_grep_gives_up_on_exponential_backtracking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
