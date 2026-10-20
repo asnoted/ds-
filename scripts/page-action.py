@@ -166,6 +166,9 @@ def draw_window_interval(spec: dict, rng=None) -> float:
 #: 页面控件存证(ADR-0006):真机按钮原件.CI 对拍管"存证 ↔ 回归用例",这里管"站点 ↔ 存证".
 EVIDENCE_FILE = REPO / "protocol" / "evidence" / "controls.json"
 
+#: 按钮的 PNG(ADR-0006 决定 2):只在**真机截图**时落,文件名就是存证 id.
+EVIDENCE_SHOTS = REPO / "protocol" / "evidence" / "shots"
+
 
 def pace(spec: str | None, *, no_pace: bool = False) -> None:
     """动手前随机等一下(默认开,`--no-pace` 关,`--pace MIN,MAX` 自定义).
@@ -1774,6 +1777,97 @@ def first_difference(saved: str, live: str, context: int = 60) -> str:
     )
 
 
+def shot_clip(rect: object) -> dict | None:
+    """把 `getBoundingClientRect` 的读数折成 CDP 的 clip;不是四个有限正数就 None.
+
+    CDP 的 clip 是 CSS 像素,宽高必须为正;`captureBeyondViewport=False` 时它是视口坐标,
+    所以调用方先 `scrollIntoView` 再取 rect. 负数坐标合法(元素贴边/被裁),只校验可算.
+    """
+    if not isinstance(rect, dict):
+        return None
+    values: list[float] = []
+    for key in ("x", "y", "w", "h"):
+        value = rect.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if not math.isfinite(value):
+            return None
+        values.append(float(value))
+    x, y, width, height = values
+    if width <= 0 or height <= 0:
+        return None
+    return {"x": x, "y": y, "width": width, "height": height, "scale": 1}
+
+
+def shot_rect_expr(outer_html: str) -> str:
+    """页面上找**逐字等于存证**的那一颗,滚进视口,回它的视口 rect.
+
+    按 `outerHTML` 找而不是另写选择器:选择器是定位判据,存证不是(ADR-0006 的边界);
+    这样也不会把"同一排另一颗"截进来. 找不到回 null,由调用方报"未截".
+
+    同一条存证可能对应多颗同形按钮(每条消息一套). 优先挑 CSS 上可见的那一颗;一颗都
+    不可见时(消息工具栏只在悬停时露出来)先挑第一颗,让它 `hover: true`,由调用方移一下
+    鼠标再截. 不能把 opacity:0 的那些直接截,那是空白图.
+    """
+    return (
+        "(() => {"
+        f"  const want = {json.dumps(outer_html, ensure_ascii=False)};"
+        "  const matches = [...document.querySelectorAll('*')].filter((node) => {"
+        "    if (node.outerHTML !== want) return false;"
+        "    const r = node.getBoundingClientRect();"
+        "    return r.width > 0 && r.height > 0;"
+        "  });"
+        "  const visible = matches.find((node) => {"
+        "    if (typeof node.checkVisibility !== 'function') return true;"
+        "    return node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });"
+        "  });"
+        "  const el = visible ?? matches[0];"
+        "  if (!el) return null;"
+        "  el.scrollIntoView({ block: 'center', inline: 'center' });"
+        "  const r = el.getBoundingClientRect();"
+        "  return { x: r.x, y: r.y, w: r.width, h: r.height, hover: !visible };"
+        "})()"
+    )
+
+
+def capture_evidence_shot(ws_url: str, entry: dict, out_dir: Path) -> tuple[Path | None, str]:
+    """给一条**当前态一致**的存证截一张 PNG;回(路径, 没截的原因)."""
+    live = unwrap(run(ws_url, entry["probe"]))
+    if live != entry["outerHTML"]:
+        return None, "当前态不符, 未截"
+    rect = unwrap(run(ws_url, shot_rect_expr(entry["outerHTML"])))
+    if isinstance(rect, dict) and rect.get("hover") is True:
+        # 悬停才露出来的按钮(消息工具栏):把鼠标移到它中心,等它显形再重新取 rect.
+        cdp(
+            ws_url,
+            "Input.dispatchMouseEvent",
+            {"type": "mouseMoved", "x": rect["x"] + rect["w"] / 2, "y": rect["y"] + rect["h"] / 2},
+        )
+        time.sleep(0.25)
+        rect = unwrap(run(ws_url, shot_rect_expr(entry["outerHTML"])))
+        if isinstance(rect, dict) and rect.get("hover") is True:
+            return None, "悬停后仍不可见, 未截"
+    clip = shot_clip(rect)
+    if clip is None:
+        return None, "页面上找不到这一颗或它不可见, 未截"
+    reply = cdp(
+        ws_url,
+        "Page.captureScreenshot",
+        {"format": "png", "clip": clip, "captureBeyondViewport": False},
+    )
+    result = reply.get("result") if isinstance(reply, dict) else None
+    data = result.get("data") if isinstance(result, dict) else None
+    if not isinstance(data, str) or not data:
+        return None, "CDP 没回截图数据, 未截"
+    payload = base64.b64decode(data)
+    if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None, "CDP 回的不是 PNG, 未存"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{entry['id']}.png"
+    path.write_bytes(payload)
+    return path, ""
+
+
 def reconcile_entry(entry: dict, live: object) -> tuple[str, str]:
     """一条存证对一次站点读数的结论:(状态, 说明).状态:一致 / 过时 / 未比.
 
@@ -1798,6 +1892,7 @@ def evidence(args: argparse.Namespace) -> int:
     """真机对账:存证里每条的 probe 在页面上读一遍,与留档 `outerHTML` 逐字比.
 
     只读渲染 DOM(`js` 同款),不 dispatch 事件,不点任何按钮.有'过时'退出码 1.
+    给了 `--shots` 才多写一步:把当前态一致的那一颗截成 PNG.
     """
     if not EVIDENCE_FILE.is_file():
         print(f"[evidence] 存证文件缺失:{EVIDENCE_FILE.relative_to(REPO)}", file=sys.stderr)
@@ -1810,7 +1905,8 @@ def evidence(args: argparse.Namespace) -> int:
             print(f"[evidence] 存证里没有:{', '.join(sorted(missing))}", file=sys.stderr)
             return 2
     tab = ensure_site_tab()
-    tally = {"一致": 0, "过时": 0, "未比": 0}
+    tally = {"一致": 0, "过时": 0, "未比": 0, "截图": 0}
+    shots = Path(args.shots) if args.shots else None
     for entry in entries:
         live = unwrap(run(tab["webSocketDebuggerUrl"], entry["probe"]))
         verdict, detail = reconcile_entry(entry, live)
@@ -1818,7 +1914,17 @@ def evidence(args: argparse.Namespace) -> int:
         print(f"[evidence] {entry['id']:<18} {verdict}({entry['capturedOn']} 留档)")
         if detail:
             print(f"    {detail}")
-    print(f"[evidence] 一致 {tally['一致']} / 未比 {tally['未比']} / 过时 {tally['过时']}")
+        if shots is not None and verdict == "一致":
+            path, why = capture_evidence_shot(tab["webSocketDebuggerUrl"], entry, shots)
+            if path is None:
+                print(f"    [截图] {why}")
+            else:
+                tally["截图"] += 1
+                print(f"    [截图] {path}")
+    summary = f"一致 {tally['一致']} / 未比 {tally['未比']} / 过时 {tally['过时']}"
+    if shots is not None:
+        summary += f" / 截图 {tally['截图']}"
+    print(f"[evidence] {summary}")
     return 1 if tally["过时"] else 0
 
 
@@ -1923,9 +2029,16 @@ def main() -> None:
     )
     off.add_argument("--wait", type=float, default=15.0, help="等写作框出现的秒数上限,默认 15")
     ev = sub.add_parser(
-        "evidence", help="存证对账:留档按钮原件 vs 站点当前那一颗逐字比(只读,ADR-0006)"
+        "evidence", help="存证对账:留档按钮原件 vs 站点当前那一颗逐字比(只读;--shots 另落 PNG)"
     )
     ev.add_argument("--id", action="append", help="只比这一条(可重复);默认全比")
+    ev.add_argument(
+        "--shots",
+        nargs="?",
+        const=str(EVIDENCE_SHOTS),
+        default=None,
+        help="另把当前态一致的那一颗截成 PNG(默认 protocol/evidence/shots);只截当前页/当前态",
+    )
     ax = sub.add_parser("ax", help="dump 无障碍树(role + 可访问名;只读,开发探针)")
     ax.add_argument("--grep", default="", help="只打印 role/name/value 命中该串的节点")
     ax.add_argument("--max", type=int, default=80, help="最多打印多少行,默认 80")

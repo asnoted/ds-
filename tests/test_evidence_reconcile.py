@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from conftest import load_page_action
@@ -75,3 +76,41 @@ def test_a_probe_error_saying_where_it_differed_would_be_a_false_report() -> Non
     live: dict[str, Any] = {"cdp-error": "TypeError: x is null", "raw": {}}
     _, detail = page_action.reconcile_entry(entry("<div class='a'>x</div>"), live)
     assert "字符" not in detail
+
+
+def test_shot_clip_takes_a_visible_element_rect() -> None:
+    """截图 clip 就是元素在视口里的 rect(CDP 用 CSS 像素,缩放固定 1)."""
+    page_action = load_page_action()
+    clip = page_action.shot_clip({"x": -12.5, "y": 30, "w": 34, "h": 34})
+    assert clip == {"x": -12.5, "y": 30.0, "width": 34.0, "height": 34.0, "scale": 1}
+
+
+def test_shot_clip_rejects_rects_that_cannot_be_captured() -> None:
+    """缺字段 / 非数 / 非有限 / 零宽高都不许发 `Page.captureScreenshot`: 那会回一张空图."""
+    page_action = load_page_action()
+    bad = [
+        None,
+        [],
+        {"x": 0, "y": 0, "w": 1},
+        {"x": "0", "y": 0, "w": 1, "h": 1},
+        {"x": True, "y": 0, "w": 1, "h": 1},
+        {"x": float("nan"), "y": 0, "w": 1, "h": 1},
+        {"x": float("inf"), "y": 0, "w": 1, "h": 1},
+        {"x": 0, "y": 0, "w": 0, "h": 1},
+        {"x": 0, "y": 0, "w": 1, "h": -1},
+    ]
+    for rect in bad:
+        assert page_action.shot_clip(rect) is None, rect
+
+
+def test_shot_rect_expression_embeds_the_evidence_verbatim() -> None:
+    """定位靠"逐字等于存证",不许另写选择器: 存证里的引号/换行必须原样进表达式."""
+    page_action = load_page_action()
+    html = '<div class="a">x\ny</div>'
+    expression = page_action.shot_rect_expr(html)
+    assert json.dumps(html, ensure_ascii=False) in expression
+    assert "document.querySelectorAll" in expression
+    assert "scrollIntoView" in expression
+    # 消息工具栏悬停才露出来; 表达式必须把"要不要先 hover"带回调用方.
+    assert "checkVisibility" in expression
+    assert "hover" in expression
