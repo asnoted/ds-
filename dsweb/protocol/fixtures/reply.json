@@ -1,0 +1,29 @@
+{
+  "description": "回灌对拍：agent → 页面，首行锚 agent: + TOON 载荷（多行正文走 tabular form，一行一条 row，不产生换行转义；组装只发生在扩展侧）。",
+  "cases": [
+    {
+      "name": "回灌成功载荷",
+      "payload": {
+        "status": "ok",
+        "answer": "入口在 dsb/server.py。"
+      },
+      "expectedMessage": "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py。"
+    },
+    {
+      "name": "回灌成功载荷含多行答案",
+      "payload": {
+        "status": "ok",
+        "answer": "第一行\n第二行"
+      },
+      "expectedMessage": "agent:\nstatus: ok\nanswer[2]{text}:\n  第一行\n  第二行"
+    },
+    {
+      "name": "回灌失败载荷",
+      "payload": {
+        "status": "error",
+        "error": "relay-unreachable"
+      },
+      "expectedMessage": "agent:\nstatus: error\nerror: relay-unreachable"
+    }
+  ]
+}
