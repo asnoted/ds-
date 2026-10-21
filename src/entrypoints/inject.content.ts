@@ -1,7 +1,7 @@
 import { defineContentScript } from "wxt/utils/define-content-script";
 
-import { detectAskQuestion, detectToolCalls, extractAssistantAnswer } from "../src/lib/answer";
-import { nextAskState } from "../src/lib/ask";
+import { detectAskQuestion, detectToolCalls, extractAssistantAnswer } from "../lib/answer";
+import { nextAskState } from "../lib/ask";
 import {
   askClearedMessage,
   askMessage,
@@ -14,27 +14,27 @@ import {
   saidMessage,
   sendNoteMessage,
   stopMessage,
-} from "../src/lib/channel";
-import { CONTINUATION_MARKER } from "../src/lib/continuation";
-import { type ContinuationFailure } from "../src/lib/continuationfail";
-import { claimResult, expectResult, newFenceCalls, type FenceCalls } from "../src/lib/fencecalls";
-import { enqueue, newGate, nextOpenAt, release, type Gate } from "../src/lib/gate";
+} from "../lib/channel";
+import { CONTINUATION_MARKER } from "../lib/continuation";
+import { type ContinuationFailure } from "../lib/continuationfail";
+import { claimResult, expectResult, newFenceCalls, type FenceCalls } from "../lib/fencecalls";
+import { enqueue, newGate, nextOpenAt, release, type Gate } from "../lib/gate";
 import {
   mergeSendPace,
   newSendPace,
   realSleep,
   runPaced,
   type SendPace,
-} from "../src/lib/sendpace";
+} from "../lib/sendpace";
 import {
   isOutgoingChatRequest,
   recognizeOutgoingShape,
   rewriteOutgoingBody,
-} from "../src/lib/inject";
-import { pick, send, stage, type Clock } from "../src/lib/composer";
-import { nextMessageId } from "../src/lib/id";
-import { hasReplyAnchor } from "../src/lib/reply";
-import type { ToolInfo } from "../src/lib/relay";
+} from "../lib/inject";
+import { pick, send, stage, type Clock } from "../lib/composer";
+import { nextMessageId } from "../lib/id";
+import { hasReplyAnchor } from "../lib/reply";
+import type { ToolInfo } from "../lib/relay";
 import {
   decide,
   endTask,
@@ -43,9 +43,9 @@ import {
   type RunEffect,
   type RunEvent,
   type RunState,
-} from "../src/lib/run";
-import { outsideFences } from "../src/lib/said";
-import { parseToggleMessage, wantStateMessage } from "../src/lib/toggle";
+} from "../lib/run";
+import { outsideFences } from "../lib/said";
+import { parseToggleMessage, wantStateMessage } from "../lib/toggle";
 
 type XhrTarget = { readonly method: string; readonly url: string };
 

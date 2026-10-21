@@ -253,11 +253,13 @@ def resolve_config_path(env_text: str) -> Path:
     return config.resolve_config_path(env_text)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """`uv run dsb` 的入口:现读端口与配置,拉起配好的 MCP servers,然后被动等着."""
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == "env":
+        from dsb import env as dsb_env
+        raise SystemExit(dsb_env.main(args[1:]))
     setup_logging()
-    # pkill / 系统收摊发的是 SIGTERM,Python 默认直接退出,finally 不跑,配好的子进程
-    # 就成了没人收的孤儿.让它走跟 Ctrl-C 同一条路.
     signal.signal(signal.SIGTERM, lambda *_args: sys.exit(0))
     env_text = read_env_text()
     port = resolve_port(env_text)

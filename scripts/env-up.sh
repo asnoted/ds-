@@ -178,7 +178,7 @@ PY
 
 # ---- 中继的两个判据（放在 --status 之前：只读汇总也要报「跑的是旧代码」）----
 start_relay() {
-  nohup pnpm relay:dev >/tmp/dsb-relay.log 2>&1 &
+  nohup uv run dsb >/tmp/dsb-relay.log 2>&1 &
   disown
 }
 
@@ -219,7 +219,7 @@ done
 if [ "$STATUS" = 1 ]; then
   if [ ! -f "$MV3/background.js" ]; then
     say 构建 "缺产物（跑 env-up 重建）"
-  elif [ -n "$(find src entrypoints -name '*.ts' -newer "$MV3/background.js" 2>/dev/null | head -1)" ]; then
+  elif [ -n "$(find src -name '*.ts' -newer "$MV3/background.js" 2>/dev/null | head -1)" ]; then
     say 构建 "源码较产物新（跑 env-up 重建）"
   else
     say 构建 "产物最新"
@@ -279,7 +279,7 @@ fi
 # ---- 1) 扩展构建：源码比产物新才重建（老产物 = 协议说明旧、名册缺动作）----
 if [ ! -f "$MV3/background.js" ]; then
   pnpm build >/tmp/dsb-build.log 2>&1 && say 构建 "缺产物，已重建" || { say 构建 "重建失败 → /tmp/dsb-build.log"; exit 1; }
-elif [ -n "$(find src entrypoints -name '*.ts' -newer "$MV3/background.js" 2>/dev/null | head -1)" ]; then
+elif [ -n "$(find src -name '*.ts' -newer "$MV3/background.js" 2>/dev/null | head -1)" ]; then
   pnpm build >/tmp/dsb-build.log 2>&1 && say 构建 "源码较新，已重建" || { say 构建 "重建失败 → /tmp/dsb-build.log"; exit 1; }
 else
   say 构建 "产物最新"

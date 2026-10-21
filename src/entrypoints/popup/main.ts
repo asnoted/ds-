@@ -1,6 +1,6 @@
 import { browser } from "wxt/browser";
 
-import { readToggle, TOGGLE_STORAGE_KEY } from "../../src/lib/toggle";
+import { readToggle, TOGGLE_STORAGE_KEY } from "../../lib/toggle";
 
 // 总开关只存在 storage.local(默认关):这里读出来显示,拨动写回去.
 // background 监听 storage.onChanged,写完即重算三态,角标与通道--

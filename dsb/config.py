@@ -18,6 +18,22 @@ from pathlib import Path
 
 PORT_ENV_KEY = "DSB_PORT"
 
+def parse_env(env_text: str) -> dict[str, str]:
+    """``.env`` 文本 → 全部键值;引号剥法同 :func:`env_value`."""
+    out: dict[str, str] = {}
+    for line in env_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        name, separator, value = stripped.partition("=")
+        if not separator:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if value:
+            out[name.strip()] = value
+    return out
 
 def env_value(env_text: str, key: str) -> str | None:
     """``.env`` 文本 → 某个键的值;注释与别的变量一律忽略,缺键返回 None.
@@ -80,4 +96,5 @@ __all__ = [
     "find_dotenv",
     "repo_root",
     "resolve_config_path",
+    "parse_env",
 ]

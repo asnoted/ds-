@@ -37,7 +37,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from dsb.config import env_value
+from dsb.config import env_value, parse_env
 from dsb.log import log_event
 from dsb.mcp import Tool
 
@@ -56,6 +56,10 @@ DISCOVERY_TIMEOUT_ENV_KEY = "DSB_DISCOVERY_TIMEOUT"
 #: 单次结果的字符上限:一条失控结果(整份日志,一棵目录树)能同时灌满对话,扩展的
 #: 内存与存储;超了截断并写明原长(见 :func:`cap_result`).
 MAX_RESULT_CHARS = 64 * 1024
+#: install 只跑一次(幂等), 独立预算, 不占 DSB_TOOL_TIMEOUT.
+INSTALL_TIMEOUT = 120.0
+#: healthcheck 在握手之后跑一次; 失败只记日志, 不踢掉 server.
+HEALTHCHECK_TIMEOUT = 5.0
 #: 单个 server 最多注册多少件工具:一张撑爆协议说明的表对谁都没好处.
 MAX_TOOLS_PER_SERVER = 128
 #: 对外的协议版本:与本仓 ``dsb.mcp`` 讲的一致,子进程按它开场.
@@ -183,12 +187,19 @@ class StdioServer:
         *,
         env: Mapping[str, str] | None = None,
         cwd: str | None = None,
+        env_file: Path | None = None,
+        install_argv: list[str] | None = None,
+        healthcheck_timeout: float = HEALTHCHECK_TIMEOUT,
         start_timeout: float = START_TIMEOUT,
         discovery_timeout: float = DISCOVERY_TIMEOUT,
     ) -> None:
         self.name = name
         self._argv = argv
+        self._env_file = env_file
         self._env = dict(env or {})
+        self._install_argv = install_argv
+        self._healthcheck_timeout = healthcheck_timeout
+        self._installed = False
         self._cwd = cwd
         self._start_timeout = start_timeout
         self._discovery_timeout = discovery_timeout
@@ -200,6 +211,52 @@ class StdioServer:
         self._write_guard = threading.Lock()
         self._issued = 0
         self._tools: list[Payload] = []
+
+    # ---- 环境与安装 ----
+
+    def _merged_env(self) -> dict[str, str]:
+        """子进程的环境:进程环境 → envFile → env(后者覆盖前者)."""
+        merged = dict(os.environ)
+        if self._env_file is not None:
+            try:
+                text = self._env_file.read_text(encoding="utf-8")
+            except OSError:
+                log_event("env-file-missing", tool=self.name, path=str(self._env_file))
+            else:
+                merged.update(parse_env(text))
+        merged.update(self._env)
+        return merged
+
+    def _install(self) -> None:
+        """install 只在生命周期里跑一次; 失败记日志, 不阻塞 server 起来."""
+        if self._installed or self._install_argv is None:
+            return
+        self._installed = True
+        try:
+            completed = subprocess.run(
+                self._install_argv,
+                cwd=self._cwd,
+                env=self._merged_env(),
+                capture_output=True,
+                text=True,
+                timeout=INSTALL_TIMEOUT,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            log_event("install-failed", tool=self.name, exc=type(exc).__name__)
+            return
+        if completed.returncode != 0:
+            log_event("install-failed", tool=self.name, returncode=completed.returncode)
+        else:
+            log_event("install-ok", tool=self.name)
+
+    def _healthcheck(self) -> None:
+        """握手之后的探活 ping; 失败只记日志--initialize 已经成功, server 是活的."""
+        if self._healthcheck_timeout <= 0:
+            return
+        try:
+            self._request("ping", {}, self._healthcheck_timeout)
+        except GatewayError:
+            log_event("server-unhealthy", tool=self.name)
 
     # ---- 生命周期 ----
 
@@ -219,6 +276,7 @@ class StdioServer:
     def _start(self, timeout: float | None) -> None:
         if self.alive:
             return
+        self._install()
         try:
             proc = subprocess.Popen(  # noqa: S603 - 命令来自本仓的 mcp.json
                 self._argv,
@@ -231,7 +289,7 @@ class StdioServer:
                 # 严格解码会抛 UnicodeDecodeError, 读线程退场, 挂着的请求陪到自己的超时.
                 errors="replace",
                 bufsize=1,
-                env={**os.environ, **self._env},
+                env=self._merged_env(),
                 cwd=self._cwd,
                 # 自己的孩子开间自己的会话: 收摊时那道 SIGKILL 才够得着它的后代(旧 0003).
                 start_new_session=True,
@@ -257,6 +315,7 @@ class StdioServer:
                 timeout if timeout is not None else self._start_timeout,
             )
             self._notify("notifications/initialized")
+            self._healthcheck()
         except GatewayError:
             self.stop()
             raise
@@ -468,15 +527,47 @@ class Gateway:
                 if argv is None:
                     log_event("config-broke", path=name, missing="command")
                     continue
-                env = entry.get("env")
-                cwd = entry.get("cwd")
+                cwd_raw = entry.get("cwd")
+                cwd = cwd_raw if isinstance(cwd_raw, str) else None
+                if cwd is not None and not Path(cwd).is_dir():
+                    log_event("server-cwd-missing", tool=name, cwd=cwd)
+                    continue
+                env_raw = entry.get("env")
+                env = (
+                    {str(k): str(v) for k, v in env_raw.items()}
+                    if isinstance(env_raw, Mapping)
+                    else None
+                )
+                env_file_raw = entry.get("envFile")
+                env_file: Path | None = None
+                if isinstance(env_file_raw, str) and env_file_raw:
+                    env_file = Path(env_file_raw).expanduser()
+                    if not env_file.is_absolute():
+                        env_file = Path(cwd or Path.cwd()) / env_file
+                install_raw = entry.get("install")
+                install_argv: list[str] | None = None
+                if (
+                    isinstance(install_raw, list)
+                    and install_raw
+                    and all(isinstance(part, str) for part in install_raw)
+                ):
+                    install_argv = list(install_raw)
+                elif isinstance(install_raw, str) and install_raw.strip():
+                    log_event("config-broke", path=name, bad="install")
+                health_raw = entry.get("healthcheck")
+                health_timeout = HEALTHCHECK_TIMEOUT
+                if isinstance(health_raw, Mapping):
+                    ms = health_raw.get("timeoutMs")
+                    if isinstance(ms, (int, float)) and ms >= 0:
+                        health_timeout = float(ms) / 1000
                 server = StdioServer(
                     name,
                     argv,
-                    env={str(k): str(v) for k, v in env.items()}
-                    if isinstance(env, Mapping)
-                    else None,
-                    cwd=cwd if isinstance(cwd, str) else None,
+                    env=env,
+                    cwd=cwd,
+                    env_file=env_file,
+                    install_argv=install_argv,
+                    healthcheck_timeout=health_timeout,
                     start_timeout=start_timeout,
                     discovery_timeout=discovery_timeout,
                 )

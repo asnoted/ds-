@@ -29,13 +29,13 @@ import {
   type EndTaskMessage,
   type SaidMessage,
   type StopMessage,
-} from "../src/lib/channel";
-import { nextMessageId } from "../src/lib/id";
-import { circleIntent } from "../src/lib/composer";
-import { readAccount, readComposerPresent } from "../src/lib/page";
-import type { ActionFrame } from "../src/lib/action";
+} from "../lib/channel";
+import { nextMessageId } from "../lib/id";
+import { circleIntent } from "../lib/composer";
+import { readAccount, readComposerPresent } from "../lib/page";
+import type { ActionFrame } from "../lib/action";
 // 本地名册从注册表派生(#99):一件动作一行的声明点在 `src/lib/registry.ts`.
-import { ACTION_ROSTER } from "../src/lib/registry";
+import { ACTION_ROSTER } from "../lib/registry";
 import {
   mergeSendPace,
   newSendPace,
@@ -44,7 +44,7 @@ import {
   SEND_PRIMITIVES,
   type SendIntent,
   type SendPace,
-} from "../src/lib/sendpace";
+} from "../lib/sendpace";
 import {
   parseToggleMessage,
   readToggle,
@@ -52,7 +52,7 @@ import {
   TOGGLE_STORAGE_KEY,
   SPEAK_STORAGE_KEY,
   readSpeak,
-} from "../src/lib/toggle";
+} from "../lib/toggle";
 
 /**
  * 隔离世界这一层握着 `browser.*`,页面世界没有:总开关从 `storage.local` 读了广播过去,

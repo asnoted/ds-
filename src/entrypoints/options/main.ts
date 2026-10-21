@@ -4,13 +4,13 @@ import {
   FAILURE_FRAME_STORAGE_KEY,
   frameForHead,
   readFailureFrames,
-} from "../../src/lib/failureframe";
+} from "../../lib/failureframe";
 import {
   describeLastFailure,
   readFailureLog,
   FAILURE_LOG_STORAGE_KEY,
-} from "../../src/lib/failurelog";
-import { readSpeak, SPEAK_STORAGE_KEY } from "../../src/lib/toggle";
+} from "../../lib/failurelog";
+import { readSpeak, SPEAK_STORAGE_KEY } from "../../lib/toggle";
 
 const checkbox = document.querySelector<HTMLInputElement>("#speak");
 if (checkbox !== null) {

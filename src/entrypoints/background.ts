@@ -7,9 +7,9 @@ import {
   sendMessageSendToTab,
   type ActionContext,
   type ActionFrame,
-} from "../src/lib/action";
-import { readBackoff, BACKOFF_STORAGE_KEY } from "../src/lib/backoff";
-import { describeStop } from "../src/lib/continuation";
+} from "../lib/action";
+import { readBackoff, BACKOFF_STORAGE_KEY } from "../lib/backoff";
+import { describeStop } from "../lib/continuation";
 import {
   actionRequestMessage,
   parseAccountReport,
@@ -27,7 +27,7 @@ import {
   type AccountReport,
   type AskClearedReport,
   type AskReport,
-} from "../src/lib/channel";
+} from "../lib/channel";
 import {
   FAILURE_LOG_STORAGE_KEY,
   describeLastFailure,
@@ -36,7 +36,7 @@ import {
   rememberFailure,
   type FailureRecord,
   type FailureWhere,
-} from "../src/lib/failurelog";
+} from "../lib/failurelog";
 import {
   FAILURE_FRAME_BUDGET_CHARS,
   FAILURE_FRAME_STORAGE_KEY,
@@ -45,13 +45,13 @@ import {
   readFailureFrames,
   rememberFailureFrame,
   type FailureFrame,
-} from "../src/lib/failureframe";
+} from "../lib/failureframe";
 import {
   createFenceRound,
   type FenceRoundEffect,
   type FenceRoundPhase,
   type RelayAnswer,
-} from "../src/lib/fenceround";
+} from "../lib/fenceround";
 import {
   afterHealthProbe,
   badgeText,
@@ -60,10 +60,10 @@ import {
   ICON_SIZE,
   renderIcon,
   type IconState,
-} from "../src/lib/icon";
-import { nextMessageId } from "../src/lib/id";
-import type { LocalTool, LocalToolEnv } from "../src/lib/localtools";
-import { type AccountState, hasForeignDraft, isGenerating } from "../src/lib/page";
+} from "../lib/icon";
+import { nextMessageId } from "../lib/id";
+import type { LocalTool, LocalToolEnv } from "../lib/localtools";
+import { type AccountState, hasForeignDraft, isGenerating } from "../lib/page";
 import {
   FAILURE_RELAY_UNREACHABLE,
   MCP_CALL_TIMEOUT_MS,
@@ -80,16 +80,16 @@ import {
   relayMcpUrl,
   type ToolCall,
   type ToolInfo,
-} from "../src/lib/relay";
+} from "../lib/relay";
 import {
   errorPayload,
   failureNotice,
   type FailureNotice,
   type ReplyPayload,
-} from "../src/lib/reply";
-import { SAID_ADD_TOOL } from "../src/lib/said";
-import { isEmptyMigration, MIGRATION_KEYS, planStorageMigration } from "../src/lib/migrate";
-import { readSpeak, readToggle, SPEAK_STORAGE_KEY, TOGGLE_STORAGE_KEY } from "../src/lib/toggle";
+} from "../lib/reply";
+import { SAID_ADD_TOOL } from "../lib/said";
+import { isEmptyMigration, MIGRATION_KEYS, planStorageMigration } from "../lib/migrate";
+import { readSpeak, readToggle, SPEAK_STORAGE_KEY, TOGGLE_STORAGE_KEY } from "../lib/toggle";
 import {
   ASKS_STORAGE_KEY,
   clearPendingAsk,
@@ -98,7 +98,7 @@ import {
   readPendingAsks,
   recordPendingAsk,
   type PendingAsks,
-} from "../src/lib/ask";
+} from "../lib/ask";
 import {
   INITIAL_WATCHDOG_STATE,
   WATCHDOG_CONFIG_STORAGE_KEY,
@@ -110,7 +110,7 @@ import {
   watchdogSeenPassing,
   watchdogTaskClosed,
   type WatchdogState,
-} from "../src/lib/watchdog";
+} from "../lib/watchdog";
 
 /**
  * background 这一侧干这几件事:
