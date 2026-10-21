@@ -9,9 +9,8 @@
  * 注意这里不是站点闸:站点范围由 manifest 权限钉死,总开关也不参与站点判定.
  */
 
-import { INSTRUCTIONS_HEADER, prependInstructions } from "./instructions";
+import { INSTRUCTIONS_HEADER, prependInstructions, type PromptContext } from "./instructions";
 import { hasReplyAnchor } from "./reply";
-import type { ToolInfo } from "./relay";
 
 /** 只认"发消息"那条出站:chat 的 completion / completions / regenerate. */
 const CHAT_SEND_PATH = /\/(?:api\/)?v\d+\/chat\/(?:completion|completions|regenerate)(?:[/?#]|$)/;
@@ -49,11 +48,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * 已经拼过的(历史里带回来的用户消息)不再拼第二遍--说明随工具目录会变,
  * 防重注只认稳定首行.
  */
-function prependOnce(text: string, tools: readonly ToolInfo[] | null): string | null {
+function prependOnce(text: string, ctx: PromptContext): string | null {
   if (text.trim() === "") return null;
   if (hasReplyAnchor(text)) return null;
   if (text.startsWith(INSTRUCTIONS_HEADER)) return null;
-  return prependInstructions(text, tools);
+  return prependInstructions(text, ctx);
 }
 
 /**
@@ -179,7 +178,7 @@ export function recognizeOutgoingShape(bodyText: string): OutgoingShape {
  */
 export function rewriteOutgoingBody(
   shape: OutgoingShape,
-  tools: readonly ToolInfo[] | null,
+  ctx: PromptContext,
 ): string | null {
-  return shape.mapAllUserTexts((text) => prependOnce(text, tools));
+  return shape.mapAllUserTexts((text) => prependOnce(text, ctx));
 }

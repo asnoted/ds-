@@ -38,6 +38,8 @@ export const SEND_MESSAGE_TYPE = "dsb/send";
 export const ACTION_MESSAGE_TYPE = "dsb/action";
 /** 隔离世界 → background 的 said 上报信封标记. */
 export const SAID_MESSAGE_TYPE = "dsb/said";
+/** 隔离世界 → background 的 tracked diff 请求信封标记. */
+export const TRACKED_DIFF_REQUEST_MESSAGE_TYPE = "dsb/tracked-diff";
 /** 隔离世界 → background 的工具目录请求信封标记. */
 export const TOOLS_REQUEST_MESSAGE_TYPE = "dsb/tools";
 
@@ -122,6 +124,21 @@ export type SaidMessage = {
   readonly text: string;
 };
 
+/** 隔离世界广播下来的 tracked diff(页面世界缓存,注入成功后回报消费). */
+export type TrackedDiffMessage = {
+  readonly source: typeof CHAIN_MESSAGE_SOURCE;
+  readonly kind: "tracked-diff";
+  readonly id: string;
+  readonly diff: string;
+};
+
+/** 页面世界 → 隔离世界:这份 diff 已经注入进请求,前移 dsb 那边的快照. */
+export type TrackedDiffConsumedMessage = {
+  readonly source: typeof CHAIN_MESSAGE_SOURCE;
+  readonly kind: "tracked-diff-consumed";
+  readonly id: string;
+};
+
 /** 隔离世界广播下来的工具目录(`tools/list`,喂协议说明用). */
 export type ToolsMessage = {
   readonly source: typeof CHAIN_MESSAGE_SOURCE;
@@ -139,7 +156,9 @@ export type ChainMessage =
   | ToolsMessage
   | StopMessage
   | EndTaskMessage
-  | ContinuationFailMessage;
+  | ContinuationFailMessage
+  | TrackedDiffMessage
+  | TrackedDiffConsumedMessage;
 
 export type SendRequest = {
   readonly type: typeof SEND_MESSAGE_TYPE;
@@ -241,6 +260,17 @@ export type SaidReport = {
   readonly text: string;
 };
 
+/** 隔离世界 → background:拉一次 tracked_diff(consume 决定前移与否). */
+export type TrackedDiffRequest = {
+  readonly type: typeof TRACKED_DIFF_REQUEST_MESSAGE_TYPE;
+  readonly consume: boolean;
+};
+
+/** background → 隔离世界:一段给模型看的 diff;空串 = 无变更. */
+export type TrackedDiffResponse = {
+  readonly diff: string;
+};
+
 /**
  * 续聊这一跳失败:页面世界报的,报给 background 落一笔失败痕(#51).
  *
@@ -333,6 +363,14 @@ export function saidMessage(id: string, text: string): SaidMessage {
   return { source: CHAIN_MESSAGE_SOURCE, kind: "said", id, text };
 }
 
+export function trackedDiffMessage(id: string, diff: string): TrackedDiffMessage {
+  return { source: CHAIN_MESSAGE_SOURCE, kind: "tracked-diff", id, diff };
+}
+
+export function trackedDiffConsumedMessage(id: string): TrackedDiffConsumedMessage {
+  return { source: CHAIN_MESSAGE_SOURCE, kind: "tracked-diff-consumed", id };
+}
+
 /** 隔离世界问 background 要来工具目录 → 广播给页面世界. */
 export function toolsMessage(id: string, tools: readonly ToolInfo[]): ToolsMessage {
   return { source: CHAIN_MESSAGE_SOURCE, kind: "tools", id, tools };
@@ -398,6 +436,14 @@ export function toolsRequestMessage(): ToolsRequest {
 
 export function toolsResponseMessage(tools: readonly ToolInfo[] | null): ToolsResponse {
   return { tools };
+}
+
+export function trackedDiffRequestMessage(consume: boolean): TrackedDiffRequest {
+  return { type: TRACKED_DIFF_REQUEST_MESSAGE_TYPE, consume };
+}
+
+export function trackedDiffResponseMessage(diff: string): TrackedDiffResponse {
+  return { diff };
 }
 
 export function accountReportMessage(account: AccountState): AccountReport {
@@ -470,6 +516,14 @@ export function parseChainMessage(data: unknown): ChainMessage | null {
     const text = data["text"];
     if (!isValidText(text)) return null;
     return saidMessage(id, text);
+  }
+  if (data["kind"] === "tracked-diff") {
+    const diff = data["diff"];
+    if (!isValidText(diff)) return null;
+    return trackedDiffMessage(id, diff);
+  }
+  if (data["kind"] === "tracked-diff-consumed") {
+    return trackedDiffConsumedMessage(id);
   }
   if (data["kind"] === "tools") {
     const tools = data["tools"];
@@ -554,6 +608,21 @@ export function parseSaidReport(data: unknown): SaidReport | null {
   const text = data["text"];
   if (!isValidText(text)) return null;
   return saidReportMessage(text);
+}
+
+export function parseTrackedDiffRequest(data: unknown): TrackedDiffRequest | null {
+  if (!isPlainObject(data)) return null;
+  if (data["type"] !== TRACKED_DIFF_REQUEST_MESSAGE_TYPE) return null;
+  const consume = data["consume"];
+  if (typeof consume !== "boolean") return null;
+  return trackedDiffRequestMessage(consume);
+}
+
+export function parseTrackedDiffResponse(data: unknown): TrackedDiffResponse | null {
+  if (!isPlainObject(data)) return null;
+  const diff = data["diff"];
+  if (typeof diff !== "string") return null;
+  return trackedDiffResponseMessage(diff);
 }
 
 /** 认隔离世界 → background 的工具目录请求(空请求,只认标记). */

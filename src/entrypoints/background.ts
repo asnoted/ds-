@@ -22,7 +22,9 @@ import {
   parseSendRequest,
   parseSaidReport,
   parseToolsRequest,
+  parseTrackedDiffRequest,
   sendResponseMessage,
+  trackedDiffResponseMessage,
   toolsResponseMessage,
   type AccountReport,
   type AskClearedReport,
@@ -837,6 +839,30 @@ export default defineBackground(() => {
   }
 
   /**
+   * 拉一次 tracked diff:直连中继的 `tools/call tracked_diff`.
+   *
+   * 不走 `sendOneCall`--那不是围栏,也不该翻图标 / 显示"调"角标 / 触发看门狗.
+   * 短超时(10s):本地工具,几十毫秒该回;超了就当作没变更,下一轮再试.
+   * 失败静默:拉不到只是这次没注入 diff,不是故障.
+   */
+  const TRACKED_DIFF_TIMEOUT_MS = 10_000;
+  async function fetchTrackedDiff(consume: boolean): Promise<string> {
+    const id = nextMessageId("tracked");
+    try {
+      const response = await fetchWithTimeout(relayMcpUrl(), TRACKED_DIFF_TIMEOUT_MS, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: callToolBody(id, "tracked_diff", { consume }),
+      });
+      const payload = parseMcpResponse(response.status, await response.text(), id);
+      if (payload.status !== "ok") return "";
+      return payload.answer === "(无变更)" ? "" : payload.answer;
+    } catch {
+      return "";
+    }
+  }
+
+  /**
    * 报一段"说给人听"的话(`said_add`):报不上不碍事--这条只是让人看见,
    * 不是问答回路,所以不翻图标,不留痕,也不进对话流.
    */
@@ -1002,6 +1028,12 @@ export default defineBackground(() => {
     const toolsRequest = parseToolsRequest(message);
     if (toolsRequest !== null) {
       return serveTools().then((tools) => toolsResponseMessage(tools));
+    }
+    const trackedDiffRequest = parseTrackedDiffRequest(message);
+    if (trackedDiffRequest !== null) {
+      return fetchTrackedDiff(trackedDiffRequest.consume).then((diff) =>
+        trackedDiffResponseMessage(diff),
+      );
     }
     // ask 上报与清除(#26):都是通知,不等回话,挂"等人回"或清掉它.
     const ask = parseAskReport(message);

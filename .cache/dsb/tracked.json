@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "tracked": [
+    {
+      "path": "/private/tmp/t2/x.txt",
+      "abs": "/private/tmp/t2/x.txt",
+      "sha256": "87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7",
+      "lines": 1,
+      "tracked_at": 1792575309.319839
+    },
+    {
+      "path": "/private/tmp/probe.txt",
+      "abs": "/private/tmp/probe.txt",
+      "sha256": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+      "lines": 1,
+      "tracked_at": 1792575488.8972769
+    },
+    {
+      "path": "README.md",
+      "abs": "/Users/co/Downloads/dsb/README.md",
+      "sha256": "51b2a62345da013cbb6fc7a4ab4ac36b1a7285864dd65fa82aec2ed7209c6b8d",
+      "lines": 21,
+      "tracked_at": 1792576031.1372008
+    }
+  ]
+}

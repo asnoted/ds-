@@ -11,7 +11,7 @@ const TOOLS: readonly ToolInfo[] | null = null;
 
 /** 接线侧就是这么用的:认一次形状,把结果交给拼说明(与认领裁决共用同一次识别). */
 function rewrite(body: string, tools: readonly ToolInfo[] | null = TOOLS): string | null {
-  return rewriteOutgoingBody(recognizeOutgoingShape(body), tools);
+  return rewriteOutgoingBody(recognizeOutgoingShape(body), { tools });
 }
 
 describe("isOutgoingChatRequest", () => {

@@ -20,6 +20,9 @@ import {
   sendNoteMessage,
   toolsMessage,
   toolsRequestMessage,
+  trackedDiffRequestMessage,
+  trackedDiffMessage,
+  parseTrackedDiffResponse,
   unreachableResult,
   type ActionRoster,
   type AskClearedMessage,
@@ -190,6 +193,44 @@ export default defineContentScript({
     };
 
     /**
+     * 追踪文件的 diff:每 10s 预拉一次(只读,不消费),Console 打出来先看通道通没通.
+     *
+     * 下一步再把这份 diff 广播给页面世界缓存;先只验"background → 隔离世界"这一跳.
+     */
+    const TRACKED_DIFF_INTERVAL_MS = 10_000;
+    let trackedDiffTimer: ReturnType<typeof setInterval> | undefined;
+    const consumeTrackedDiff = async (): Promise<void> => {
+      try {
+        await browser.runtime.sendMessage(trackedDiffRequestMessage(true));
+        console.log("[dsb] tracked diff 已消费,快照前移");
+      } catch {
+        // 消费失败:下一轮会再拉一次(可能重复注入一次,可接受)
+      }
+    };
+    const syncTrackedDiff = async (): Promise<void> => {
+      try {
+        const response = await browser.runtime.sendMessage(trackedDiffRequestMessage(false));
+        const parsed = parseTrackedDiffResponse(response);
+        if (parsed !== null && parsed.diff !== "") {
+          console.log(`[dsb] tracked diff: ${parsed.diff.length} 字`);
+          window.postMessage(trackedDiffMessage(nextMessageId("tracked-diff"), parsed.diff), "*");
+        }
+      } catch {
+        // 送不出去不重试,下一轮还在
+      }
+    };
+    const startTrackedDiffSync = (): void => {
+      if (trackedDiffTimer !== undefined) return;
+      void syncTrackedDiff();
+      trackedDiffTimer = setInterval(syncTrackedDiff, TRACKED_DIFF_INTERVAL_MS);
+    };
+    const stopTrackedDiffSync = (): void => {
+      if (trackedDiffTimer === undefined) return;
+      clearInterval(trackedDiffTimer);
+      trackedDiffTimer = undefined;
+    };
+
+    /**
      * 账号处境上报(#2):总开关开着时 30s 一报.禁言期写路径全断,
      * 悬停得把这层说清("禁言至何时")--上报是通知,不等回话.
      */
@@ -226,6 +267,10 @@ export default defineContentScript({
       }
       if (chain?.kind === "said") {
         void reportSaid(chain);
+        return;
+      }
+      if (chain?.kind === "tracked-diff-consumed") {
+        void consumeTrackedDiff();
         return;
       }
       if (chain?.kind === "ask") {
@@ -332,9 +377,11 @@ export default defineContentScript({
       if (readToggle(changes[TOGGLE_STORAGE_KEY].newValue)) {
         startAccountReporting();
         startToolsSync();
+        startTrackedDiffSync();
       } else {
         stopAccountReporting();
         stopToolsSync();
+        stopTrackedDiffSync();
       }
     });
 
@@ -344,6 +391,7 @@ export default defineContentScript({
     if (readToggle(stored[TOGGLE_STORAGE_KEY])) {
       startAccountReporting();
       startToolsSync();
+      startTrackedDiffSync();
     }
   },
 });

@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from dsb import config
+from dsb import config, tracking
 from dsb.config import PORT_ENV_KEY, env_value, find_dotenv
 from dsb.gateway import (
     CONNECT_TIMEOUT_ENV_KEY,
@@ -81,14 +81,27 @@ def said_tools(said: SaidLog) -> list[Tool]:
     ]
 
 
+def explore_tools(root: Path) -> list[Tool]:
+    """只保留 ``glob`` 与 ``read`` 两件工作工具.
+
+    ``glob`` 找文件、``read`` 看内容--探索项目的最小配套.其余三件
+    (``grep`` / ``write`` / ``edit``)按"只留工具说明"收窄,不注册.
+    """
+    keep = {"glob", "read"}
+    return [tool for tool in work_tools(root) if tool.name in keep]
+
+
 def build_tools(gateway: Gateway, said: SaidLog, root: Path) -> list[Tool]:
-    """注册给 :class:`dsb.mcp.McpService` 的全表:网关汇总的 + 自家工作工具 + 说给人听的两件.
+    """注册给 :class:`dsb.mcp.McpService` 的全表:网关汇总的 + 追踪工具 + 说给人听的两件.
 
     顺序即话语权:``said_*`` 在后,撞名时自家说了算(网关内部的撞名在
-    :meth:`dsb.gateway.Gateway.tools` 里已经记过一笔 ``tool-clash``).工作工具是裸名
-    (``glob`` / ``read`` / ...),第三方工具名恒带 ``<server>_`` 前缀,正常不会相撞.
+    :meth:`dsb.gateway.Gateway.tools` 里已经记过一笔 ``tool-clash``).
+
+    工作工具(``glob`` / ``read`` / ``grep`` / ``write`` / ``edit``)已按
+    "只留工具说明"的收窄**不再注册**:模型看不到它们,也就排不出它们.实现仍在
+    :mod:`dsb.work`,``resolve_work_root`` 与 :mod:`dsb.tracking` 照旧用它.
     """
-    return [*gateway.tools(), *work_tools(root), *said_tools(said)]
+    return [*gateway.tools(), *explore_tools(root), *tracking.tools(root), *said_tools(said)]
 
 
 def route(
@@ -259,6 +272,8 @@ def main(argv: list[str] | None = None) -> None:
     if args and args[0] == "env":
         from dsb import env as dsb_env
         raise SystemExit(dsb_env.main(args[1:]))
+    if args and args[0] == "track":
+        raise SystemExit(tracking.cli(args[1:]))
     setup_logging()
     signal.signal(signal.SIGTERM, lambda *_args: sys.exit(0))
     env_text = read_env_text()

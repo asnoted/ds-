@@ -14,6 +14,7 @@ import {
   saidMessage,
   sendNoteMessage,
   stopMessage,
+  trackedDiffConsumedMessage,
 } from "../lib/channel";
 import { CONTINUATION_MARKER } from "../lib/continuation";
 import { type ContinuationFailure } from "../lib/continuationfail";
@@ -98,6 +99,9 @@ export default defineContentScript({
 
     /** 隔离世界广播下来的工具目录(`tools/list`);null = 还没取到,说明里会写明. */
     let catalog: readonly ToolInfo[] | null = null;
+
+    /** 追踪文件的 diff;null = 无变更.注入一次后清空,并回报消费. */
+    let pendingDiff: string | null = null;
 
     /**
      * 发送限速(#61):自动续聊这一路的发送也归同一条 3~15 秒的线,与隔离世界那三条
@@ -236,8 +240,23 @@ export default defineContentScript({
           console.log("[dsb] 续聊正文已替换进这次出站请求(工具结果不走可见消息)");
           return decision.claim.body;
         default: {
-          const next = rewriteOutgoingBody(shape, catalog);
-          if (next !== null) console.log("[dsb] 已把协议说明拼到这条消息开头");
+          const hasDiff = pendingDiff !== null && pendingDiff !== "";
+          const next = rewriteOutgoingBody(shape, {
+            tools: catalog,
+            diff: pendingDiff,
+          });
+          if (next !== null) {
+            console.log(
+              `[dsb] 已把协议说明拼到这条消息开头${hasDiff ? `(含 ${pendingDiff?.length ?? 0} 字 diff)` : ""}`,
+            );
+            if (hasDiff) {
+              pendingDiff = null;
+              window.postMessage(
+                trackedDiffConsumedMessage(nextMessageId("tracked-consumed")),
+                "*",
+              );
+            }
+          }
           return next;
         }
       }
@@ -490,6 +509,10 @@ export default defineContentScript({
       if (chain?.kind === "tools") {
         // 没取到时隔离世界不吭声(content.ts 只广播拿得到的目录),这里因此只进不退.
         catalog = chain.tools;
+        return;
+      }
+      if (chain?.kind === "tracked-diff") {
+        pendingDiff = chain.diff;
         return;
       }
 
