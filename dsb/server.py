@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -228,11 +229,37 @@ def make_handler(service: McpService) -> type[BaseHTTPRequestHandler]:
     return McpHandler
 
 
+def kill_port_occupant(port: int) -> None:
+    """找出占用指定端口的进程并杀掉(macOS/Linux 下用 lsof)."""
+    try:
+        # -sTCP:LISTEN 只找正在监听的进程,不要误杀客户端连接
+        res = subprocess.run(
+            ["lsof", "-t", f"-i:{port}", "-sTCP:LISTEN"], 
+            capture_output=True, text=True, check=False
+        )
+        pids = res.stdout.strip().split()
+        for pid in pids:
+            if pid:
+                print(f"[dsb] 端口 {port} 被旧进程 (PID {pid}) 占用,正在结束它...", flush=True)
+                os.kill(int(pid), signal.SIGTERM)
+        if pids:
+            time.sleep(0.5)  # 给系统一点时间释放端口
+    except Exception as exc:
+        print(f"[dsb] 尝试清理端口 {port} 失败: {exc}", file=sys.stderr)
+
+
 def make_server(
     service: McpService, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT
 ) -> ThreadingHTTPServer:
     """起网关的 HTTP 服务(测试用 port=0 拿随机端口)."""
-    server = ThreadingHTTPServer((host, port), make_handler(service))
+    try:
+        server = ThreadingHTTPServer((host, port), make_handler(service))
+    except OSError as exc:
+        if exc.errno == 48:  # Address already in use
+            kill_port_occupant(port)
+            server = ThreadingHTTPServer((host, port), make_handler(service))
+        else:
+            raise
     server.daemon_threads = True
     return server
 
@@ -269,6 +296,14 @@ def resolve_config_path(env_text: str) -> Path:
 def main(argv: list[str] | None = None) -> None:
     """`uv run dsb` 的入口:现读端口与配置,拉起配好的 MCP servers,然后被动等着."""
     args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == "up":
+        print("[dsb] 1/3 构建扩展...", flush=True)
+        subprocess.run(["pnpm", "build"], check=True)
+        print("[dsb] 2/3 启动浏览器...", flush=True)
+        from dsb import env as dsb_env
+
+        dsb_env.main(["up"])
+        print("[dsb] 3/3 启动网关...", flush=True)
     if args and args[0] == "env":
         from dsb import env as dsb_env
         raise SystemExit(dsb_env.main(args[1:]))

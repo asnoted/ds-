@@ -447,33 +447,18 @@ export default defineContentScript({
     function attachButton(): void {
       if (!activeRound) return;
 
-      // 找所有 pre 节点
-      const codeBlocks = Array.from(document.querySelectorAll("pre"));
-      
+      const blocks = Array.from(document.querySelectorAll("pre")).filter((block) => {
+        const container = block.closest(".md-code-block");
+        return container && !container.querySelector(".dsb-exec-btn");
+      });
+
+      let blockIndex = 0;
       for (const item of activeRound.calls) {
         if (item.status !== "waiting") continue;
+        if (blockIndex >= blocks.length) break;
 
-        // 尝试解析参数部分用于匹配
-        let argsText = item.call;
-        try {
-          const parsed = JSON.parse(item.call);
-          argsText = JSON.stringify(parsed.arguments);
-        } catch {}
-
-        const cleanArgs = argsText.replace(/\s+/g, "");
-
-        // 在未处理的代码块里找匹配的
-        const matchingBlock = codeBlocks.find((block) => {
-          const container = block.closest(".md-code-block");
-          if (!container || container.querySelector(".dsb-exec-btn")) return false;
-          
-          const text = (block.textContent || "").replace(/\s+/g, "");
-          return text === cleanArgs || text.includes(cleanArgs);
-        });
-
-        if (!matchingBlock) continue;
-
-        const container = matchingBlock.closest(".md-code-block");
+        const block = blocks[blockIndex++];
+        const container = block.closest(".md-code-block");
         if (!container) continue;
 
         const banner = container.querySelector(".md-code-block-banner-wrap");
