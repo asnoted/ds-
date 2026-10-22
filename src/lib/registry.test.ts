@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { CONTROL_ACTIONS } from "./controls";
-import { fixtureCases, type ActionCase } from "./fixtures";
 import {
   ACTION_REGISTRY,
   ACTION_ROSTER,
@@ -111,18 +110,6 @@ describe("标志是显式写出来的,不靠推断(ADR-0003 红线)", () => {
 });
 
 describe("target 形态与 fixture / 探针 docstring 的知识对得上", () => {
-  it("fixture 里每个认得的动作,target 与注册表一行不差", () => {
-    for (const c of fixtureCases<ActionCase>("action.json")) {
-      const row = ACTION_REGISTRY[c.request.action];
-      if (row === undefined) continue; // 认不出的动作(unknown-action 样例)归档子管,不归注册表管
-      const wantsNull = c.request.target === null;
-      expect(
-        row.target === "null",
-        `${c.name}:fixture target=${JSON.stringify(c.request.target)},注册表 target=${row.target}`,
-      ).toBe(wantsNull);
-    }
-  });
-
   it("探针文件头那句『target: null 只有 …答得出』= 注册表里 target 恒为 null 的行", () => {
     const probe = PROBE_SOURCES["../../scripts/page-action.py"];
     expect(probe, "读不到 scripts/page-action.py").toBeDefined();

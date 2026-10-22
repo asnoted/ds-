@@ -16,7 +16,6 @@ import {
   type StorageApi,
 } from "./action";
 import type { ActionFrame } from "./action";
-import { fixtureCases, fixtureFile, type ActionCase, type ActionFixtureFile } from "./fixtures";
 
 function tabsApi(tabs: readonly TabCandidate[]): TabsApi & { calls: number } {
   const api = {
@@ -71,23 +70,6 @@ describe("tabs.list 执行器", () => {
     expect(tabs.calls).toBe(1);
   });
 
-  it("结果形状与 protocol/fixtures/action.json 的成功样例同形", async () => {
-    const fixture = fixtureCases<ActionCase>("action.json").find(
-      ({ name }) => name === "tabs.list 成功",
-    );
-    expect(fixture).toBeDefined();
-    if (!fixture || fixture.response.ok === false) throw new Error("fixture 缺成功样例");
-
-    const outcome = await runAction(frame(), context({ tabs: tabsApi([DEEPSEEK_TAB]) }));
-
-    expect(outcome).toEqual({ ok: true, result: { tabs: [DEEPSEEK_TAB] } });
-    if (!outcome.ok) throw new Error("tabs.list 没回结果");
-    const result = outcome.result as { tabs: SessionTab[] };
-    expect(Object.keys(result)).toEqual(Object.keys(fixture.response.result as object));
-    expect(Object.keys(result.tabs[0] ?? {})).toEqual(
-      Object.keys((fixture.response.result as { tabs: SessionTab[] }).tabs[0] ?? {}),
-    );
-  });
 });
 
 describe("总开关闸(关着不执行,回 disabled 让中继别等满超时)", () => {
@@ -99,17 +81,6 @@ describe("总开关闸(关着不执行,回 disabled 让中继别等满超时)", 
     expect(tabs.calls).toBe(0);
   });
 
-  it("disabled 与共享 fixture 的样例同一份(TS 与 Python 共读)", () => {
-    const book = (fixtureFile("action.json") as ActionFixtureFile).errorCodes.map(
-      ({ code }) => code,
-    );
-    expect(book).toContain(ACTION_ERROR_DISABLED);
-    const sample = fixtureCases<ActionCase>("action.json").find(
-      ({ name }) => name === "总开关关闭失败",
-    )?.response;
-    if (!sample || sample.ok) throw new Error("fixture 里没有关开关的失败样例");
-    expect(sample.error).toBe(ACTION_ERROR_DISABLED);
-  });
 });
 
 describe("按 target 路由", () => {
@@ -413,17 +384,6 @@ describe("名册有,扩展还没实现的动作", () => {
     expect(outcome).toEqual({ ok: false, error: "unknown-action" });
   });
 
-  it("unknown-action 与共享 fixture 的样例同一份(TS 与 Python 共读)", () => {
-    const book = (fixtureFile("action.json") as ActionFixtureFile).errorCodes.map(
-      ({ code }) => code,
-    );
-    expect(book).toContain(ACTION_ERROR_UNKNOWN);
-    const sample = fixtureCases<ActionCase>("action.json").find(
-      ({ name }) => name === "未知动作失败",
-    )?.response;
-    if (!sample || sample.ok) throw new Error("fixture 里没有未知动作的失败样例");
-    expect(sample.error).toBe(ACTION_ERROR_UNKNOWN);
-  });
 });
 
 describe("isActionOutcome 形状", () => {

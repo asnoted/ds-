@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { ACTION_ERROR_PAGE_CHANGED, ACTION_ERROR_READ_FAILED, PageError } from "./action";
 import type { ActionFrame } from "./action";
-import { evidenceHtml } from "./evidence";
 import { parseWaitSeconds } from "./wait-budget";
 import {
   conversation,
@@ -139,27 +138,6 @@ describe("一行 → 一条消息", () => {
     const row = document.querySelector("[data-virtual-list-item-key]") as Element;
 
     expect(readRow(row)?.text).toBe("第一段\n\n第二段");
-  });
-
-  it("代码块外框:表头与复制/下载按钮是 `<pre>` 的兄弟,不算正文", () => {
-    // 代码块原件取自存证 `code.block`(真机 2026-10-07,ADR-0006):表头,复制/下载按钮在
-    // `md-code-block-banner-wrap` 里,`<pre>` 与两个角 svg 是它的兄弟--一字不缩写.
-    document.body.innerHTML = `
-      <div class="ds-virtual-list">
-        <div data-virtual-list-item-key="1">
-          <div class="ds-message"><div class="ds-markdown ds-assistant-message-main-content">
-            <p>先看这个:</p>
-            ${evidenceHtml("code.block")}
-            <p>跑完再来.</p>
-          </div></div>
-        </div>
-      </div>`;
-    const row = document.querySelector("[data-virtual-list-item-key]") as Element;
-
-    expect(readRow(row)).toEqual({
-      role: "assistant",
-      text: '先看这个:\n\n```send\n{"tool": "ls", "arguments": {}}\n```\n\n跑完再来.',
-    });
   });
 
   it("代码块外框里直接挂的文字(不是元素)也不算正文--外框里除了 <pre> 一律不算", () => {

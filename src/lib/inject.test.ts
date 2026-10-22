@@ -61,9 +61,10 @@ describe("rewriteOutgoingBody", () => {
 
     expect(rewritten).not.toBeNull();
     const payload = JSON.parse(rewritten ?? "") as Record<string, unknown>;
-    expect(payload.prompt).toBe(prependInstructions(prompt, TOOLS));
+    const ctx = { tools: TOOLS };
+    expect(payload.prompt).toBe(prependInstructions(prompt, ctx));
     expect(payload.chat_session_id).toBe("s1");
-    expect(String(payload.prompt).startsWith(`${protocolInstructions(TOOLS)}\n\n`)).toBe(true);
+    expect(String(payload.prompt).startsWith(`${protocolInstructions(ctx)}\n\n`)).toBe(true);
   });
 
   it("多行消息整段原样跟在协议说明后面", () => {
@@ -71,7 +72,7 @@ describe("rewriteOutgoingBody", () => {
     const rewritten = rewrite(JSON.stringify({ prompt }), TOOLS);
     const payload = JSON.parse(rewritten ?? "") as Record<string, unknown>;
 
-    expect(payload.prompt).toBe(`${protocolInstructions(TOOLS)}\n\n${prompt}`);
+    expect(payload.prompt).toBe(`${protocolInstructions({ tools: TOOLS })}\n\n${prompt}`);
     expect(String(payload.prompt).endsWith(prompt)).toBe(true);
   });
 
@@ -105,9 +106,9 @@ describe("rewriteOutgoingBody", () => {
       messages: { role: string; content: string }[];
     };
     expect(payload.messages[0]?.content).toBe("你是个助手");
-    expect(payload.messages[1]?.content).toBe(prependInstructions("上一轮", TOOLS));
+    expect(payload.messages[1]?.content).toBe(prependInstructions("上一轮", { tools: TOOLS }));
     expect(payload.messages[2]?.content).toBe("上一轮答复");
-    expect(payload.messages[3]?.content).toBe(prependInstructions("这一轮", TOOLS));
+    expect(payload.messages[3]?.content).toBe(prependInstructions("这一轮", { tools: TOOLS }));
   });
 
   it("整段历史再发一遍时,拼过的用户消息不会被拼第二次", () => {
@@ -131,7 +132,7 @@ describe("rewriteOutgoingBody", () => {
     ).toBeNull();
   });
 
-  it("回灌消息(首行锚 agent:)不拼协议说明,首行锚留在第一行", () => {
+  it("回灌消息(首行锚 dsb:)不拼协议说明,首行锚留在第一行", () => {
     const reply = buildReply(okPayload("答复正文"));
 
     expect(reply.split("\n")[0]).toBe(REPLY_ANCHOR);
@@ -141,11 +142,11 @@ describe("rewriteOutgoingBody", () => {
     ).toBeNull();
   });
 
-  it("只是以 agent 开头的普通消息照样拼说明", () => {
-    const rewritten = rewrite(JSON.stringify({ prompt: "agent 你好,帮我看看" }), TOOLS);
+  it("只是以 dsb 开头的普通消息照样拼说明", () => {
+    const rewritten = rewrite(JSON.stringify({ prompt: "dsb 你好,帮我看看" }), TOOLS);
     expect(rewritten).not.toBeNull();
     expect(JSON.parse(rewritten ?? "")["prompt"]).toBe(
-      prependInstructions("agent 你好,帮我看看", TOOLS),
+      prependInstructions("dsb 你好,帮我看看", { tools: TOOLS }),
     );
   });
 
@@ -153,7 +154,7 @@ describe("rewriteOutgoingBody", () => {
     const text = "引用一句:[ds 协议] 这几个字是我自己打的";
     const rewritten = rewrite(JSON.stringify({ prompt: text }), TOOLS);
     expect(rewritten).not.toBeNull();
-    expect(JSON.parse(rewritten ?? "")["prompt"]).toBe(prependInstructions(text, TOOLS));
+    expect(JSON.parse(rewritten ?? "")["prompt"]).toBe(prependInstructions(text, { tools: TOOLS }));
   });
 
   it("工具目录跟着说明一起拼进去(隔离世界广播下来那份)", () => {

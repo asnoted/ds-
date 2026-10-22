@@ -1,7 +1,7 @@
 /**
  * 回灌组装与失败提示(agent → 页面的线协议).
  *
- * 回灌消息首行固定 `agent:`(首行锚),其后是 TOON 载荷;
+ * 回灌消息首行固定 `dsb:`(首行锚),其后是 TOON 载荷;
  * 载荷只有两个同构分支:status: ok + answer,status: error + error.
  * 失败提示只出现在扩展侧,不进对话流.
  */
@@ -9,7 +9,7 @@
 import { decode, encode } from "@toon-format/toon";
 
 /** 回灌消息的首行锚. */
-export const REPLY_ANCHOR = "agent:";
+export const REPLY_ANCHOR = "dsb:";
 
 /**
  * 这段文本是不是一条回灌消息:第一行就是首行锚.

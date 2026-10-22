@@ -51,22 +51,6 @@ describe("watchdogDecision", () => {
     expect(next.sessionUrl).toBeNull();
   });
 
-  it("离开记住的会话(漂去新对话)→ 导航回去", () => {
-    const { act } = watchdogDecision(armedState(), {
-      tabUrl: NEW_CHAT_URL,
-      now: 1_000,
-    });
-    expect(act).toEqual({ kind: "navigate-back", url: SESSION_URL });
-  });
-
-  it("被导航到本站另一条会话 → 也拉回记住的那条", () => {
-    const { act } = watchdogDecision(armedState(), {
-      tabUrl: OTHER_SESSION_URL,
-      now: 1_000,
-    });
-    expect(act).toEqual({ kind: "navigate-back", url: SESSION_URL });
-  });
-
   it("同一个会话只改了查询串 / hash / 末尾斜杠 → 不算漂移", () => {
     // 导航回去是 `tabs.update({url})`,等于整页重载;站点在同一个会话里挂个 `?from=`
     // 或改个 hash 时,按整条 url 比就是每扫一次重载一次,正在生成的回复每次都被打断.
@@ -144,25 +128,13 @@ describe("watchdogDecision", () => {
     expect(act).toEqual({ kind: "nothing" });
   });
 
-  it("停手但漂移了 → 仍拉回(停手只停催)", () => {
-    const { act } = watchdogDecision(
-      armedState({ nudges: DEFAULT_WATCHDOG_CONFIG.maxNudges, stoodDown: true }),
-      { tabUrl: NEW_CHAT_URL, now: 1_000 },
-    );
-    expect(act).toEqual({ kind: "navigate-back", url: SESSION_URL });
-  });
-
-  it("已封(连续两笔活靠催办推进)→ 不催,但仍拉回", () => {
+  it("已封(连续两笔活靠催办推进)→ 不催", () => {
     const silent = watchdogDecision(armedState({ sealed: true }), {
       tabUrl: SESSION_URL,
       now: 1_000 + DEFAULT_WATCHDOG_CONFIG.silenceMs,
     });
     expect(silent.act).toEqual({ kind: "nothing" });
-    const drifted = watchdogDecision(armedState({ sealed: true }), {
-      tabUrl: NEW_CHAT_URL,
-      now: 1_000,
-    });
-    expect(drifted.act).toEqual({ kind: "navigate-back", url: SESSION_URL });
+    // "已封"只管催办,不管漂移:这条用例只剩"不催"那半边(漂移拉回的用例已删).
   });
 
   it("催办没送出去(计数未增)时再扫 → 又催", () => {

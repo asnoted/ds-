@@ -170,25 +170,31 @@ export default defineContentScript({
      * 说明里写着"工具表暂未取到".
      */
     const TOOLS_SYNC_INTERVAL_MS = 60_000;
-    let toolsTimer: ReturnType<typeof setInterval> | undefined;
+    const TOOLS_RETRY_INTERVAL_MS = 2_000;
+    let toolsTimer: ReturnType<typeof setTimeout> | undefined;
     const syncTools = async (): Promise<void> => {
+      let success = false;
       try {
         const response = await browser.runtime.sendMessage(toolsRequestMessage());
         const parsed = parseToolsResponse(response);
-        if (parsed === null || parsed.tools === null) return;
-        window.postMessage(toolsMessage(nextMessageId("tools"), parsed.tools), "*");
+        if (parsed !== null && parsed.tools !== null) {
+          window.postMessage(toolsMessage(nextMessageId("tools"), parsed.tools), "*");
+          success = true;
+        }
       } catch {
         // 目录是通知:送不出去不重试,下一轮还在.
       }
+      // 没连上(比如刚启动网关还没跑)就 2 秒后重试;连上了就恢复 60 秒一轮
+      const delay = success ? TOOLS_SYNC_INTERVAL_MS : TOOLS_RETRY_INTERVAL_MS;
+      toolsTimer = setTimeout(syncTools, delay);
     };
     const startToolsSync = (): void => {
       if (toolsTimer !== undefined) return;
       void syncTools();
-      toolsTimer = setInterval(syncTools, TOOLS_SYNC_INTERVAL_MS);
     };
     const stopToolsSync = (): void => {
       if (toolsTimer === undefined) return;
-      clearInterval(toolsTimer);
+      clearTimeout(toolsTimer);
       toolsTimer = undefined;
     };
 

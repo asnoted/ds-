@@ -148,17 +148,19 @@ export function watchdogDecision(
   ) {
     next = { ...next, sessionUrl: facts.tabUrl };
   }
-  // 漂移:记住过会话,而标签页不在**同一个会话**上了--拉回去(漂去别的会话,
-  // 被导航到本站别处都算;停手只停催,不停这条).url 读不到(null)时无从判断,
-  // 不动--看门狗不按看不见的东西行事.
-  // 比会话 id 不比整条 url:同一个会话里改查询串 / 挂 hash 不算离开,按整条比
-  // 会把它当成漂移,每扫一次就重载一次(正在生成的回复跟着没).
+  // 用户主动切换了会话(比如开新对话):直接放行并更新锚点,不再强行拉回.
+  // 同时丢弃旧会话的状态,确保旧的未完成任务不会跨会话干扰新对话.
   if (
     next.sessionUrl !== null &&
     facts.tabUrl !== null &&
     pageSessionIdOf(facts.tabUrl) !== pageSessionIdOf(next.sessionUrl)
   ) {
-    return { act: { kind: "navigate-back", url: next.sessionUrl }, next };
+    next = {
+      ...next,
+      sessionUrl: facts.tabUrl,
+      taskOpen: false,
+      lastActivityAt: null,
+    };
   }
   // 静默:距上次围栏 / 回灌超过窗口.还没动静过(null)谈不上静默.
   if (next.lastActivityAt !== null && facts.now - next.lastActivityAt >= config.silenceMs) {

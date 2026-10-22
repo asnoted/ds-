@@ -18,6 +18,7 @@ import {
 } from "../lib/channel";
 import { CONTINUATION_MARKER } from "../lib/continuation";
 import { type ContinuationFailure } from "../lib/continuationfail";
+import { isAutoApproved } from "../lib/approval";
 import { claimResult, expectResult, newFenceCalls, type FenceCalls } from "../lib/fencecalls";
 import { enqueue, newGate, nextOpenAt, release, type Gate } from "../lib/gate";
 import {
@@ -379,7 +380,7 @@ export default defineContentScript({
           })),
         };
         
-        console.log(`[dsb] 认出 ${calls.length} 块围栏(${roundId}),等待人工审批`);
+        console.log(`[dsb] 认出 ${calls.length} 块围栏(${roundId}),等待人工审批(只读工具自动放行)`);
 
         setTimeout(attachButton, 100);
 
@@ -531,6 +532,11 @@ export default defineContentScript({
         wrap.setAttribute("data-call-id", item.id);
         actionsContainer.insertBefore(wrap, actionsContainer.firstChild);
         buttonFinishCallbacks.set(item.id, finishBlock);
+
+        // 只读工具自动放行:按钮照建(视觉与去重都靠它),建完直接按下去.
+        let toolName = "unknown";
+        try { toolName = JSON.parse(item.call).tool; } catch {}
+        if (isAutoApproved(toolName)) btnExec.click();
       }
     }
 

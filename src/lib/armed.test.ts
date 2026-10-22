@@ -23,15 +23,15 @@ describe("matchesMarker / 钥匙", () => {
     expect(matchesMarker(CONTINUATION_MARKER)).toBe(true);
     expect(matchesMarker(`  ${CONTINUATION_MARKER}  `)).toBe(true);
     expect(matchesMarker(CONTINUATION_MARKER.replace(/\n/g, "\r\n"))).toBe(true);
-    expect(matchesMarker("agent:\r\n继续")).toBe(true);
+    expect(matchesMarker("tool:result")).toBe(true);
   });
 
   it("认不出用户自己写的话(#49 的核心:手打的消息永远不等于标记)", () => {
     expect(matchesMarker("你好")).toBe(false);
-    expect(matchesMarker("agent: 继续")).toBe(false); // 空格不是换行
-    expect(matchesMarker("agent:\n继续\n")).toBe(true); // 只差首尾空白仍算同一句
-    expect(matchesMarker("agent:\n继续 帮我看看 README")).toBe(false); // 多了一句就不算
-    expect(matchesMarker("agent:")).toBe(false); // 只半句
+    expect(matchesMarker("tool: result")).toBe(false); // 多了空格不算
+    expect(matchesMarker("tool:result\n")).toBe(true); // 只差首尾空白仍算同一句
+    expect(matchesMarker("tool:result 帮我看看 README")).toBe(false); // 多了一句就不算
+    expect(matchesMarker("tool:")).toBe(false); // 只半句
     expect(matchesMarker(BODY)).toBe(false); // 工具结果正文本身不是标记
     expect(matchesMarker("")).toBe(false);
   });

@@ -14,12 +14,11 @@ import {
 import { hasReplyAnchor, okPayload, parseReplyPayload } from "./reply";
 
 describe("CONTINUATION_MARKER", () => {
-  it("守首行锚(第一行恰好是 agent:),第二行才是那个词,总共两行", () => {
-    const lines = CONTINUATION_MARKER.split("\n");
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe("agent:");
-    expect(hasReplyAnchor(CONTINUATION_MARKER)).toBe(true);
+  it("可见标记只有一行 tool:result;给模型看的正文另守首行锚", () => {
+    expect(CONTINUATION_MARKER).toBe("tool:result");
     expect(CONTINUATION_MARKER.length).toBeLessThan(20);
+    expect(hasReplyAnchor(CONTINUATION_MARKER)).toBe(false);
+    expect(hasReplyAnchor(buildContinuation(okPayload("x")))).toBe(true);
   });
 });
 
@@ -88,7 +87,7 @@ describe("buildContinuation", () => {
   it("就是原来那段回灌载荷(首行锚 + TOON),只是改走请求体", () => {
     const text = buildContinuation(okPayload("入口在 dsb/server.py."));
     const lines = text.split("\n");
-    expect(lines[0]).toBe("agent:");
+    expect(lines[0]).toBe("dsb:");
     expect(lines[1]).toBe("status: ok");
     expect(text).toContain("answer[1]{text}:");
   });

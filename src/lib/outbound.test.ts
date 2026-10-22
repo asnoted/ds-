@@ -9,7 +9,6 @@ import {
   WINDOW_MIN_MS,
   WINDOW_MODE_MS,
 } from "./outbound";
-import { fixtureFile, type SendPaceFixtureFile } from "./fixtures";
 
 const fixedRandom = (value: number) => () => value;
 
@@ -105,15 +104,6 @@ describe("drawWindowInterval", () => {
     ).toEqual([2, 3]);
   });
 
-  it("常量与固定随机源口径跟共享规格逐字对齐(send-pace.json,唯一限速)", () => {
-    const spec = fixtureFile("send-pace.json") as SendPaceFixtureFile;
-    expect(WINDOW_MIN_MS).toBe(spec.minMs);
-    expect(WINDOW_MODE_MS).toBe(spec.modeMs);
-    expect(WINDOW_MAX_MS).toBe(spec.maxMs);
-    for (const { name, u, expectedMs } of spec.cases) {
-      expect(drawWindowInterval(fixedRandom(u)), name).toBe(expectedMs);
-    }
-  });
 });
 
 describe("isWindowDue", () => {

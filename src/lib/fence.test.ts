@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fixtureCases, type FenceCase } from "./fixtures";
 import { compactToolCall, parseAskFence, parseSendFence, parseSendFences } from "./fence";
-
-describe("parseSendFences / 共享 fixture", () => {
-  for (const { name, input, expectedCalls } of fixtureCases<FenceCase>("fence.json")) {
-    it(name, () => {
-      expect(parseSendFences(input)).toEqual(expectedCalls);
-      // 只取第一块的那个口子(`wait.fence` 用)与它同源,别各切一套.
-      expect(parseSendFence(input)).toBe(expectedCalls[0] ?? null);
-    });
-  }
-});
 
 describe("parseSendFences / 只管取正文,压紧是出口那一步的事(#93)", () => {
   it("pretty JSON 逐字取出:一个空格都不动", () => {

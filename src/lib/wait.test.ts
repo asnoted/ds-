@@ -86,7 +86,7 @@ describe("基线", () => {
 
   it("key 带符号,同来回两条同值不同号:原样收进基线", async () => {
     document.body.innerHTML = listHtml(
-      rowHtml("-4", "agent:\n旧回灌") +
+      rowHtml("-4", "dsb:\n旧回灌") +
         rowHtml("4", "旧回答") +
         rowHtml("-6", "旧问题", false) +
         rowHtml("6", "旧围栏"),
@@ -116,13 +116,13 @@ describe("轮询", () => {
     document.body.innerHTML = listHtml(
       rowHtml("1", "旧问题", false) +
         rowHtml("2", "旧回答") +
-        rowHtml("3", "agent:\nstatus: ok\n新回灌"),
+        rowHtml("3", "dsb:\nstatus: ok\n新回灌"),
     );
     const found = await waitUntilNewMessage(
       viewOf(),
       { keys: ["1", "2"], texts: [] },
       soon(),
-      (text) => text.startsWith("agent:"),
+      (text) => text.startsWith("dsb:"),
       1,
     );
     expect(found).toContain("新回灌");
@@ -130,25 +130,25 @@ describe("轮询", () => {
 
   it("基线本身与更旧的行不算新消息", async () => {
     document.body.innerHTML = listHtml(
-      rowHtml("1", "旧问题", false) + rowHtml("2", "agent:\n旧回灌"),
+      rowHtml("1", "旧问题", false) + rowHtml("2", "dsb:\n旧回灌"),
     );
     const found = await waitUntilNewMessage(
       viewOf(),
       { keys: ["1", "2"], texts: [] },
       soon(),
-      (text) => text.startsWith("agent:"),
+      (text) => text.startsWith("dsb:"),
       1,
     );
     expect(found).toBeNull();
   });
 
   it("matches 不认的跳过,继续往下认", async () => {
-    document.body.innerHTML = listHtml(rowHtml("3", "普通新回答") + rowHtml("4", "agent:\n新回灌"));
+    document.body.innerHTML = listHtml(rowHtml("3", "普通新回答") + rowHtml("4", "dsb:\n新回灌"));
     const found = await waitUntilNewMessage(
       viewOf(),
       { keys: ["1", "2"], texts: [] },
       soon(),
-      (text) => text.startsWith("agent:"),
+      (text) => text.startsWith("dsb:"),
       1,
     );
     expect(found).toContain("新回灌");
@@ -156,13 +156,13 @@ describe("轮询", () => {
 
   it("负 key 的新回灌也算新(同来回对面那条,#37)", async () => {
     document.body.innerHTML = listHtml(
-      rowHtml("3", "旧回答") + rowHtml("-5", "agent:\nstatus: ok\n新回灌"),
+      rowHtml("3", "旧回答") + rowHtml("-5", "dsb:\nstatus: ok\n新回灌"),
     );
     const found = await waitUntilNewMessage(
       viewOf(),
       { keys: ["3"], texts: [] },
       soon(),
-      (text) => text.startsWith("agent:"),
+      (text) => text.startsWith("dsb:"),
       1,
     );
     expect(found).toContain("新回灌");
@@ -170,13 +170,13 @@ describe("轮询", () => {
 
   it("基线里见过的旧行不算新(滚动重挂)", async () => {
     document.body.innerHTML = listHtml(
-      rowHtml("-3", "agent:\n旧回灌") + rowHtml("2", "旧问题", false),
+      rowHtml("-3", "dsb:\n旧回灌") + rowHtml("2", "旧问题", false),
     );
     const found = await waitUntilNewMessage(
       viewOf(),
       { keys: ["-3", "2"], texts: [] },
       soon(),
-      (text) => text.startsWith("agent:"),
+      (text) => text.startsWith("dsb:"),
       1,
     );
     expect(found).toBeNull();
@@ -184,25 +184,25 @@ describe("轮询", () => {
 
   it("无 key 行(新版站点):基线里的旧文本不算新,没见过的算新", async () => {
     document.body.innerHTML = listHtml(
-      rowHtmlNoKey("旧问题", false) + rowHtmlNoKey("agent:\n新回灌"),
+      rowHtmlNoKey("旧问题", false) + rowHtmlNoKey("dsb:\n新回灌"),
     );
     const found = await waitUntilNewMessage(
       viewOf(),
       { keys: [], texts: ["旧问题"] },
       soon(),
-      (text) => text.startsWith("agent:"),
+      (text) => text.startsWith("dsb:"),
       1,
     );
     expect(found).toContain("新回灌");
   });
 
   it("无 key 行:基线里已有的回灌不误认(回 null)", async () => {
-    document.body.innerHTML = listHtml(rowHtmlNoKey("agent:\n旧回灌"));
+    document.body.innerHTML = listHtml(rowHtmlNoKey("dsb:\n旧回灌"));
     const found = await waitUntilNewMessage(
       viewOf(),
-      { keys: [], texts: ["agent:\n旧回灌"] },
+      { keys: [], texts: ["dsb:\n旧回灌"] },
       soon(),
-      (text) => text.startsWith("agent:"),
+      (text) => text.startsWith("dsb:"),
       1,
     );
     expect(found).toBeNull();
@@ -269,7 +269,7 @@ describe("wait.fence / wait.reply", () => {
 
   it("基线里的旧回灌不误认:等不到新回灌回 timeout", async () => {
     document.body.innerHTML = listHtml(
-      rowHtml("1", "旧问题", false) + rowHtml("2", "agent:\n旧回灌"),
+      rowHtml("1", "旧问题", false) + rowHtml("2", "dsb:\n旧回灌"),
     );
     await expect(waitReply(frameOf("wait.reply", { timeout: 1 }))).rejects.toMatchObject({
       code: ACTION_ERROR_TIMEOUT,

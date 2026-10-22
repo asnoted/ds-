@@ -15,14 +15,19 @@
  */
 
 import {
+  ACTION_ERROR_BACKING_OFF,
+  ACTION_ERROR_COMPOSER_ABSENT,
+  ACTION_ERROR_DISABLED,
+  ACTION_ERROR_PAGE_CHANGED,
+  ACTION_ERROR_READ_FAILED,
   ACTION_ERROR_TAB_GONE,
+  ACTION_ERROR_TIMEOUT,
   ACTION_ERROR_UNKNOWN,
   PageError,
   type ActionFrame,
   type ActionOutcome,
 } from "./action";
 import { isAccountState, type AccountState } from "./page";
-import { actionErrorCodes } from "./fixtures";
 import { FAILURE_RELAY_UNREACHABLE, isToolInfo, type ToolInfo } from "./relay";
 import { errorPayload, isReplyPayload, type ReplyPayload } from "./reply";
 
@@ -718,9 +723,23 @@ export function actionListener(
  * (含没接执行口,载荷不合形状那些"这一跳走不通"的情形).
  * 抛错的原文只留在扩展侧日志里,不回页面,不进对话流.
  */
+/** 在册的失败码:与 `action.ts` 的 `ACTION_ERROR_*` 同一份,不读 fixture. */
+const KNOWN_ERROR_CODES: readonly string[] = [
+  ACTION_ERROR_DISABLED,
+  ACTION_ERROR_UNKNOWN,
+  ACTION_ERROR_TAB_GONE,
+  ACTION_ERROR_BACKING_OFF,
+  ACTION_ERROR_COMPOSER_ABSENT,
+  ACTION_ERROR_PAGE_CHANGED,
+  ACTION_ERROR_READ_FAILED,
+  ACTION_ERROR_TIMEOUT,
+];
+
 function failureCode(error: unknown): string {
   // 码得在册里才认:执行器自己编一个码出来照样折成 tab-gone,别让册子外的词漏到线上.
-  if (error instanceof PageError && actionErrorCodes().includes(error.code)) {
+  // 册子从前读 `protocol/fixtures/action.json`;那份文件已不在仓里,而这里跑在
+  // **错误路径**上--再依赖一个可能缺的文件,等于出错时再抛一次.
+  if (error instanceof PageError && KNOWN_ERROR_CODES.includes(error.code)) {
     console.warn("[dsb] 动作做不到:", error.code, error.message);
     return error.code;
   }

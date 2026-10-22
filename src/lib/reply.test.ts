@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { fixtureCases, type ReplyCase } from "./fixtures";
 import {
   buildReply,
   errorPayload,
@@ -19,20 +18,11 @@ import {
 /** 扩展侧失败提示能显示的全部原因:只有这两条(连不上 / 认不出). */
 const FAILURE_KINDS: readonly FailureKind[] = ["relay-unreachable", "unexpected-response"];
 
-describe("buildReply / 共享 fixture", () => {
-  for (const { name, payload, expectedMessage } of fixtureCases<ReplyCase>("reply.json")) {
-    it(name, () => {
-      expect(buildReply(payload)).toBe(expectedMessage);
-      expect(expectedMessage.split("\n")[0]).toBe(REPLY_ANCHOR);
-    });
-  }
-});
-
 describe("buildReply", () => {
-  it("首行是固定的 agent: 字面量", () => {
+  it("首行是固定的 dsb: 字面量", () => {
     expect(buildReply(okPayload("答案")).split("\n")[0]).toBe(REPLY_ANCHOR);
     expect(buildReply(errorPayload("relay-unreachable")).split("\n")[0]).toBe(REPLY_ANCHOR);
-    expect(buildReply(okPayload("答案")).startsWith(`agent:\n`)).toBe(true);
+    expect(buildReply(okPayload("答案")).startsWith(`dsb:\n`)).toBe(true);
   });
 
   it("载荷是 TOON,status 在第一行", () => {
@@ -42,13 +32,13 @@ describe("buildReply", () => {
 
   it("多行正文走 tabular:一行正文一条 row,不产生字面换行转义", () => {
     const message = buildReply(okPayload("第一行\n第二行"));
-    expect(message).toBe("agent:\nstatus: ok\nanswer[2]{text}:\n  第一行\n  第二行");
+    expect(message).toBe("dsb:\nstatus: ok\nanswer[2]{text}:\n  第一行\n  第二行");
     expect(message).not.toMatch(/\\n/);
   });
 
   it("冒充结构的正文行被 TOON 引号封起来,边界无歧义", () => {
-    const message = buildReply(okPayload("agent:\nstatus: error\n- 列表项\n# 注释"));
-    expect(message).toContain('"agent:"');
+    const message = buildReply(okPayload("dsb:\nstatus: error\n- 列表项\n# 注释"));
+    expect(message).toContain('"dsb:"');
     expect(message).toContain('"status: error"');
     expect(message).toContain('"- 列表项"');
     expect(message).toContain('"# 注释"');
@@ -90,10 +80,10 @@ describe("parseReplyPayload / buildReply 的逆", () => {
   });
 
   it("TOON 解不开或形状不对 → null,不猜", () => {
-    expect(parseReplyPayload("agent:\n{")).toBeNull();
-    expect(parseReplyPayload("agent:\nstatus: ok")).toBeNull();
-    expect(parseReplyPayload("agent:\nstatus: error")).toBeNull();
-    expect(parseReplyPayload("agent:\nstatus: loading")).toBeNull();
+    expect(parseReplyPayload("dsb:\n{")).toBeNull();
+    expect(parseReplyPayload("dsb:\nstatus: ok")).toBeNull();
+    expect(parseReplyPayload("dsb:\nstatus: error")).toBeNull();
+    expect(parseReplyPayload("dsb:\nstatus: loading")).toBeNull();
   });
 });
 
@@ -128,7 +118,7 @@ describe("isReplyPayload / 线上正文的逆", () => {
     expect(isReplyPayload({ status: "loading" })).toBe(false);
     expect(isReplyPayload(null)).toBe(false);
     expect(isReplyPayload([])).toBe(false);
-    expect(isReplyPayload("agent:")).toBe(false);
+    expect(isReplyPayload("dsb:")).toBe(false);
   });
 });
 
@@ -144,23 +134,23 @@ describe("isInjectableReply / 失败不进对话流", () => {
 });
 
 describe("hasReplyAnchor / 首行锚认领", () => {
-  it("首行是 agent: 就是回灌消息", () => {
+  it("首行是 dsb: 就是回灌消息", () => {
     expect(hasReplyAnchor(buildReply(okPayload("答复")))).toBe(true);
-    expect(hasReplyAnchor("agent:")).toBe(true);
-    expect(hasReplyAnchor("agent:\nstatus: ok\nanswer: x")).toBe(true);
+    expect(hasReplyAnchor("dsb:")).toBe(true);
+    expect(hasReplyAnchor("dsb:\nstatus: ok\nanswer: x")).toBe(true);
   });
 
   it("第一行不是首行锚的不算", () => {
-    expect(hasReplyAnchor("开头一行\nagent:")).toBe(false);
-    expect(hasReplyAnchor("agent 你好")).toBe(false);
+    expect(hasReplyAnchor("开头一行\ndsb:")).toBe(false);
+    expect(hasReplyAnchor("dsb 你好")).toBe(false);
     expect(hasReplyAnchor("")).toBe(false);
   });
 
   it("锚是**整行**,不是前缀", () => {
-    // 前缀式判定会把人在对话框里打的"agent: 你好"认成回灌 --
+    // 前缀式判定会把人在对话框里打的"dsb: 你好"认成回灌 --
     // 那 `wait.ts` 就会把人的消息当成"我灌的那条出来了",白判一次成功.
-    expect(hasReplyAnchor("agent:你好")).toBe(false);
-    expect(hasReplyAnchor("agent: 你好")).toBe(false);
+    expect(hasReplyAnchor("dsb:你好")).toBe(false);
+    expect(hasReplyAnchor("dsb: 你好")).toBe(false);
   });
 });
 

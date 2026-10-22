@@ -4,7 +4,7 @@ import { ACTION_ERROR_TAB_GONE } from "./action";
 import { MAX_RESULT_CHARS } from "./continuation";
 import { createFenceRound, type FenceRoundDeps, type FenceRoundEffect } from "./fenceround";
 import { MALFORMED_CALL_HINT } from "./fence";
-import { FAILURE_RELAY_UNREACHABLE } from "./relay";
+import { FAILURE_RELAY_UNREACHABLE, MAX_CALLS_PER_ROUND } from "./relay";
 import { errorPayload, okPayload, type ReplyPayload } from "./reply";
 
 function callJson(tool: string, args: Record<string, unknown> = {}): string {
@@ -217,19 +217,21 @@ describe("坏围栏回提示", () => {
     expect(payload.answer).toContain("工具 排坏的围栏:");
   });
 
-  it("坏围栏照样占一块:9 块里 1 块排坏,只剩 7 块打得出去", async () => {
+  it("坏围栏照样占一块:排满一轮时一块排坏,其余的块照常打得出去", async () => {
     const h = harness();
     const calls = [
       "坏的",
-      ...Array.from({ length: 8 }, (_, index) => callJson("read", { page: index })),
+      ...Array.from({ length: MAX_CALLS_PER_ROUND - 1 }, (_, index) =>
+        callJson("read", { page: index }),
+      ),
     ];
 
     const { payload } = await createFenceRound(h.deps).handle(calls, 1);
 
-    expect(h.relayCalls).toHaveLength(7);
+    expect(h.relayCalls).toHaveLength(MAX_CALLS_PER_ROUND - 1);
     expect(payload.status).toBe("ok");
     if (payload.status !== "ok") return;
-    expect(payload.answer).toContain("还有 1 块没执行");
+    expect(payload.answer).not.toContain("没执行");
   });
 });
 
@@ -255,28 +257,34 @@ describe("多块都成时按围栏的次序攒", () => {
   });
 });
 
-describe("超 8 块截断附一句", () => {
-  it("排 10 块:只打前 8 块网关,正文末尾说明还有 2 块没执行", async () => {
+describe("超一轮块数截断附一句", () => {
+  it("排到上限之外:只打前 MAX_CALLS_PER_ROUND 块网关,正文末尾说明还有几块没执行", async () => {
     const h = harness();
-    const calls = Array.from({ length: 10 }, (_, index) => callJson("read", { page: index }));
+    const calls = Array.from({ length: MAX_CALLS_PER_ROUND + 2 }, (_, index) =>
+      callJson("read", { page: index }),
+    );
 
     const { payload } = await createFenceRound(h.deps).handle(calls, 1);
 
-    expect(h.relayCalls).toEqual(Array.from({ length: 8 }, () => "read"));
+    expect(h.relayCalls).toEqual(Array.from({ length: MAX_CALLS_PER_ROUND }, () => "read"));
     expect(payload.status).toBe("ok");
     if (payload.status !== "ok") return;
-    expect(payload.answer.endsWith("(这一轮最多执行 8 块围栏,还有 2 块没执行--下一轮再排.)")).toBe(
-      true,
-    );
+    expect(
+      payload.answer.endsWith(
+        `(这一轮最多执行 ${MAX_CALLS_PER_ROUND} 块围栏,还有 2 块没执行--下一轮再排.)`,
+      ),
+    ).toBe(true);
   });
 
-  it("恰好 8 块:不截断也不加那一句", async () => {
+  it("恰好一轮的块数:不截断也不加那一句", async () => {
     const h = harness();
-    const calls = Array.from({ length: 8 }, (_, index) => callJson("read", { page: index }));
+    const calls = Array.from({ length: MAX_CALLS_PER_ROUND }, (_, index) =>
+      callJson("read", { page: index }),
+    );
 
     const { payload } = await createFenceRound(h.deps).handle(calls, 1);
 
-    expect(h.relayCalls).toHaveLength(8);
+    expect(h.relayCalls).toHaveLength(MAX_CALLS_PER_ROUND);
     expect(payload.status).toBe("ok");
     if (payload.status !== "ok") return;
     expect(payload.answer).not.toContain("没执行");
@@ -285,15 +293,19 @@ describe("超 8 块截断附一句", () => {
   it("每块都顶格时末句照样在:总量不越过 MAX_RESULT_CHARS,那句'没执行'不会被扩展那道闸切掉", async () => {
     const h = harness();
     h.relayAnswer = async () => ({ payload: okPayload("字".repeat(4_000)), cause: null });
-    const calls = Array.from({ length: 9 }, (_, index) => callJson("read", { page: index }));
+    const calls = Array.from({ length: MAX_CALLS_PER_ROUND + 1 }, (_, index) =>
+      callJson("read", { page: index }),
+    );
 
     const { payload } = await createFenceRound(h.deps).handle(calls, 1);
 
     expect(payload.status).toBe("ok");
     if (payload.status !== "ok") return;
     expect(payload.answer.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
-    expect(payload.answer.endsWith("(这一轮最多执行 8 块围栏,还有 1 块没执行--下一轮再排.)")).toBe(
-      true,
-    );
+    expect(
+      payload.answer.endsWith(
+        `(这一轮最多执行 ${MAX_CALLS_PER_ROUND} 块围栏,还有 1 块没执行--下一轮再排.)`,
+      ),
+    ).toBe(true);
   });
 });

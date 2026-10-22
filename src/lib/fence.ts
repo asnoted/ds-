@@ -30,14 +30,17 @@ export function parseSendFences(text: string): readonly string[] {
 
   while (index < lines.length) {
     const line = lines[index] ?? "";
-    const match = /^```([a-zA-Z0-9_\-]+)\s*$/.exec(line);
+    // 起始行允许同行带正文(` ```send 问题 `):与 `isOpeningLine` 同一条口径--
+    // ask 围栏一直认这种写法,两条解析器不该对同一段文本各说各的.
+    const match = /^```([a-zA-Z0-9_\-]+)(?:\s+(.*))?$/.exec(line);
     if (!match) {
       index += 1;
       continue;
     }
     const lang = match[1];
+    const rest = (match[2] ?? "").trim();
 
-    const body: string[] = [];
+    const body: string[] = rest === "" ? [] : [rest];
     let cursor = index + 1;
     let closed = false;
     for (; cursor < lines.length; cursor += 1) {
@@ -161,7 +164,7 @@ export const MALFORMED_CALL_HINT =
  *
  * 模型爱写带空格的 `{"tool": "read", "arguments": {...}}`,多行 pretty JSON 也常见.
  * 那是给**人看**的写法;转给中继的那份只需要机器读,压紧能省掉每个调用几十到
- * 几百字符(一次回答最多 8 块,ADR-0002),也让两边的报文可比对.
+ * 几百字符(一次回答最多 9 块,ADR-0002),也让两边的报文可比对.
  *
  * **认不出就原样透传**:不是合法 JSON,或解析出来不是对象,一律照原样送--压紧是
  * 锦上添花,猜错了就是把模型写的东西改坏(与 `parseToolCall` 同一个脾气:排坏的不在

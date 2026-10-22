@@ -290,7 +290,7 @@ describe("joinCallAnswers / 一轮多块的结果拼装", () => {
     expect(joinCallAnswers([])).toBe("");
   });
 
-  it("额度是这一轮的总量:八块各要一整页时每块各分一份,不是头一块吃光", () => {
+  it("额度是这一轮的总量:多块各要一整页时每块各分一份,不是头一块吃光", () => {
     const chunk = "x".repeat(MAX_RESULT_CHARS);
     const joined = joinCallAnswers(
       Array.from({ length: MAX_CALLS_PER_ROUND }, () => ({ tool: "fs_read_file", text: chunk })),
@@ -301,7 +301,7 @@ describe("joinCallAnswers / 一轮多块的结果拼装", () => {
     expect(joined.match(/工具结果已截断/g)).toHaveLength(MAX_CALLS_PER_ROUND);
   });
 
-  it("各块平分:八块里某块短于自己那份时原样交,长的那些才被砍", () => {
+  it("各块平分:某块短于自己那份时原样交,长的那些才被砍", () => {
     const answers = Array.from({ length: 2 }, (_, index) => ({
       tool: "fs_read_file",
       text: index === 0 ? "短的一段" : "y".repeat(MAX_RESULT_CHARS),

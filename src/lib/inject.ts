@@ -9,6 +9,7 @@
  * 注意这里不是站点闸:站点范围由 manifest 权限钉死,总开关也不参与站点判定.
  */
 
+import { CONTINUATION_MARKER } from "./continuation";
 import { INSTRUCTIONS_HEADER, prependInstructions, type PromptContext } from "./instructions";
 import { hasReplyAnchor } from "./reply";
 
@@ -44,13 +45,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 /**
  * 拼一次:空消息没东西可发,也不该替用户凭空造一条,原样放行;
- * 回灌消息(首行就是 `agent:` 首行锚)原样放行,协议说明不能插到首行锚前面;
+ * 回灌消息(首行就是 `dsb:` 首行锚)原样放行,协议说明不能插到首行锚前面;
+ * 续聊的**可见短标记**(`tool:result`)同样原样放行--它不再守首行锚(ADR-0002),
+ * 漏了这一条,协议说明会拼到它前面,出站正文就不等于钥匙,续聊当场失配;
  * 已经拼过的(历史里带回来的用户消息)不再拼第二遍--说明随工具目录会变,
  * 防重注只认稳定首行.
  */
 function prependOnce(text: string, ctx: PromptContext): string | null {
   if (text.trim() === "") return null;
   if (hasReplyAnchor(text)) return null;
+  if (text.trim() === CONTINUATION_MARKER) return null;
   if (text.startsWith(INSTRUCTIONS_HEADER)) return null;
   return prependInstructions(text, ctx);
 }
