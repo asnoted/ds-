@@ -147,6 +147,12 @@ export default defineBackground(() => {
    */
   const TOOLS_CACHE_TTL_MS = 60_000;
 
+  /**
+   * 模型目录里不列的自家工具:read 自动追踪后 track_file 冗余;tracked_diff 由扩展每 10s
+   * 自动拉取(见 fetchTrackedDiff);untrack 走 CLI(dsb track rm).注册照旧--扩展与 CLI 还要调.
+   */
+  const HIDDEN_MODEL_TOOLS = new Set(["track_file", "untrack_file", "tracked_diff"]);
+
   /** 图标三态. */
   let state: IconState = "off";
   /**
@@ -829,7 +835,9 @@ export default defineBackground(() => {
       });
       const tools = parseToolsList(response.status, await response.text(), id);
       if (tools === null) return toolsCache?.tools ?? null;
-      const visible = tools.filter((tool) => !tool.name.startsWith("said_"));
+      const visible = tools.filter(
+        (tool) => !tool.name.startsWith("said_") && !HIDDEN_MODEL_TOOLS.has(tool.name),
+      );
       toolsCache = { at: Date.now(), tools: visible };
       return visible;
     } catch (error) {

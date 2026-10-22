@@ -87,7 +87,7 @@ def explore_tools(root: Path) -> list[Tool]:
     ``glob`` 找文件、``read`` 看内容--探索项目的最小配套.其余三件
     (``grep`` / ``write`` / ``edit``)按"只留工具说明"收窄,不注册.
     """
-    keep = {"glob", "read"}
+    keep = {"glob", "read", "write", "edit"}
     return [tool for tool in work_tools(root) if tool.name in keep]
 
 

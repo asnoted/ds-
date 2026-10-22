@@ -20,24 +20,79 @@ function isOpeningLine(line: string, opening: string): boolean {
 }
 
 /**
- * 找出**所有**指定围栏的正文,按出现顺序.
- *
- * 没闭合的那一块(以及排空了的那一块)丢掉,**继续往后找**:不猜半截,
- * 但不因为它放弃后面那些好的.
+ * 一次回答里**所有**工具围栏(```send 或 ```<tool>)转成的标准 JSON,按顺序.
+ * 返回值形如 `{"tool":"read","arguments":{"path":"a"}}`,下游无感知.
  */
-function parseFences(text: string, opening: string): string[] {
+export function parseSendFences(text: string): readonly string[] {
   const lines = text.split("\n");
   const bodies: string[] = [];
   let index = 0;
 
   while (index < lines.length) {
     const line = lines[index] ?? "";
-    if (!isOpeningLine(line, opening)) {
+    const match = /^```([a-zA-Z0-9_\-]+)\s*$/.exec(line);
+    if (!match) {
       index += 1;
       continue;
     }
+    const lang = match[1];
 
-    const rest = line.slice(opening.length).trim();
+    const body: string[] = [];
+    let cursor = index + 1;
+    let closed = false;
+    for (; cursor < lines.length; cursor += 1) {
+      if ((lines[cursor] ?? "").trim() === "```") {
+        closed = true;
+        break;
+      }
+      body.push(lines[cursor] ?? "");
+    }
+
+    const joined = body.join("\n").trim();
+    if (closed && joined !== "") {
+      if (lang === "send") {
+        // 兼容旧版 ```send 格式
+        bodies.push(joined);
+      } else if (lang !== "ask") {
+        // 新格式 ```<tool>,尝试把正文作为参数解析
+        try {
+          const parsed = JSON.parse(joined);
+          if (isPlainObject(parsed)) {
+            if ("tool" in parsed && "arguments" in parsed && typeof parsed.tool === "string") {
+              bodies.push(joined); // 模型画蛇添足把完整 JSON 塞进来了,兼容
+            } else {
+              bodies.push(JSON.stringify({ tool: lang, arguments: parsed }));
+            }
+          }
+        } catch {
+          // 不是合法 JSON,可能只是普通代码块(如 ```javascript),忽略它
+        }
+      }
+    }
+    index = closed ? cursor + 1 : cursor;
+  }
+
+  return bodies;
+}
+
+/**
+ * 第一块 send 围栏的正文;一块都没排就是 null.
+ */
+export function parseSendFence(text: string): string | null {
+  return parseSendFences(text)[0] ?? null;
+}
+
+/** 第一块 ask 围栏的正文(网页向人举手,一次只认一块). */
+export function parseAskFence(text: string): string | null {
+  const lines = text.split("\n");
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+    if (!isOpeningLine(line, ASK_OPENING)) {
+      index += 1;
+      continue;
+    }
+    const rest = line.slice(ASK_OPENING.length).trim();
     const body: string[] = rest === "" ? [] : [rest];
     let cursor = index + 1;
     let closed = false;
@@ -48,34 +103,13 @@ function parseFences(text: string, opening: string): string[] {
       }
       body.push(lines[cursor] ?? "");
     }
-
-    const joined = body.join("\n").trim();
-    if (closed && joined !== "") bodies.push(joined);
-    index = closed ? cursor + 1 : cursor;
+    if (closed) {
+      const joined = body.join("\n").trim();
+      if (joined !== "") return joined;
+    }
+    index = cursor + 1;
   }
-
-  return bodies;
-}
-
-/**
- * 一次回答里**所有** send 围栏的正文(一段工具调用 JSON 一条),按出现顺序.
- * 执行那一侧用它--排了几块就执行几块.
- */
-export function parseSendFences(text: string): readonly string[] {
-  return parseFences(text, SEND_OPENING);
-}
-
-/**
- * 第一块 send 围栏的正文;一块都没排就是 null.
- * "有没有排围栏"这类判据用它(`wait.fence`),执行那一侧用 `parseSendFences`.
- */
-export function parseSendFence(text: string): string | null {
-  return parseSendFences(text)[0] ?? null;
-}
-
-/** 第一块 ask 围栏的正文(网页向人举手,一次只认一块). */
-export function parseAskFence(text: string): string | null {
-  return parseFences(text, ASK_OPENING)[0] ?? null;
+  return null;
 }
 
 /* -------------------------------------------------------------------------- */

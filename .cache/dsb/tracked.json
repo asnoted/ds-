@@ -63,6 +63,83 @@
       "sha256": "daeef362e1c9a13981850a6f1742ed04e4f91e16a83cc2bbc3e6f17ef727323f",
       "lines": 61,
       "tracked_at": 1792631019.902962
+    },
+    {
+      "path": "src/entrypoints/inject.content.ts",
+      "abs": "/Users/co/Downloads/dsb/src/entrypoints/inject.content.ts",
+      "sha256": "40fc0cd5865291eb3ef4937e68204bd5dcb5ab5345c60c8f6aedc997afe9bd18",
+      "lines": 575,
+      "tracked_at": 1792631695.647989
+    },
+    {
+      "path": "src/lib/page.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/page.ts",
+      "sha256": "ecc76b7507c641bebf41a94f21643788822959a054333d743b6609e3e4e13cdb",
+      "lines": 435,
+      "tracked_at": 1792631715.836006
+    },
+    {
+      "path": "src/lib/composer.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/composer.ts",
+      "sha256": "2d8331cd27746f4611d02660642b55ccdf6963dca9d1c0185b03d79256becc52",
+      "lines": 274,
+      "tracked_at": 1792631715.838197
+    },
+    {
+      "path": "src/lib/messages.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/messages.ts",
+      "sha256": "c2861ec12701daf10d0eb26f1fd64b5d50f82158266dd676700a447d40524d5c",
+      "lines": 686,
+      "tracked_at": 1792631725.922673
+    },
+    {
+      "path": "dsweb/README.md",
+      "abs": "/Users/co/Downloads/dsb/dsweb/README.md",
+      "sha256": "e719a4c7a52bcf3a680916155b4457b1f9fd2de16377b0d85fb412a9ce99c75f",
+      "lines": 60,
+      "tracked_at": 1792631758.5199401
+    },
+    {
+      "path": "dsweb/FINDINGS.md",
+      "abs": "/Users/co/Downloads/dsb/dsweb/FINDINGS.md",
+      "sha256": "286dd6f7c9cc6276f6b8b0b955fc7a1623a04a502cec48507cbe71b1e65f55b8",
+      "lines": 377,
+      "tracked_at": 1792631758.522997
+    },
+    {
+      "path": "src/lib/answer.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/answer.ts",
+      "sha256": "8334be542704c7988f14103addc814046e950291f4d03c0d72d9a613af48c2b6",
+      "lines": 291,
+      "tracked_at": 1792631778.677898
+    },
+    {
+      "path": "src/lib/fencecalls.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/fencecalls.ts",
+      "sha256": "509868f53949087a1def357d6aadb381cd16406ac56a1a5184efe2ae08bc8b2c",
+      "lines": 68,
+      "tracked_at": 1792631778.679991
+    },
+    {
+      "path": "src/lib/fence.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/fence.ts",
+      "sha256": "5b4d25529d1ae502a18f7fe5cc5139017b18e4f9b3dbab92fe6a07ded4548bba",
+      "lines": 151,
+      "tracked_at": 1792643968.703022
+    },
+    {
+      "path": "src/lib/instructions.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/instructions.ts",
+      "sha256": "4ded5545160a5a6cee55211cd395730e93b8b0e02cac8a4275d2ff64b96dea3b",
+      "lines": 129,
+      "tracked_at": 1792644039.2209122
+    },
+    {
+      "path": "package.json",
+      "abs": "/Users/co/Downloads/dsb/package.json",
+      "sha256": "ffebe403d8e5151b2a283bbb7b71fd1fb8f2d39db29d9abce9096149c03d0832",
+      "lines": 21,
+      "tracked_at": 1792644493.7263098
     }
   ]
 }

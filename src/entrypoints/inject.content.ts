@@ -103,6 +103,25 @@ export default defineContentScript({
     /** 追踪文件的 diff;null = 无变更.注入一次后清空,并回报消费. */
     let pendingDiff: string | null = null;
 
+    type PendingCall = {
+      id: string;
+      call: string;
+      status: "waiting" | "executing" | "done";
+      result?: { status: string; answer: string };
+    };
+
+    type ActiveRound = {
+      total: number;
+      received: number;
+      session: string | null;
+      calls: PendingCall[];
+    };
+
+    /** 正在收集多块结果的一轮. */
+    let activeRound: ActiveRound | null = null;
+    let domObserver: MutationObserver | null = null;
+    const buttonFinishCallbacks = new Map<string, (payload: { status: string; answer: string }) => void>();
+
     /**
      * 发送限速(#61):自动续聊这一路的发送也归同一条 3~15 秒的线,与隔离世界那三条
      * (`send.enter` / 圆键 / `message.retry`)**合成一条**--靠 `send-note` 通报并时刻,
@@ -348,10 +367,22 @@ export default defineContentScript({
         window.postMessage(saidMessage(nextMessageId("said"), said), "*");
       }
       if (calls.length > 0) {
-        const id = nextMessageId("send");
-        console.log(`[dsb] 认出 ${calls.length} 块 send 围栏(${id}),交给中继`);
-        fenceCalls = expectResult(fenceCalls, id, roundSession ?? current);
-        window.postMessage(callMessage(id, calls), "*");
+        const roundId = nextMessageId("send-round");
+        activeRound = {
+          total: calls.length,
+          received: 0,
+          session: roundSession ?? current,
+          calls: calls.map((call, index) => ({
+            id: `${roundId}-${index}`,
+            call,
+            status: "waiting",
+          })),
+        };
+        
+        console.log(`[dsb] 认出 ${calls.length} 块围栏(${roundId}),等待人工审批`);
+
+        setTimeout(attachButton, 100);
+
         if (nextAsk.clear) {
           const askId = nextMessageId("ask");
           console.log(`[dsb] send 围栏优先,ask(${askId})作废`);
@@ -409,12 +440,143 @@ export default defineContentScript({
       return null;
     }
 
+    function compactText(s: string): string {
+      return s.replace(/\s+/g, "");
+    }
+
+    function attachButton(): void {
+      if (!activeRound) return;
+
+      // 找所有 pre 节点
+      const codeBlocks = Array.from(document.querySelectorAll("pre"));
+      
+      for (const item of activeRound.calls) {
+        if (item.status !== "waiting") continue;
+
+        // 尝试解析参数部分用于匹配
+        let argsText = item.call;
+        try {
+          const parsed = JSON.parse(item.call);
+          argsText = JSON.stringify(parsed.arguments);
+        } catch {}
+
+        const cleanArgs = argsText.replace(/\s+/g, "");
+
+        // 在未处理的代码块里找匹配的
+        const matchingBlock = codeBlocks.find((block) => {
+          const container = block.closest(".md-code-block");
+          if (!container || container.querySelector(".dsb-exec-btn")) return false;
+          
+          const text = (block.textContent || "").replace(/\s+/g, "");
+          return text === cleanArgs || text.includes(cleanArgs);
+        });
+
+        if (!matchingBlock) continue;
+
+        const container = matchingBlock.closest(".md-code-block");
+        if (!container) continue;
+
+        const banner = container.querySelector(".md-code-block-banner-wrap");
+        if (!banner) continue;
+        const firstBtn = banner.querySelector('[role="button"]');
+        if (!firstBtn || !firstBtn.parentElement) continue;
+        const actionsContainer = firstBtn.parentElement;
+
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "display: flex; align-items: center; gap: 8px; margin-right: 8px;";
+        
+        const btnExec = document.createElement("div");
+        btnExec.className = "dsb-exec-btn";
+        btnExec.textContent = "执行";
+        const btnSkip = document.createElement("div");
+        btnSkip.className = "dsb-exec-btn";
+        btnSkip.textContent = "跳过";
+        
+        const baseStyle = "padding: 0 12px; height: 24px; line-height: 24px; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; background: transparent; color: inherit; cursor: pointer; font-size: 12px; display: flex; align-items: center; user-select: none; transition: background 0.2s;";
+        btnExec.style.cssText = baseStyle;
+        btnSkip.style.cssText = baseStyle;
+        
+        const hoverIn = (e: Event) => { (e.target as HTMLElement).style.background = "rgba(255,255,255,0.1)"; };
+        const hoverOut = (e: Event) => { (e.target as HTMLElement).style.background = "transparent"; };
+        [btnExec, btnSkip].forEach(b => {
+          b.addEventListener("mouseenter", hoverIn);
+          b.addEventListener("mouseleave", hoverOut);
+        });
+
+        const finishBlock = (resultPayload: { status: string; answer: string }) => {
+          if (item.status === "done") return;
+          item.status = "done";
+          item.result = resultPayload;
+          buttonFinishCallbacks.delete(item.id);
+          
+          wrap.style.pointerEvents = "none";
+          wrap.style.opacity = "0.5";
+          btnExec.style.display = "none";
+          btnSkip.textContent = "已处理";
+          
+          if (activeRound) {
+            activeRound.received += 1;
+            if (activeRound.received === activeRound.total) {
+              const mergedAnswer = activeRound.calls.map(c => c.result?.answer || "(no result)").join("\n\n");
+              dispatch({ type: "result", payload: { status: "ok", answer: mergedAnswer }, session: activeRound.session });
+              activeRound = null;
+            }
+          }
+        };
+
+        btnExec.addEventListener("click", (e) => {
+          e.preventDefault(); e.stopPropagation();
+          item.status = "executing";
+          btnExec.textContent = "执行中...";
+          if (activeRound) {
+            fenceCalls = expectResult(fenceCalls, item.id, activeRound.session);
+          }
+          window.postMessage(callMessage(item.id, [item.call]), "*");
+        });
+
+        btnSkip.addEventListener("click", (e) => {
+          e.preventDefault(); e.stopPropagation();
+          let toolName = "unknown";
+          try { toolName = JSON.parse(item.call).tool; } catch {}
+          finishBlock({ status: "ok", answer: `(用户跳过执行 ${toolName})` });
+        });
+
+        wrap.appendChild(btnExec);
+        wrap.appendChild(btnSkip);
+        wrap.setAttribute("data-call-id", item.id);
+        actionsContainer.insertBefore(wrap, actionsContainer.firstChild);
+        buttonFinishCallbacks.set(item.id, finishBlock);
+      }
+    }
+
+    function startDomObserver(): void {
+      if (domObserver !== null) return;
+      // document_start 阶段 body 可能还没生成
+      if (!document.body) {
+        window.addEventListener("DOMContentLoaded", startDomObserver, { once: true });
+        return;
+      }
+      domObserver = new MutationObserver(() => attachButton());
+      domObserver.observe(document.body, { childList: true, subtree: true });
+      attachButton();
+    }
+
+    function stopDomObserver(): void {
+      if (domObserver === null) return;
+      domObserver.disconnect();
+      domObserver = null;
+      document.querySelectorAll(".dsb-exec-btn").forEach((el) => el.remove());
+      activeRound = null;
+      buttonFinishCallbacks.clear();
+    }
+
     function install(): void {
       if (installed) return;
       installed = true;
       originalFetch = window.fetch;
       originalOpen = XMLHttpRequest.prototype.open;
       originalSend = XMLHttpRequest.prototype.send;
+      startDomObserver();
 
       window.fetch = function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
         const url = input instanceof Request ? input.url : String(input);
@@ -487,6 +649,7 @@ export default defineContentScript({
       window.fetch = originalFetch;
       XMLHttpRequest.prototype.open = originalOpen;
       XMLHttpRequest.prototype.send = originalSend;
+      stopDomObserver();
     }
 
     window.addEventListener("message", (event) => {
@@ -503,6 +666,18 @@ export default defineContentScript({
           console.log(`[dsb] 收到一条不是我们那轮的 result(${chain.id}),丢掉`);
           return;
         }
+        
+        // 检查是否由某个按钮的回调接管
+        const finishFn = buttonFinishCallbacks.get(chain.id);
+        if (finishFn) {
+          finishFn(chain.payload);
+          return;
+        }
+
+        // 常规逻辑
+        const btns = document.querySelectorAll(`.dsb-exec-btn[data-call-id="${chain.id}"]`);
+        btns.forEach((b) => b.remove());
+
         dispatch({ type: "result", payload: chain.payload, session: claimed.session });
         return;
       }
