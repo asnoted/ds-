@@ -83,10 +83,11 @@ def said_tools(said: SaidLog) -> list[Tool]:
 
 
 def explore_tools(root: Path) -> list[Tool]:
-    """只保留 ``glob`` 与 ``read`` 两件工作工具.
+    """进模型目录的四件工作工具:``glob`` / ``read`` / ``write`` / ``edit``.
 
-    ``glob`` 找文件、``read`` 看内容--探索项目的最小配套.其余三件
-    (``grep`` / ``write`` / ``edit``)按"只留工具说明"收窄,不注册.
+    五件实现里只留这四件:``grep`` 不注册(GREP 的说明没人排得动,而且
+    模型有 ``glob`` + ``read`` 就够).``write`` / ``edit`` 会改本机状态,
+    扩展侧对它们**不**自动放行,要人点「执行」.
     """
     keep = {"glob", "read", "write", "edit"}
     return [tool for tool in work_tools(root) if tool.name in keep]
@@ -98,9 +99,10 @@ def build_tools(gateway: Gateway, said: SaidLog, root: Path) -> list[Tool]:
     顺序即话语权:``said_*`` 在后,撞名时自家说了算(网关内部的撞名在
     :meth:`dsb.gateway.Gateway.tools` 里已经记过一笔 ``tool-clash``).
 
-    工作工具(``glob`` / ``read`` / ``grep`` / ``write`` / ``edit``)已按
-    "只留工具说明"的收窄**不再注册**:模型看不到它们,也就排不出它们.实现仍在
-    :mod:`dsb.work`,``resolve_work_root`` 与 :mod:`dsb.tracking` 照旧用它.
+    工作工具分两截:``explore_tools`` 的四件(``glob`` / ``read`` / ``write`` /
+    ``edit``)进模型目录;``tracking.tools`` 的三件(``track_file`` /
+    ``untrack_file`` / ``tracked_diff``)照旧注册--扩展拉 diff 与 CLI 用它--
+    但不进模型那份目录.``grep`` 实现仍在 :mod:`dsb.work`,不注册.
     """
     return [*gateway.tools(), *explore_tools(root), *tracking.tools(root), *said_tools(said)]
 

@@ -22,9 +22,9 @@ import {
   parseSendRequest,
   parseSaidReport,
   parseToolsRequest,
-  parseTrackedDiffRequest,
+  parseTrackingdiffRequest,
   sendResponseMessage,
-  trackedDiffResponseMessage,
+  trackingdiffResponseMessage,
   toolsResponseMessage,
   type AccountReport,
   type AskClearedReport,
@@ -148,10 +148,10 @@ export default defineBackground(() => {
   const TOOLS_CACHE_TTL_MS = 60_000;
 
   /**
-   * 模型目录里不列的自家工具:read 自动追踪后 track_file 冗余;tracked_diff 由扩展每 10s
-   * 自动拉取(见 fetchTrackedDiff);untrack 走 CLI(dsb track rm).注册照旧--扩展与 CLI 还要调.
+   * 模型目录里不列的自家工具:trackingdiff 由扩展自动拉取(见 fetchTrackingdiff).
+   * track_file / untrack_file 已从 dsb 侧注销(git 覆盖全部改动,那两个是死接口).
    */
-  const HIDDEN_MODEL_TOOLS = new Set(["track_file", "untrack_file", "tracked_diff"]);
+  const HIDDEN_MODEL_TOOLS = new Set(["trackingdiff"]);
 
   /** 图标三态. */
   let state: IconState = "off";
@@ -847,20 +847,20 @@ export default defineBackground(() => {
   }
 
   /**
-   * 拉一次 tracked diff:直连中继的 `tools/call tracked_diff`.
+   * 拉一次 tracked diff:直连中继的 `tools/call trackingdiff`.
    *
    * 不走 `sendOneCall`--那不是围栏,也不该翻图标 / 显示"调"角标 / 触发看门狗.
    * 短超时(10s):本地工具,几十毫秒该回;超了就当作没变更,下一轮再试.
    * 失败静默:拉不到只是这次没注入 diff,不是故障.
    */
-  const TRACKED_DIFF_TIMEOUT_MS = 10_000;
-  async function fetchTrackedDiff(consume: boolean): Promise<string> {
+  const TRACKINGDIFF_TIMEOUT_MS = 10_000;
+  async function fetchTrackingdiff(consume: boolean): Promise<string> {
     const id = nextMessageId("tracked");
     try {
-      const response = await fetchWithTimeout(relayMcpUrl(), TRACKED_DIFF_TIMEOUT_MS, {
+      const response = await fetchWithTimeout(relayMcpUrl(), TRACKINGDIFF_TIMEOUT_MS, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: callToolBody(id, "tracked_diff", { consume }),
+        body: callToolBody(id, "trackingdiff", { consume }),
       });
       const payload = parseMcpResponse(response.status, await response.text(), id);
       if (payload.status !== "ok") return "";
@@ -1037,10 +1037,10 @@ export default defineBackground(() => {
     if (toolsRequest !== null) {
       return serveTools().then((tools) => toolsResponseMessage(tools));
     }
-    const trackedDiffRequest = parseTrackedDiffRequest(message);
-    if (trackedDiffRequest !== null) {
-      return fetchTrackedDiff(trackedDiffRequest.consume).then((diff) =>
-        trackedDiffResponseMessage(diff),
+    const trackingdiffRequest = parseTrackingdiffRequest(message);
+    if (trackingdiffRequest !== null) {
+      return fetchTrackingdiff(trackingdiffRequest.consume).then((diff) =>
+        trackingdiffResponseMessage(diff),
       );
     }
     // ask 上报与清除(#26):都是通知,不等回话,挂"等人回"或清掉它.

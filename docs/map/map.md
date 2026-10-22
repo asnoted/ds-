@@ -17,7 +17,8 @@ flowchart TB
   A_MSG["消息/代码控件<br/>message.copy [点]<br/>message.like [未点]<br/>message.dislike [未点]<br/>message.read [未点]<br/>message.share [未点]<br/>code.copy [点]<br/>code.download [未点]"]
   A_SEND["发送<br/>button.click [未点]<br/>send.enter [未点]<br/>message.retry [未点]"]
   A_WAIT["等待<br/>wait.fence [未点]<br/>wait.reply [未点]"]
-  D4_G_WORK["工作工具<br/>glob [读]<br/>read [读]<br/>track_file [读]<br/>untrack_file [读]<br/>tracked_diff [读]"]
+  D4_G_WORK["工作工具(进模型目录)<br/>glob [读]<br/>read [读]<br/>write [未点]<br/>edit [未点]"]
+  D4_G_TRACK["tracking(不进模型目录)<br/>trackingdiff [读]"]
 
   D2 --> D3
   D1 --> D2
@@ -44,6 +45,7 @@ flowchart TB
   D3 --> A_SEND
   D3 --> A_WAIT
   D4 --> D4_G_WORK
+  D4 --> D4_G_TRACK
   D1 --> A_WRITE
   D1 --> A_SEND
   D4 --> A_WRITE

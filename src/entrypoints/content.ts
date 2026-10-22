@@ -20,9 +20,9 @@ import {
   sendNoteMessage,
   toolsMessage,
   toolsRequestMessage,
-  trackedDiffRequestMessage,
-  trackedDiffMessage,
-  parseTrackedDiffResponse,
+  trackingdiffRequestMessage,
+  trackingdiffMessage,
+  parseTrackingdiffResponse,
   unreachableResult,
   type ActionRoster,
   type AskClearedMessage,
@@ -93,6 +93,11 @@ export default defineContentScript({
           parsed === null ? unreachableResult(call.id) : resultMessage(call.id, parsed.payload),
           "*",
         );
+        // 工具调完之后立刻重拉 diff:``write`` / ``edit`` 成功时服务端 ``sync_anchor``
+        // 已把基线前移到写之后的状态,但扩展侧 ``pendingDiff`` 还是旧的--不刷新的话,
+        // 用户紧接着发下一条消息会把旧 diff 再注入一遍(模型看到自己已经知道的改动).
+        // 运行时安全:``syncTrackingdiff`` 是 main() 里后定义的 const,这一步早已在 main() 返回之后.
+        void syncTrackingdiff();
       } catch (error) {
         console.log("[dsb] 工具调用没有送出去", error);
         window.postMessage(unreachableResult(call.id), "*");
@@ -203,37 +208,42 @@ export default defineContentScript({
      *
      * 下一步再把这份 diff 广播给页面世界缓存;先只验"background → 隔离世界"这一跳.
      */
-    const TRACKED_DIFF_INTERVAL_MS = 10_000;
-    let trackedDiffTimer: ReturnType<typeof setInterval> | undefined;
-    const consumeTrackedDiff = async (): Promise<void> => {
+    // 预拉周期:每条消息发送后立刻重跑一次,这个定时器兜"没消息但文件变了"那一段.
+    // 2s 不是为了省,是为了让页面世界的 pendingDiff 尽量贴近"发送那一刻的 git diff".
+    const TRACKINGDIFF_INTERVAL_MS = 2_000;
+    let trackingdiffTimer: ReturnType<typeof setInterval> | undefined;
+    const syncTrackingdiff = async (): Promise<void> => {
       try {
-        await browser.runtime.sendMessage(trackedDiffRequestMessage(true));
-        console.log("[dsb] tracked diff 已消费,快照前移");
-      } catch {
-        // 消费失败:下一轮会再拉一次(可能重复注入一次,可接受)
-      }
-    };
-    const syncTrackedDiff = async (): Promise<void> => {
-      try {
-        const response = await browser.runtime.sendMessage(trackedDiffRequestMessage(false));
-        const parsed = parseTrackedDiffResponse(response);
-        if (parsed !== null && parsed.diff !== "") {
-          console.log(`[dsb] tracked diff: ${parsed.diff.length} 字`);
-          window.postMessage(trackedDiffMessage(nextMessageId("tracked-diff"), parsed.diff), "*");
-        }
+        const response = await browser.runtime.sendMessage(trackingdiffRequestMessage(false));
+        const parsed = parseTrackingdiffResponse(response);
+        if (parsed === null) return;
+        // **无条件广播**:空 diff 也要发--页面世界靠它把旧的 pendingDiff 清掉,
+        // 否则"上一轮显示过、这一轮没了"的变更会被一直留着,一有消息就重复注入.
+        if (parsed.diff !== "") console.log(`[dsb] tracked diff: ${parsed.diff.length} 字`);
+        window.postMessage(trackingdiffMessage(nextMessageId("trackingdiff"), parsed.diff), "*");
       } catch {
         // 送不出去不重试,下一轮还在
       }
     };
-    const startTrackedDiffSync = (): void => {
-      if (trackedDiffTimer !== undefined) return;
-      void syncTrackedDiff();
-      trackedDiffTimer = setInterval(syncTrackedDiff, TRACKED_DIFF_INTERVAL_MS);
+    const consumeTrackingdiff = async (): Promise<void> => {
+      try {
+        await browser.runtime.sendMessage(trackingdiffRequestMessage(true));
+        console.log("[dsb] tracked diff 已消费,基线前移");
+      } catch {
+        // 消费失败:下一次预拉会覆盖 pending,基线不动;重复注入一次优于丢改动
+      }
+      // 消费完立刻重拉:基线已前移,这次拿到的是"刚发出去那条消息之后"的变化.
+      await syncTrackingdiff();
     };
-    const stopTrackedDiffSync = (): void => {
-      if (trackedDiffTimer === undefined) return;
-      clearInterval(trackedDiffTimer);
-      trackedDiffTimer = undefined;
+    const startTrackingdiffSync = (): void => {
+      if (trackingdiffTimer !== undefined) return;
+      void syncTrackingdiff();
+      trackingdiffTimer = setInterval(syncTrackingdiff, TRACKINGDIFF_INTERVAL_MS);
+    };
+    const stopTrackingdiffSync = (): void => {
+      if (trackingdiffTimer === undefined) return;
+      clearInterval(trackingdiffTimer);
+      trackingdiffTimer = undefined;
     };
 
     /**
@@ -275,8 +285,8 @@ export default defineContentScript({
         void reportSaid(chain);
         return;
       }
-      if (chain?.kind === "tracked-diff-consumed") {
-        void consumeTrackedDiff();
+      if (chain?.kind === "trackingdiff-consumed") {
+        void consumeTrackingdiff();
         return;
       }
       if (chain?.kind === "ask") {
@@ -383,11 +393,11 @@ export default defineContentScript({
       if (readToggle(changes[TOGGLE_STORAGE_KEY].newValue)) {
         startAccountReporting();
         startToolsSync();
-        startTrackedDiffSync();
+        startTrackingdiffSync();
       } else {
         stopAccountReporting();
         stopToolsSync();
-        stopTrackedDiffSync();
+        stopTrackingdiffSync();
       }
     });
 
@@ -397,7 +407,7 @@ export default defineContentScript({
     if (readToggle(stored[TOGGLE_STORAGE_KEY])) {
       startAccountReporting();
       startToolsSync();
-      startTrackedDiffSync();
+      startTrackingdiffSync();
     }
   },
 });

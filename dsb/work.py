@@ -850,6 +850,24 @@ def _bad_path(detail: str) -> tuple[Payload, bool]:
     return {"text": cap_result(f"{ERROR_BAD_PATH}({detail})", ERROR_HINT)}, True
 
 
+def _sync_anchor_after_write(root: Path, result: tuple[Payload, bool]) -> None:
+    """write / edit 成功之后立刻把当前 ``git diff`` 记成基线.
+
+    这就是"当作最后一个工具执行"那条语义:改动是模型自己做的,那一下它已经知道;
+    下一轮注入只该拿自那以后的变更,不重复报这一段.
+
+    失败不动基线--没写成的改动不该被吃掉.
+    """
+    if result[1]:
+        return
+    try:
+        from dsb.tracking import sync_anchor
+
+        sync_anchor(root)
+    except Exception:  # noqa: BLE001 - 记基线失败不该把工具结果拖成失败
+        pass
+
+
 def work_tools(root: Path) -> list[Tool]:
     """工作工具面:把纯函数包成 :class:`dsb.mcp.Tool`(相对路径以 ``root`` 为基准)."""
 
@@ -869,16 +887,7 @@ def work_tools(root: Path) -> list[Tool]:
         page = arguments.get("limit")
         if page is not None and (not isinstance(page, int) or isinstance(page, bool)):
             return _bad_path("limit 必须是整数")
-        result = _wrap(lambda: read_text(root, raw, offset, page))
-        if not result[1]:
-            # 读成功就把文件纳入追踪(已追踪不动快照):对话间的改动下一轮以 diff 注入.
-            try:
-                from dsb.tracking import ensure_tracked
-
-                ensure_tracked(root, raw)
-            except Exception:
-                pass
-        return result
+        return _wrap(lambda: read_text(root, raw, offset, page))
 
     def grep_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
         pattern = arguments.get("pattern")
@@ -897,7 +906,9 @@ def work_tools(root: Path) -> list[Tool]:
             return _bad_path("content 必须是字符串")
         if not isinstance(overwrite, bool):
             return _bad_path("overwrite 必须是布尔值")
-        return _wrap(lambda: f"已写入 {write_text(root, raw, content, overwrite)} 字节:{raw}")
+        result = _wrap(lambda: f"已写入 {write_text(root, raw, content, overwrite)} 字节:{raw}")
+        _sync_anchor_after_write(root, result)
+        return result
 
     def edit_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
         raw = arguments.get("path")
@@ -906,7 +917,9 @@ def work_tools(root: Path) -> list[Tool]:
             return _bad_path("缺少 path")
         if not isinstance(edits, list) or not edits:
             return _bad_path("edits 必须是非空数组")
-        return _wrap(lambda: f"已替换 {edit_text(root, raw, edits)} 处:{raw}")
+        result = _wrap(lambda: f"已替换 {edit_text(root, raw, edits)} 处:{raw}")
+        _sync_anchor_after_write(root, result)
+        return result
 
     return [
         Tool(

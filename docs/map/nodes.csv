@@ -14,7 +14,8 @@ A_BG,后台: target=null,group,D3,
 A_MSG,消息/代码控件,group,D3,
 A_SEND,发送,group,D3,
 A_WAIT,等待,group,D3,
-D4_G_WORK,工作工具,group,D4,
+D4_G_WORK,工作工具(进模型目录),group,D4,
+D4_G_TRACK,tracking(不进模型目录),group,D4,
 page.state,,action,A_READ,read
 chats.list,,action,A_READ,read
 messages.list,,action,A_READ,read
@@ -51,6 +52,6 @@ wait.fence,,action,A_WAIT,unclicked
 wait.reply,,action,A_WAIT,unclicked
 glob,,action,D4_G_WORK,read
 read,,action,D4_G_WORK,read
-track_file,,action,D4_G_WORK,read
-untrack_file,,action,D4_G_WORK,read
-tracked_diff,,action,D4_G_WORK,read
+write,,action,D4_G_WORK,unclicked
+edit,,action,D4_G_WORK,unclicked
+trackingdiff,,action,D4_G_TRACK,read

@@ -14,7 +14,7 @@ import {
   saidMessage,
   sendNoteMessage,
   stopMessage,
-  trackedDiffConsumedMessage,
+  trackingdiffConsumedMessage,
 } from "../lib/channel";
 import { CONTINUATION_MARKER } from "../lib/continuation";
 import { type ContinuationFailure } from "../lib/continuationfail";
@@ -269,13 +269,15 @@ export default defineContentScript({
             console.log(
               `[dsb] 已把协议说明拼到这条消息开头${hasDiff ? `(含 ${pendingDiff?.length ?? 0} 字 diff)` : ""}`,
             );
-            if (hasDiff) {
-              pendingDiff = null;
-              window.postMessage(
-                trackedDiffConsumedMessage(nextMessageId("tracked-consumed")),
-                "*",
-              );
-            }
+            // **无条件消费**:即使这一条没 diff,也要让基线前移一次--
+            // write / edit 成功后服务端已 sync_anchor(基线=写之后的状态),但页面世界
+            // 的 pendingDiff 是内存变量,只有走消费链路才会被重拉的广播覆盖.
+            // 只在有 diff 时才发,那条旧 diff 会一直挂着,下一条消息又注入一遍.
+            pendingDiff = null;
+            window.postMessage(
+              trackingdiffConsumedMessage(nextMessageId("tracked-consumed")),
+              "*",
+            );
           }
           return next;
         }
@@ -453,12 +455,16 @@ export default defineContentScript({
         return container && !container.querySelector(".dsb-exec-btn");
       });
 
-      let blockIndex = 0;
       for (const item of activeRound.calls) {
-        if (item.status !== "waiting") continue;
-        if (blockIndex >= blocks.length) break;
-
-        const block = blocks[blockIndex++];
+        // 按内容精准匹配,不再靠 DOM 顺序:历史代码块多时按序号配会挂错,
+        // 流式重渲染后顺序也会变.
+        const target = compactText(item.call);
+        const at = blocks.findIndex((b) => {
+          const text = compactText(b.textContent || "");
+          return text.includes(target) || target.includes(text);
+        });
+        if (at === -1) continue;
+        const [block] = blocks.splice(at, 1);
         const container = block.closest(".md-code-block");
         if (!container) continue;
 
@@ -512,8 +518,10 @@ export default defineContentScript({
 
         btnExec.addEventListener("click", (e) => {
           e.preventDefault(); e.stopPropagation();
+          if (item.status !== "waiting") return;
           item.status = "executing";
           btnExec.textContent = "执行中...";
+          btnSkip.style.display = "none";
           if (activeRound) {
             fenceCalls = expectResult(fenceCalls, item.id, activeRound.session);
           }
@@ -522,6 +530,7 @@ export default defineContentScript({
 
         btnSkip.addEventListener("click", (e) => {
           e.preventDefault(); e.stopPropagation();
+          if (item.status !== "waiting") return;
           let toolName = "unknown";
           try { toolName = JSON.parse(item.call).tool; } catch {}
           finishBlock({ status: "ok", answer: `(用户跳过执行 ${toolName})` });
@@ -533,10 +542,20 @@ export default defineContentScript({
         actionsContainer.insertBefore(wrap, actionsContainer.firstChild);
         buttonFinishCallbacks.set(item.id, finishBlock);
 
-        // 只读工具自动放行:按钮照建(视觉与去重都靠它),建完直接按下去.
-        let toolName = "unknown";
-        try { toolName = JSON.parse(item.call).tool; } catch {}
-        if (isAutoApproved(toolName)) btnExec.click();
+        // 网页重绘可能把旧按钮丢掉:按当前状态复原 UI,别让它退回"两个都能点".
+        if (item.status === "executing") {
+          btnExec.textContent = "执行中...";
+          btnSkip.style.display = "none";
+        } else if (item.status === "done") {
+          wrap.style.pointerEvents = "none";
+          wrap.style.opacity = "0.5";
+          btnExec.style.display = "none";
+          btnSkip.textContent = "已处理";
+        } else {
+          let toolName = "unknown";
+          try { toolName = JSON.parse(item.call).tool; } catch {}
+          if (isAutoApproved(toolName)) btnExec.click();
+        }
       }
     }
 
@@ -677,7 +696,7 @@ export default defineContentScript({
         catalog = chain.tools;
         return;
       }
-      if (chain?.kind === "tracked-diff") {
+      if (chain?.kind === "trackingdiff") {
         pendingDiff = chain.diff;
         return;
       }

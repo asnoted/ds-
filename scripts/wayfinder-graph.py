@@ -8,12 +8,12 @@
 
 **它读什么**:
 
-- `docs/wayfinder/nodes.csv`: `id,label,kind,parent,status`
+- `docs/map/nodes.csv`: `id,label,kind,parent,status`
   - `kind=domain`: 域, `parent` 为空;
   - `kind=group`: 动作组, `parent` 指向域 (当前是 D3);
   - `kind=action`: 动作, `parent` 指向组; 动作名与 `src/lib/registry.ts` 逐一对拍;
   - `status`: `clicked` / `unclicked` / `read` / `background`, 只给 action.
-- `docs/wayfinder/edges.csv`: `from,to,kind,note,render`
+- `docs/map/edges.csv`: `from,to,kind,note,render`
   - `render=graph` 进图, `domain` / `ownership` / `call` / `order` 画实线,
     `probe` / `evidence` 画虚线;
   - `render=detail` 是逐动作边 (`order` / `readback`), 只作数据, 不画进组图;
