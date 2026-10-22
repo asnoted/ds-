@@ -16,22 +16,22 @@ import {
 } from "./armed";
 import { CONTINUATION_MARKER } from "./continuation";
 
-const BODY = "agent:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
+const BODY = "dsb:\nstatus: ok\nanswer[1]{text}:\n  入口在 dsb/server.py.";
 
 describe("matchesMarker / 钥匙", () => {
   it("认短标记本身(含首尾空白与 CRLF 的写法)", () => {
     expect(matchesMarker(CONTINUATION_MARKER)).toBe(true);
     expect(matchesMarker(`  ${CONTINUATION_MARKER}  `)).toBe(true);
     expect(matchesMarker(CONTINUATION_MARKER.replace(/\n/g, "\r\n"))).toBe(true);
-    expect(matchesMarker("tool:result")).toBe(true);
+    expect(matchesMarker("dsb:result")).toBe(true);
   });
 
   it("认不出用户自己写的话(#49 的核心:手打的消息永远不等于标记)", () => {
     expect(matchesMarker("你好")).toBe(false);
-    expect(matchesMarker("tool: result")).toBe(false); // 多了空格不算
-    expect(matchesMarker("tool:result\n")).toBe(true); // 只差首尾空白仍算同一句
-    expect(matchesMarker("tool:result 帮我看看 README")).toBe(false); // 多了一句就不算
-    expect(matchesMarker("tool:")).toBe(false); // 只半句
+    expect(matchesMarker("dsb:result\nstatus: ok")).toBe(false); // 回灌正文不是标记
+    expect(matchesMarker("dsb:result\n")).toBe(true); // 只差首尾空白仍算同一句
+    expect(matchesMarker("dsb:result 帮我看看 README")).toBe(false); // 多了一句就不算
+    expect(matchesMarker("ds")).toBe(false); // 只半句
     expect(matchesMarker(BODY)).toBe(false); // 工具结果正文本身不是标记
     expect(matchesMarker("")).toBe(false);
   });

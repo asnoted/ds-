@@ -14,10 +14,10 @@ import {
 import { hasReplyAnchor, okPayload, parseReplyPayload } from "./reply";
 
 describe("CONTINUATION_MARKER", () => {
-  it("可见标记只有一行 tool:result;给模型看的正文另守首行锚", () => {
-    expect(CONTINUATION_MARKER).toBe("tool:result");
+  it("可见标记就是 `dsb:result` 一行;与给模型看的正文共用首行锚", () => {
+    expect(CONTINUATION_MARKER).toBe("dsb:result");
     expect(CONTINUATION_MARKER.length).toBeLessThan(20);
-    expect(hasReplyAnchor(CONTINUATION_MARKER)).toBe(false);
+    expect(hasReplyAnchor(CONTINUATION_MARKER)).toBe(true);
     expect(hasReplyAnchor(buildContinuation(okPayload("x")))).toBe(true);
   });
 });

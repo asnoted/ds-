@@ -16,16 +16,17 @@
 import { buildReply, type OkPayload } from "./reply";
 
 /**
- * 对话里那个短标记:**只有一行 `tool:result`**.
+ * 对话里那个短标记:**只有一行 `dsb:result`**--与给模型看的正文**同一个首行锚**.
  *
- * 它是"扩展替用户发了一轮"的唯一可见痕迹,给人看的.给模型看的那段正文是**另一回事**:
- * 仍以首行锚 `dsb:` 开头(`buildContinuation` → `buildReply`),只是不走可见消息,
+ * 它是"扩展替用户发了一轮"的唯一可见痕迹,给人看的.给模型看的那段正文仍以
+ * `dsb:` 开头(`buildContinuation` → `buildReply`),只是不走可见消息,
  * 由出站请求体替换进去(ADR-0002).
  *
- * 可见标记不再守 `agent:` 首行锚:`prependOnce` 因此额外认一次本常量,免得回灌时
- * 被拼上协议说明.
+ * 两者共用首行锚,于是 `prependOnce` / `wait.reply` / said 上报那几处
+ * **认锚就够**:不必再为可见标记单独开一条特判(旧版 `tool:result` 不守锚,
+ * 漏了特判就会被拼上协议说明,续聊当场钥匙失配).
  */
-export const CONTINUATION_MARKER = "tool:result";
+export const CONTINUATION_MARKER = "dsb:result";
 
 /**
  * 给模型的**一轮**工具结果正文上限(字符).
