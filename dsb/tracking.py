@@ -31,6 +31,8 @@ STATE_DIRNAME = ".cache/dsb"
 MAX_DIFF_CHARS = 4000
 #: 整个 tracked_diff 结果的字符上限.
 MAX_TOTAL_CHARS = 16000
+#: 上次预拉(``consume=False``)时各追踪文件的 sha;消费只前移到这一刻.
+PENDING_FILENAME = "pending.json"
 #: unified diff 前后各留几行上下文.
 DIFF_CONTEXT = 5
 
@@ -149,6 +151,20 @@ def track_remove(root: Path, path: str) -> dict:
     return {"path": rel, "removed": removed > 0}
 
 
+def ensure_tracked(root: Path, path: str) -> None:
+    """没在追踪就建一次基准快照;已在追踪则**完全不动**--快照只在出站交付 diff 时由
+    ``tracked_diff(consume=True)`` 前移,读文件不能把用户的改动吃掉."""
+    abs_path, _ = _to_relative(root, path)
+    # 状态目录自己的文件不追踪:写追踪表就会改它,自指成永远有 diff 的噪音.
+    state_dir = _state_dir(root).resolve()
+    if abs_path == state_dir or state_dir in abs_path.parents:
+        return
+    state = _load_state(root)
+    if any(e.get("abs") == str(abs_path) for e in state["tracked"]):
+        return
+    track_add(root, path)
+
+
 def track_list(root: Path) -> dict:
     state = _load_state(root)
     return {
@@ -159,13 +175,39 @@ def track_list(root: Path) -> dict:
     }
 
 
+def _load_pending(root: Path) -> dict[str, str] | None:
+    """上次预拉时各追踪文件的 sha;没有就回 ``None``(消费按当下前移兜底)."""
+    path = _state_dir(root) / PENDING_FILENAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _save_pending(root: Path, shas: dict[str, str]) -> None:
+    (_state_dir(root) / PENDING_FILENAME).write_text(
+        json.dumps(shas, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _clear_pending(root: Path) -> None:
+    (_state_dir(root) / PENDING_FILENAME).unlink(missing_ok=True)
+
+
 def tracked_diff(root: Path, consume: bool = False) -> dict:
     """返回自上次调用以来所有追踪文件的变更.
 
-    ``consume=True`` 时前移快照(扩展注入成功后用);``False`` 只读(预拉取用),
-    不消费--否则预拉取那一刻的变更就被吃掉,注入时看不到.
+    ``consume=False`` 是预拉:算 diff,并把「这一刻各文件的 sha」记进 ``pending.json``.
+    ``consume=True`` 是消费:只对**当前 sha 仍等于上次预拉那一刻**的文件前移快照--
+    预拉(最多 10s 前)到消费之间又变过的文件保持旧基准,下一轮再报.否则那段改动会被
+    前移吃掉:既没进过任何注入,也不会再出现.没有 pending(从未预拉)时按当下前移兜底.
     """
     state = _load_state(root)
+    pending = _load_pending(root) if consume else None
+    seen_shas: dict[str, str] = {}
     diffs: list[dict] = []
     total = 0
     for entry in state["tracked"]:
@@ -180,6 +222,8 @@ def tracked_diff(root: Path, consume: bool = False) -> dict:
                 diffs.append({"path": path, "status": "deleted"})
                 _snapshot_path(root, abs_path).unlink(missing_ok=True)
             continue
+        current_sha = hashlib.sha256(current.encode("utf-8")).hexdigest()
+        seen_shas[abs_path] = current_sha
         previous = _snapshot_content(root, abs_path)
         if previous is None:
             _write_snapshot(root, abs_path, current)
@@ -189,12 +233,18 @@ def tracked_diff(root: Path, consume: bool = False) -> dict:
         diff_text = _diff_one(current, previous, path)
         status = "added" if previous == "" else "modified"
         diffs.append({"path": path, "status": status, "diff": diff_text})
-        if consume:
+        if consume and (pending is None or pending.get(abs_path) == current_sha):
             _write_snapshot(root, abs_path, current)
         total += len(diff_text)
         if total >= MAX_TOTAL_CHARS:
-            diffs.append({"path": "(truncated)", "status": "note", "diff": "总结果超过上限,其余变更省略"})
+            diffs.append(
+                {"path": "(truncated)", "status": "note", "diff": "总结果超过上限,其余变更省略"}
+            )
             break
+    if consume:
+        _clear_pending(root)
+    else:
+        _save_pending(root, seen_shas)
     return {"files": diffs, "count": len(diffs)}
 
 
@@ -271,16 +321,10 @@ def tools(root: Path) -> list[Tool]:
         ),
         Tool(
             name="tracked_diff",
-            description="取回所有追踪文件自上次调用以来的变更(只读,不消费基准).",
+            description="取回所有追踪文件自上次调用以来的变更.",
             input_schema={
                 "type": "object",
-                "properties": {
-                    "consume": {
-                        "type": "boolean",
-                        "description": "内部参数,模型不该传;扩展注入成功后用它前移基准",
-                        "default": False,
-                    },
-                },
+                "properties": {},
             },
             handler=_tracked_diff_handler(root),
         ),

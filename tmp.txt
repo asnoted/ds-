@@ -2,18 +2,7 @@
 
 唯一端点是 ``POST /mcp``:JSON-RPC 一行一条(``initialize`` / ``ping`` /
 ``tools/list`` / ``tools/call``).原来那批 HTTP 路--``/send`` ``/health`` ``/status``
-``/action`` ``/actions`` ``/action/result`` ``/said``--全废了:探活就是 ``ping``,现场
-就是工具自己的结果,其余无话可说.dsb 从不发起任何事:不推送,不轮询,没有 SSE.
-
-- ``POST /mcp`` → 200(协议错也是 200 + JSON-RPC error,同构一处解析);通知回 202;
-- ``DELETE /mcp`` → 205(无会话可收;客户端收摊的礼貌动作,不该撞 405);
-- ``/mcp`` 上别的方法 → 405,别的路径 → 404(都在册的 ``{"status": "error", ...}`` 载荷).
-
-**一条 CORS 头都不下发**:网页的跨域预检拿不到允许头,撞死;扩展(host_permissions)
-与本机进程不受预检约束,照旧放行.预检管不到的"简单请求"(`text/plain` 之类)另有一道闸:
-`POST /mcp` 只认 `application/json`.Host 也认--DNS 重绑定能把别的域名送进 loopback.
-
-失败与慢另外留痕(:mod:`dsb.log`):``bad-request`` / ``mcp-broke``;工具层的
+``/
 ``tool-fail`` / ``tool-slow`` 在 :mod:`dsb.mcp` 里记.入参与结果正文都进不来--签名里就
 没有那个位置.访问日志照旧整个关掉.
 """

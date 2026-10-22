@@ -21,6 +21,48 @@
       "sha256": "51b2a62345da013cbb6fc7a4ab4ac36b1a7285864dd65fa82aec2ed7209c6b8d",
       "lines": 21,
       "tracked_at": 1792576031.1372008
+    },
+    {
+      "path": "tmp.txt",
+      "abs": "/Users/co/Downloads/dsb/tmp.txt",
+      "sha256": "fd7a3829aab043ce205ff30cbc91c5ab10dee57d3c8b2e465004bed4cad94319",
+      "lines": 771,
+      "tracked_at": 1792630483.339612
+    },
+    {
+      "path": "docs/map/nodes.csv",
+      "abs": "/Users/co/Downloads/dsb/docs/map/nodes.csv",
+      "sha256": "4b627c1590af793339332eaa84747d9f3d59e4188c4f49d3fe263b43e991fefb",
+      "lines": 50,
+      "tracked_at": 1792630672.7697449
+    },
+    {
+      "path": "docs/map/edges.csv",
+      "abs": "/Users/co/Downloads/dsb/docs/map/edges.csv",
+      "sha256": "8c4d56dde25f1f33fbf9947220b287b06f33f3e53b76e81a0758e67003eceaa3",
+      "lines": 44,
+      "tracked_at": 1792630677.058521
+    },
+    {
+      "path": "scripts/wayfinder-graph.py",
+      "abs": "/Users/co/Downloads/dsb/scripts/wayfinder-graph.py",
+      "sha256": "0ff063989ae16453a1fcb56c81f0f898238427bf1100029afb61b94bfdcdfa9b",
+      "lines": 277,
+      "tracked_at": 1792630677.060997
+    },
+    {
+      "path": "src/lib/registry.ts",
+      "abs": "/Users/co/Downloads/dsb/src/lib/registry.ts",
+      "sha256": "252c64decb906d402b01547e94c78eb48e99fae6db8315611a066bcc14639325",
+      "lines": 403,
+      "tracked_at": 1792630756.578552
+    },
+    {
+      "path": "docs/map/map.md",
+      "abs": "/Users/co/Downloads/dsb/docs/map/map.md",
+      "sha256": "daeef362e1c9a13981850a6f1742ed04e4f91e16a83cc2bbc3e6f17ef727323f",
+      "lines": 61,
+      "tracked_at": 1792631019.902962
     }
   ]
 }

@@ -31,6 +31,7 @@ import threading
 import unicodedata
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager, suppress
+from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -99,6 +100,47 @@ ERROR_HINT = "把参数改短或改窄再试"
 #: #89 起它是 :data:`dsb.permissions.DEFAULT_RULES` 里 ``edit`` 那份表的一条规则
 #: (``.git`` / ``.git/*`` deny),这里只留字面量给遍历时裁目录用.
 PROTECTED_DIR = ".git"
+
+
+#: glob 遍历时按 ``<root>/.gitignore`` 裁目录与文件(真机探索:501 行里 264 行是
+#: ``.venv`` 里的依赖).规则是数据,不在这儿抄第二份名单--名单会漂.
+GITIGNORE_NAME = ".gitignore"
+
+
+def _gitignore_rules(root: Path) -> list[tuple[str, bool, bool]]:
+    """``<root>/.gitignore`` → ``(模式, 钉在根上, 只对目录)``;读不到就是空表.
+
+    只认最常用的那几样:空行与 ``#`` 注释跳过,尾 ``/`` 只对目录,首 ``/`` 钉在
+    root 上,模式里含 ``/`` 的按根相对路径比,其余按名字在任意深度比.
+    ``!`` 取反不收:本仓的名单用不到,用到时再加.
+    """
+    try:
+        text = (root / GITIGNORE_NAME).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    rules: list[tuple[str, bool, bool]] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        directory_only = line.endswith("/")
+        pattern = line[:-1] if directory_only else line
+        anchored = pattern.startswith("/") or "/" in pattern
+        pattern = pattern.lstrip("/")
+        if pattern:
+            rules.append((pattern, anchored, directory_only))
+    return rules
+
+
+def _ignored(relative: str, is_dir: bool, rules: list[tuple[str, bool, bool]]) -> bool:
+    """这条根相对路径是否被 ``.gitignore`` 里某条规则盖住."""
+    name = relative.rsplit("/", 1)[-1]
+    for pattern, anchored, directory_only in rules:
+        if directory_only and not is_dir:
+            continue
+        if fnmatchcase(relative if anchored else name, pattern):
+            return True
+    return False
 
 #: dsb 实际会去读的那两个本机配置文件(#89):默认在仓根,但都能被配置改到别处.
 #: 保护的是**真实生效的那两个文件**,不只是名字--落在 root 内它们同样读写都拒.
@@ -358,7 +400,8 @@ def _clean_glob_pattern(pattern: str) -> str:
 
 
 def glob_tree(root: Path, pattern: str) -> str:
-    """``glob``:按模式找 root 内的路径,目录带尾 ``/``,排序;跳过 ``.git``.
+    """``glob``:按模式找 root 内的路径,目录带尾 ``/``,排序;跳过 ``.git``
+    与 ``.gitignore`` 里写着的东西.
 
     模式用 ``/`` 分隔,支持 ``*`` / ``?`` / ``**``(与 :class:`pathlib.PurePath` 的
     ``full_match`` 同一套语义).只列名字,不读内容,所以受保护的 ``mcp.json`` / ``.env``
@@ -371,11 +414,16 @@ def glob_tree(root: Path, pattern: str) -> str:
     except (OSError, RuntimeError) as exc:
         raise WorkError(ERROR_BAD_PATH, detail=f"工作目录:{root}") from exc
     matches: list[str] = []
+    rules = _gitignore_rules(root_real)
     for dirpath, dirnames, filenames in os.walk(root_real, followlinks=False):
-        # .git 整个不列:它不是工作内容,grep 也不进去.
-        dirnames[:] = sorted(name for name in dirnames if name != PROTECTED_DIR)
         base = Path(dirpath).relative_to(root_real).as_posix()
         prefix = "" if base == "." else f"{base}/"
+        # .git 与 .gitignore 里写着的目录整个不列:它们不是工作内容.
+        dirnames[:] = sorted(
+            name
+            for name in dirnames
+            if name != PROTECTED_DIR and not _ignored(f"{prefix}{name}", True, rules)
+        )
         for name in dirnames:
             relative = f"{prefix}{name}"
             if PurePosixPath(relative).full_match(cleaned):
@@ -384,14 +432,19 @@ def glob_tree(root: Path, pattern: str) -> str:
             if name == PROTECTED_DIR:
                 continue
             relative = f"{prefix}{name}"
+            if _ignored(relative, False, rules):
+                continue
             if PurePosixPath(relative).full_match(cleaned):
                 matches.append(relative)
     matches.sort()
     total = len(matches)
     shown = matches[:WORK_GLOB_LIMIT]
-    if total > WORK_GLOB_LIMIT:
-        shown.append(f"...(已截断,共 {total} 项)")
     listing = "\n".join(shown) if shown else "(无匹配)"
+    if total > WORK_GLOB_LIMIT:
+        listing = (
+            f"结果不完整:只列出前 {WORK_GLOB_LIMIT} 项 / 共 {total} 项,"
+            f"必须收窄 pattern 才能看全.\n{listing}"
+        )
     return cap_result(listing, "收窄 pattern,或换一个更具体的目录")
 
 
@@ -816,7 +869,16 @@ def work_tools(root: Path) -> list[Tool]:
         page = arguments.get("limit")
         if page is not None and (not isinstance(page, int) or isinstance(page, bool)):
             return _bad_path("limit 必须是整数")
-        return _wrap(lambda: read_text(root, raw, offset, page))
+        result = _wrap(lambda: read_text(root, raw, offset, page))
+        if not result[1]:
+            # 读成功就把文件纳入追踪(已追踪不动快照):对话间的改动下一轮以 diff 注入.
+            try:
+                from dsb.tracking import ensure_tracked
+
+                ensure_tracked(root, raw)
+            except Exception:
+                pass
+        return result
 
     def grep_handler(arguments: Mapping[str, Any]) -> tuple[Payload, bool]:
         pattern = arguments.get("pattern")

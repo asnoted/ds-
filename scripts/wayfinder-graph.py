@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从 CSV 生成 `docs/wayfinder/current-functionality.md` 里的全依赖图.
+"""从 CSV 生成 `docs/map/map.md` 里的全依赖图.
 
 **为什么要有它**: 依赖边是数据, 画成 Mermaid 只是其中一种看法. 手改 Mermaid 和 CSV
 两份一定会漂 -- 改了一边忘了另一边, 图上看起来正常, 实际已经少了半条边. 这里把
@@ -41,10 +41,10 @@ from pathlib import Path
 
 TAG = "[wayfinder-graph]"
 ROOT = Path(__file__).resolve().parents[1]
-WAYFINDER = ROOT / "docs" / "wayfinder"
+WAYFINDER = ROOT / "docs" / "map"
 NODES = WAYFINDER / "nodes.csv"
 EDGES = WAYFINDER / "edges.csv"
-DOC = WAYFINDER / "current-functionality.md"
+DOC = WAYFINDER / "map.md"
 REGISTRY = ROOT / "src" / "lib" / "registry.ts"
 START = "<!-- wayfinder:graph:start -->"
 END = "<!-- wayfinder:graph:end -->"
@@ -183,8 +183,17 @@ def registry_actions() -> set[str]:
 
 
 def check_action_roster(nodes: list[dict[str, str]]) -> None:
+    """页面动作与 registry.ts 逐一对拍; 只比 D3 动作组下的--别的域挂的是自家工具, 不在页面动作名册里."""
+    by_id = {node["id"]: node for node in nodes}
     expected = registry_actions()
-    actual = {node["id"] for node in nodes if node["kind"] == "action"}
+    actual: set[str] = set()
+    for node in nodes:
+        if node["kind"] != "action":
+            continue
+        group = by_id.get(node["parent"])
+        if group is None or group["kind"] != "group" or group["parent"] != "D3":
+            continue
+        actual.add(node["id"])
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
     if missing or extra:

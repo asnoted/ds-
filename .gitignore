@@ -32,3 +32,5 @@ vendor/
 .dsh-state/
 # 本机 MCP servers 配置（形状见 dsb/gateway.py；不进版本库）
 mcp.json
+# dsb 追踪状态（track_file 的快照与列表）
+.cache/

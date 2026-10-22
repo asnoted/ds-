@@ -23,6 +23,7 @@ D3,A_BG,ownership,,graph
 D3,A_MSG,ownership,,graph
 D3,A_SEND,ownership,,graph
 D3,A_WAIT,ownership,,graph
+D4,D4_G_WORK,ownership,,graph
 D1,A_WRITE,call,续聊落草稿,graph
 D1,A_SEND,call,续聊发送,graph
 D4,A_WRITE,call,send.page 写草稿,graph
