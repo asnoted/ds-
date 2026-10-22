@@ -28,7 +28,7 @@ describe("matchesMarker / 钥匙", () => {
 
   it("认不出用户自己写的话(#49 的核心:手打的消息永远不等于标记)", () => {
     expect(matchesMarker("你好")).toBe(false);
-    expect(matchesMarker("dsb:result\nstatus: ok")).toBe(false); // 回灌正文不是标记
+    expect(matchesMarker("dsb:\nstatus: ok")).toBe(false); // 回灌正文不是标记
     expect(matchesMarker("dsb:result\n")).toBe(true); // 只差首尾空白仍算同一句
     expect(matchesMarker("dsb:result 帮我看看 README")).toBe(false); // 多了一句就不算
     expect(matchesMarker("ds")).toBe(false); // 只半句

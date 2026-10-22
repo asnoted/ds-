@@ -14,10 +14,11 @@ import {
 import { hasReplyAnchor, okPayload, parseReplyPayload } from "./reply";
 
 describe("CONTINUATION_MARKER", () => {
-  it("可见标记就是 `dsb:result` 一行;与给模型看的正文共用首行锚", () => {
+  it("可见标记 `dsb:result` 不守正文锚;正文仍守 `dsb:`", () => {
     expect(CONTINUATION_MARKER).toBe("dsb:result");
     expect(CONTINUATION_MARKER.length).toBeLessThan(20);
-    expect(hasReplyAnchor(CONTINUATION_MARKER)).toBe(true);
+    // 两者是两回事:标记给人看,正文给模型看.`prependOnce` 因此单独特判标记.
+    expect(hasReplyAnchor(CONTINUATION_MARKER)).toBe(false);
     expect(hasReplyAnchor(buildContinuation(okPayload("x")))).toBe(true);
   });
 });
