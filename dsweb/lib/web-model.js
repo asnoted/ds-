@@ -127,8 +127,10 @@ function parseFences(text, names, state) {
   let last = 0;
   let match;
   while ((match = fence.exec(text)) !== null) {
-    const info = match[1].trim();
-    const body = match[2].trim();
+    const parts = match[1].trim().split(/\s+/);
+    const info = parts[0] || '';
+    const lead = parts.slice(1).join(' ');
+    const body = [lead, match[2].trim()].filter(Boolean).join('\n');
     // `shell` is the only fence that runs the bash tool; `bash` stays visible
     // text even when its body is JSON, so a code sample is never executed.
     if (info === 'bash' && names.has('bash')) continue;
