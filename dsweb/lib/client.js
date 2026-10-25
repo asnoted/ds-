@@ -4485,62 +4485,16 @@ window.__ModuleLoader__.load({
       };
       const layout = ctx.layout;
 
-      // 1) The sidebar rail glyph — the rail owns the button, this draws it.
-      ctx.slots.inject('sidebar.panellist', () =>
-        ctx.slots.register(
-          {
-            name: 'sidebar.panellist',
-            id: PANEL_ID,
-            order: 5,
-            label: () => t('panel.title'),
-            locale: NS,
-          },
-          PanelGlyph,
-        ),
-      );
-
-      // 2) The panel itself, under the matching keyed `main` seat. The boundary
-      //    keeps a render error from turning the whole region into dead space.
-      ctx.slots.inject('main', () =>
-        ctx.slots.register({ name: 'main', key: PANEL_ID }, (slotProps) =>
-          h(PanelBoundary, null, h(ChatPanel, { ...slotProps, t, actions, layout })),
-        ),
-      );
-
-      // 3) The 聊天 / 工作 switch, in the header seat that needs no Session.
-      ctx.slots.inject('conversation.header.leading', () =>
-        ctx.slots.register({ name: 'conversation.header.leading' }, (slotProps) =>
-          h(HeaderModeSwitch, { t, layout, usePanelInfo: slotProps.usePanelInfo }),
-        ),
-      );
-
       // 4) The 聊天 page in the sidebar's 任务/频道 row, when such a row exists.
-      //    The surface store is bound FIRST so the row's own session-follow rule
-      //    (matchSession) already knows which surface this plugin is on.
       surfaceStore.bind(layout);
+      exports.__testPanelProps = () => ({ t, actions, layout });
       surfaceStore.load();
-      mountSidebarTab(ctx, t, actions, layout);
-
-      // 5) The surface axis: persist the choice, then hand the switch its layout
-      //    handle. Registered shortcuts reuse the very same transition, so the
-      //    accelerator and the header control can never drift apart.
-      ctx.effect(installSidebarTabSync, 'dsweb: sidebar tab sync');
-      ctx.inject(['shortcuts'], (scope) => {
-        for (const which of ['chat', 'work']) {
-          scope.effect(
-            () => scope.shortcuts.register(surfaceCommand(which)),
-            `dsweb: ${which} shortcut`,
-          );
-        }
-      });
-
-      // 6) Reopen the surface the user left. DSH's layout resets on reload, so
-      //    this is the only thing that remembers it.
-      surfaceStore.restoreOnBoot();
     }
 
     exports.apply = apply;
     exports.inject = ['slots', 'locale', 'layout'];
+    exports.ChatPanel = ChatPanel;
+    exports.PanelBoundary = PanelBoundary;
     return module.exports;
   },
 });

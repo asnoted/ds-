@@ -108,10 +108,10 @@ try {
   check('apply() runs without throwing', false, String(error && error.stack ? error.stack.split('\n')[0] : error));
 }
 
-check('registered the sidebar panel list', registered.slots.includes('sidebar.panellist'), JSON.stringify(registered.slots));
-check('registered the keyed main occupant', registered.slots.includes(`main#dsweb`), JSON.stringify(registered.slots));
-check('registered the header switch', registered.slots.includes('conversation.header.leading'), JSON.stringify(registered.slots));
-check('subscribed to the shortcuts service', registered.injections.includes('shortcuts'), JSON.stringify(registered.injections));
+check('no sidebar panel list (UI entry removed)', !registered.slots.includes('sidebar.panellist'), JSON.stringify(registered.slots));
+check('no keyed main occupant (UI entry removed)', !registered.slots.includes(`main#dsweb`), JSON.stringify(registered.slots));
+check('no header switch (UI entry removed)', !registered.slots.includes('conversation.header.leading'), JSON.stringify(registered.slots));
+check('no shortcuts subscription (UI entry removed)', !registered.injections.includes('shortcuts'), JSON.stringify(registered.injections));
 
 process.stdout.write(`\nclient.js load smoke: ${failures.length ? `${failures.length} FAILING` : 'all passing'}\n`);
 if (failures.length) {

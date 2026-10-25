@@ -174,21 +174,11 @@ try {
   check('apply() runs without throwing', false, String(error && error.message));
 }
 
-check('the main panel is registered', rendered.has('main#dsweb'), [...rendered.keys()].join(', '));
-
-if (!rendered.has('main#dsweb')) {
-  process.stdout.write(`\nrender smoke: ${failures.length} FAILING\n`);
-  process.exit(1);
-}
+check('the main panel is not registered (UI entry removed)', !rendered.has('main#dsweb'), [...rendered.keys()].join(', '));
 
 const slotProps = { usePanelInfo: () => null };
-const panelElement = rendered.get('main#dsweb')(slotProps);
-/* The seat wraps ChatPanel in the error boundary; the panel's own props (t,
-   actions, layout) live on the wrapped child. */
-const panelChild = (Array.isArray(panelElement.children) ? panelElement.children : []).find(
-  (child) => child && child.type && typeof child.type === 'function',
-);
-const panelProps = panelChild ? panelChild.props : panelElement.props;
+const panelElement = React.createElement(plugin.ChatPanel, { usePanelInfo: () => null, ...plugin.__testPanelProps() });
+const panelProps = panelElement.props;
 
 /**
  * Call the component tree the way React would, and report the first throw. A
@@ -241,18 +231,6 @@ await panelProps.actions.uploadAttachment({ name: 'broken.pdf', size: 1024, type
 const withBadChip = draw(panelElement);
 check('the panel draws a rejected attachment chip', !withBadChip.error, withBadChip.error);
 
-/* ---- the other two seats must draw too ---------------------------- */
-
-for (const seat of ['sidebar.panellist', 'conversation.header.leading']) {
-  const render = rendered.get(seat);
-  if (!render) {
-    check(`${seat} is registered`, false);
-    continue;
-  }
-  const drawn = draw(render);
-  check(`${seat} draws`, !drawn.error, drawn.error);
-}
-
 /* ---- state 5: a real conversation (markdown, thinking, citations) -- */
 
 responses['/dsh-dsb/messages'] = {
@@ -301,7 +279,7 @@ check('the panel draws the token setup card', !setup.error, setup.error);
 
 /* ---- the error boundary must actually contain a render error ------- */
 
-const boundary = panelElement.type;
+const boundary = plugin.PanelBoundary;
 check('the main panel is wrapped in an error boundary', typeof boundary.getDerivedStateFromError === 'function', String(boundary && boundary.name));
 
 if (typeof boundary.getDerivedStateFromError === 'function') {
@@ -385,68 +363,5 @@ check(
   withoutSidebar.classes.join(' '),
 );
 
-// Hand the plugin a row that accepts the tab. `install()` runs from the effects
-// `apply()` recorded, exactly like the host would run them.
-const insertedTabs = [];
-ctx.slots.entriesOfSlot = () => [
-  {
-    __dshNativeTabs: {
-      getTabs: () => [{ id: 'channels' }],
-      insert: (tab) => {
-        insertedTabs.push(tab);
-        return () => {};
-      },
-      subscribe: () => () => {},
-    },
-  },
-];
-for (const effect of effects) {
-  try {
-    effect();
-  } catch {
-    /* effects that need a richer host are not what this state is about */
-  }
-}
-check('the sidebar row accepted the 聊天 tab', insertedTabs.length === 1, String(insertedTabs.length));
-
-// Registered: the leftmost column owns the list now, so the panel must not draw
-// a second copy — it points at the sidebar instead (the row may be on 任务, or
-// the sidebar may be collapsed).
-const withSidebar = surfaceOf(panelElement);
-check(
-  'a registered sidebar page removes the panel column in every tab state',
-  !withSidebar.classes.includes('dswc-side'),
-  withSidebar.classes.join(' '),
-);
-check(
-  'and the panel says where the list went, with the click that shows it',
-  withSidebar.classes.includes('dswc-side-hint') &&
-    withSidebar.texts.includes('side.hint') &&
-    withSidebar.texts.includes('side.open'),
-  [...withSidebar.classes, ...withSidebar.texts].join(' ').slice(0, 160),
-);
-check('the tab it inserted renders the same sessions', typeof insertedTabs[0].render === 'function' && insertedTabs[0].label === 'tab.label', JSON.stringify(insertedTabs[0] && insertedTabs[0].label));
-
-/* ---- the 聊天/工作 switch keeps the seat it has in 工作 mode -------- */
-
-/* In 工作 mode DSH renders the switch in `conversation.header.leading`, i.e.
-   hard against the LEFT edge of the title row. Parking the panel's own copy
-   after `.dswc-spacer` made it jump to the right edge the moment the user
-   entered 聊天 — the reported "切换按钮跑到右边去". The head is drawn before the
-   body and before the composer, so the FIRST spacer in walk order is the head's:
-   the switch has to come before it. */
-const headClasses = withSidebar.classes;
-const switchAt = headClasses.findIndex((name) => name.includes('dswc-mode-switch'));
-const spacerAt = headClasses.indexOf('dswc-spacer');
-check('the panel draws the mode switch', switchAt !== -1, headClasses.join(' '));
-check(
-  'the mode switch is drawn before the spacer, i.e. anchored left',
-  switchAt !== -1 && spacerAt !== -1 && switchAt < spacerAt,
-  `switchAt=${switchAt} spacerAt=${spacerAt}`,
-);
-
-process.stdout.write(`\nrender smoke: ${failures.length ? `${failures.length} FAILING` : 'all passing'}\n`);
-if (failures.length) {
-  for (const line of failures) process.stdout.write(`  - ${line}\n`);
-  process.exit(1);
-}
+process.stdout.write('\nrender smoke: ' + (failures.length ? failures.length + ' FAILING' : 'all passing'));
+if (failures.length) { for (const line of failures) process.stdout.write('  - ' + line + '\n'); process.exit(1); }

@@ -2,7 +2,7 @@
 
 DeepSeek 网页侧。一个包两半：
 
-- **客户端**（`lib/client.js`）：左侧栏「聊天」面板、会话列表、聊天 / 工作切换、附件与 SSE 渲染。手写 lazy-CJS bundle，无构建步骤。
+- **客户端**（`lib/client.js`）：会话列表与聊天面板组件的源码保留，但不再向 DSH 注册任何 UI 入口（面板图标、聊天/工作切换、侧边栏 tab 均已移除）；所有 `/dsh-dsb/*` 接口与 `deepseek-web` 模型不变。手写 lazy-CJS bundle，无构建步骤。
 - **Host**（`lib/index.js`）：`/dsh-dsb/*` 路由（前缀沿用旧名）、令牌保险箱、浏览器登录、历史缓存、附件代理、`deepseek-web` 模型。
 
 ## Host 路由
