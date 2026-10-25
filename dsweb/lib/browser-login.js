@@ -127,6 +127,8 @@ function launchArgs({ profileDir, headless, url }) {
     url,
   ];
   if (headless) args.unshift('--headless=new');
+  // Container/CI kernels deny the Chromium sandbox; opt in there, never by default.
+  if (process.env.DSB_BROWSER_NO_SANDBOX) args.unshift('--no-sandbox', '--disable-gpu');
   return args;
 }
 

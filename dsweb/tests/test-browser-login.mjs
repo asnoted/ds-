@@ -21,6 +21,9 @@ import { fileURLToPath } from 'node:url';
 import { captureBrowserToken, findBrowser } from '../lib/browser-login.js';
 import { normalizeToken } from '../lib/token.js';
 
+// CI/container kernels deny the Chromium sandbox; the shipped default stays sandboxed.
+process.env.DSB_BROWSER_NO_SANDBOX = '1';
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 assert.equal(normalizeToken('Bearer abc.def'), 'abc.def');

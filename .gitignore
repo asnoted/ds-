@@ -32,3 +32,7 @@ vendor/
 mcp.json
 # legacy dsb 追踪状态（track_file 的快照与列表）
 .cache/
+
+# 本地临时产物
+tmp/
+tmp.txt
