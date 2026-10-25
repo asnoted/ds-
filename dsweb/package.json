@@ -1,0 +1,72 @@
+{
+  "name": "dsh-dsweb",
+  "version": "0.1.0",
+  "description": "DeepSeek 网页侧：聊天面板、/dsh-dsb/* host API 与 deepseek-web 模型",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "dsh",
+    "dsh-plugin",
+    "chat",
+    "web-chat",
+    "ui"
+  ],
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "icon": "./icon.svg",
+  "files": [
+    "lib",
+    "locale",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.0-rc.2 <0.3.0-0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    }
+  },
+  "meta": {
+    "title": "DeepSeek 网页侧",
+    "description": "面板、host API、令牌保险箱与 deepseek-web 模型"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "test": "node ../scripts/run-node-tests.mjs tests"
+  }
+}

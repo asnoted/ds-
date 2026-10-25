@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsb 控制桥",
+    "description": "为 dsweb 提供 chat.deepseek.com 的历史同步、续聊与附件代理"
+  }
+}

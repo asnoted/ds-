@@ -1,0 +1,55 @@
+{
+  "name": "dsh-dsb",
+  "version": "0.1.0",
+  "description": "chat 节奏的 agent loop：@dsh-agent-loop 的改版（WIP）",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "dsh",
+    "dsh-plugin",
+    "agent-loop",
+    "chat"
+  ],
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "icon": "./icon.svg",
+  "files": [
+    "lib",
+    "locale",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.0-rc.2 <0.3.0-0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    }
+  },
+  "meta": {
+    "title": "dsb chat loop",
+    "description": "按 chat 节奏调度 DSH 的 turn/step"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node ../scripts/run-node-tests.mjs tests"
+  }
+}

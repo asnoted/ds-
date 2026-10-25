@@ -1,0 +1,114 @@
+/**
+ * 续聊的组装:**短标记进对话,工具结果走出站请求体**.
+ *
+ * 原来一次工具调用就是一条 `agent:` 开头的长用户消息(TOON 正文全文进对话历史),
+ * 一轮一条--会话里全是机器痕迹,而且这条消息是扩展**自己发**的.
+ * 参考项目 WebTool-DeepSeek 的做法是:往输入框填一个**短标记**(`tool:result`)发出去,
+ * 真正给模型看的正文由 main world 在出站请求体里**替换**掉
+ * (`core/interceptor/fetch-hook.ts` 的 `pendingContinuationPrompt`).
+ * 于是对话里只多一个短气泡,工具结果不进可见流.
+ *
+ * 这里只管"短标记长什么样"与"给模型的正文长什么样":替换请求体在
+ * `inject.ts`(`recognizeOutgoingShape` 的 `replacePending`),轮数刹车在 `rounds.ts`.
+ * 载荷形状与 TOON 编码仍归 `reply.ts`--正文还是那一段,只是换了条路走.
+ */
+
+import { buildReply, type OkPayload } from "./reply";
+
+/**
+ * 对话里那个短标记:**只有一行 `dsb:result`**.
+ *
+ * 它是"扩展替用户发了一轮"的唯一可见痕迹,给人看的.给模型看的那段正文以
+ * `dsb:` 开头(`buildContinuation` → `buildReply`),只是不走可见消息,
+ * 由出站请求体替换进去(ADR-0002).
+ *
+ * **两者不共用锚**:正文锚是整行 `dsb:`,可见标记是整行 `dsb:result`--
+ * `hasReplyAnchor` 认前者不认后者.于是 `prependOnce` 得单独特判一次本常量:
+ * 漏了它,协议说明会拼到可见标记前面,出站正文就不等于钥匙,续聊当场失配.
+ */
+export const CONTINUATION_MARKER = "dsb:result";
+
+/**
+ * 给模型的**一轮**工具结果正文上限(字符).
+ *
+ * 2000 字时 `read` 一个大文件交出 16000,这里只放 2000 进去,模型看到 12.5% 且
+ * **没有任何办法看到其余部分**--旧 0010 给 `read` 加了翻页之后这个数就放开了:
+ * 一页 `read` 自己就有 16000 字的预算(`dsb/work.py` 的 `WORK_RESULT_CHARS`),这里
+ * 与它对齐,于是**一页 `read` 的结果能原样进对话,不再被腰斩**(那笔预算连换行
+ * 与脚注一起算,所以对齐才守得住--见 旧 0010).
+ *
+ * **这笔额度是一轮的总量,不是每块一块**: 一轮最多 9 块围栏(ADR-0002), 但多块时每块
+ * 分一份(`relay.ts` 的 `joinCallAnswers` 先扣掉抬头再按块平摊)--九块各给 16,000 就是
+ * 144,000, 会顶穿 旧 0011 那道上下文预算.
+ *
+ * 注意这里**不是**网关那道传输与内存的闸(`dsb/gateway.py` 的 64K,旧 0003):
+ * 两道各管一段,别混(旧 0003 原话).
+ */
+export const MAX_RESULT_CHARS = 16_000;
+
+/**
+ * **本仓的上下文预算:单条输入 900,000 token.**
+ *
+ * 实测(旧 0011):站点的硬墙在 **982,000 < 上限 < 982,700 token**
+ * (判据是服务端下发的 `finish_reason: "context_length_exceeded"`).
+ * **预算取 900,000,那 ~82,000 token 的差额是余量**--余量用来吸收我们
+ * 量不到的部分,主要是站点自己的系统提示词(它计入总上下文,但不在
+ * 我们这条消息里),服务端按模型/账号下发的浮动,以及上下文压缩.
+ *
+ * 这段余量为什么该留着:
+ *
+ * - 服务端那个数**是下发的配置**(同族的 `input_character_limit` 就是
+ *   这么来的),发版或灰度就能改,我们没有能力第一时间知道.
+ * - DeepSeek 已经有过上下文压缩的先例.真上了压缩,上限的语义会从
+ *   "硬拒"变成"静默截断"--那时贴边写就是在赌它不变.
+ * - 99 轮刹车下的最坏情况是 99 × 16,000 = 1,584,000 字,远超 900,000
+ *   token 预算--**这条闸现在构成约束**:轮数从 8 放宽到 99 之后,一条任务
+ *   满额自动续下来能顶穿上下文.它是"再放宽轮数 / 块数之前"必须先看的数.
+ *
+ * 别把它"顺手改成实测值"--那是把余量删掉,不是把精度调准.
+ */
+export const MAX_SAFE_INPUT_TOKENS = 900_000;
+
+/**
+ * 截断一段工具结果正文.超了在尾巴上留一句"已截断",并写明原长--
+ * 让模型知道它看到的不是全文,它会据此改问法,而不是拿半截正文当全貌.
+ *
+ * **末句也占这笔额度**: 先截到 `max` 再追加末句的做法交出去的比 `max` 多一点,
+ * 于是"dsb 交出的每一条都原样进对话"这条保证在这条路上差一句--dsb 那两处
+ * (`render_page` / `cap_result`)早就是"连末句一起算"(旧 0010),这里对齐它.
+ */
+export function truncateResult(text: string, max: number = MAX_RESULT_CHARS): string {
+  if (text.length <= max) return text;
+  const note = (kept: number) => `\n...(工具结果已截断:原文 ${text.length} 字,这里是前 ${kept} 字)`;
+  // 末句里那个"前 N 字"切完才知道,按最坏情况估它的长度(拿 `max` 当代入值--
+  // 位数只减不增,估出来只会偏长),于是正文 + 末句 <= max.
+  const kept = Math.max(0, max - note(max).length);
+  return `${text.slice(0, kept)}${note(kept)}`;
+}
+
+/** 续聊正文 = 原来的回灌载荷(`agent:` 锚 + TOON),截断之后改走请求体. */
+export function buildContinuation(payload: OkPayload, max: number = MAX_RESULT_CHARS): string {
+  return buildReply({ status: "ok", answer: truncateResult(payload.answer, max) });
+}
+
+/**
+ * 这一刻武装还算不算数(期限由调用方给).
+ *
+ * 期限本身归状态机所有(`armed.ts` 的 `ARMED_TTL_MS`):#49 之后**它不再承担安全
+ * 职责**--替换只看"这条出站请求的正文逐字等于短标记"那把钥匙,用户手打的话永远
+ * 不会等于标记,与等多久无关.期限只是别让悬挂态挂太久.
+ */
+export function isArmedFresh(armedAt: number, now: number, ttlMs: number): boolean {
+  return now - armedAt <= ttlMs;
+}
+
+/** 停手原因的码:进上报(跨三层),人话进悬停. */
+export const STOP_CONTINUATION_LIMIT = "continuation-limit";
+
+/** 停手原因 → 一句能直接进悬停的话(留痕的 `cause`). */
+export function describeStop(cause: string): string {
+  if (cause === STOP_CONTINUATION_LIMIT) {
+    return `自动续聊连到上限,停手等用户开口`;
+  }
+  return `页面报停手(${cause})`;
+}

@@ -5,7 +5,7 @@ dist/
 coverage/
 node_modules/
 
-# Python
+# Python（legacy 网关）
 .venv/
 __pycache__/
 *.py[cod]
@@ -18,19 +18,17 @@ __pycache__/
 .archify/
 screenshots/
 captures/
-# DeepSeek 网页 bundle（dsweb/fetch-dsweb-bundle.py 下载的站点产物；发版即换 hash）
-dsweb/bundle/
-# DeepSeek-V3 分词器（7.8MB；scripts/count-tokens.py 用来离线数 token，取法见 dsweb/README.md）
-dsweb/tokenizer.json
+# DeepSeek 网页 bundle 与分词器（legacy/dsweb 的取数脚本产物）
+legacy/dsweb/bundle/
+legacy/dsweb/tokenizer.json
 *.log
 .DS_Store
 # 本机装出来的东西，不进库（守则钉死）
-pnpm-workspace.yaml
 vendor/
 
 # dsh 子会话的持久日志
 .dsh-state/
-# 本机 MCP servers 配置（形状见 dsb/gateway.py；不进版本库）
+# 本机 MCP servers 配置（legacy/dsb/gateway.py 的形状；不进版本库）
 mcp.json
-# dsb 追踪状态（track_file 的快照与列表）
+# legacy dsb 追踪状态（track_file 的快照与列表）
 .cache/

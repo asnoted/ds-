@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsb Bridge",
+    "description": "Host bridge for dsweb: chat.deepseek.com history sync, continuation, and attachment proxy"
+  }
+}

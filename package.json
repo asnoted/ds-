@@ -1,22 +1,20 @@
 {
-  "name": "dsb-extension",
+  "name": "dsb",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@12.9.1",
   "scripts": {
-    "dev": "wxt",
-    "build": "wxt build",
-    "zip": "wxt zip",
-    "test": "vitest run",
-    "relay:dev": "uv run dsb"
-  },
-  "dependencies": {
-    "@toon-format/toon": "^4.4.0"
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "test:plugins": "pnpm --filter dsh-dsb --filter dsh-dsweb test",
+    "test:legacy": "pnpm --filter dsb-extension test",
+    "smoke:web": "node scripts/smoke-web.mjs",
+    "legacy:dev": "pnpm --filter dsb-extension dev",
+    "legacy:build": "pnpm --filter dsb-extension build",
+    "legacy:relay": "pnpm --filter dsb-extension relay:dev",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
-    "jsdom": "^30.1.3",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "wxt": "^0.20.0"
+    "playwright": "^1.64.1"
   }
 }

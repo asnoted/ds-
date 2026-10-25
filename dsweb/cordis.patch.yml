@@ -1,0 +1,4 @@
+# 把 dsweb 网页插件插入 profile（浏览器半边；host 半边为空壳，路由由 dsb 提供）。
+- insert:
+    - id: dsweb
+      name: 'dsh-dsweb'
