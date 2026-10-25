@@ -19,7 +19,7 @@
 
 import { createPacer } from './pace.js';
 import { createSessionMap } from './session-map.js';
-import { createSession, streamCompletion } from './deepseek.js';
+import { createSession, fetchMessages, streamCompletion } from './deepseek.js';
 import { readVault } from './vault.js';
 
 export const PROVIDER = 'deepseek-web';
@@ -117,43 +117,8 @@ function toolCatalog(tools) {
   return lines.length === 0 ? '' : `${TOOL_PROTOCOL}\n\nTOOL CATALOG\n${lines.join('\n')}`;
 }
 
-const DSML_BAR = `\uFF5C\uFF5CDSML\uFF5C\uFF5C`;
-// The web model sometimes omits the `</... invoke>` close and ends the call at
-// the outer `calls` close (or the message end); accept both terminators.
-const DSML_INVOKE = new RegExp(
-  `<${DSML_BAR}\\s*invoke name="([^"]+)">([\\s\\S]*?)(?:<\\/${DSML_BAR}\\s*invoke>|<\\/${DSML_BAR}\\s*calls>|$)`,
-  'g',
-);
-const DSML_PARAM = /<\uFF5C\uFF5CDSML\uFF5C\uFF5C\s*parameter name="([^"]+)"(?:\s+string="(true|false)")?>([\s\S]*?)<\/\uFF5C\uFF5CDSML\uFF5C\uFF5C\s*parameter>/g;
-
 /** A model that loses the thread can repeat a call forever; 9 matches the fence cap. */
 const MAX_TOOL_CALLS = 9;
-
-const DSML_CLOSE_OPEN = new RegExp(`</${DSML_BAR}\\s*parameter\\s+name=`, 'g');
-
-function dsmlArgs(raw) {
-  // The web model sometimes merges a close and the next open into
-  // `</... parameter name="next"...>`. Split it before parsing; otherwise the
-  // previous value swallows the next argument and the whole call looks broken.
-  const body = raw.replace(DSML_CLOSE_OPEN, `</${DSML_BAR} parameter>\n<${DSML_BAR} parameter name=`);
-  const args = {};
-  let malformed = false;
-  for (const match of body.matchAll(DSML_PARAM)) {
-    const [, name, isString, raw] = match;
-    const value = raw.trim();
-    // A broken nested tag inside a value means the invoke regex over-matched.
-    if (value.includes('parameter name=') || value.includes('invoke name=')) malformed = true;
-    if (isString === 'true' || isString === undefined) args[name] = value;
-    else {
-      try {
-        args[name] = JSON.parse(value);
-      } catch {
-        args[name] = value;
-      }
-    }
-  }
-  return { args, malformed };
-}
 
 /** Fenced calls: the protocol we taught, used when the model follows it. */
 function parseFences(text, names, state) {
@@ -204,35 +169,16 @@ function parseFences(text, names, state) {
 /**
  * Split a buffered answer into text and tool calls.
  *
- * The web model natively emits DeepSeek's DSML invoke blocks, so those are the
- * primary format; the fenced protocol we add to the prompt is the fallback for
- * turns where it follows instructions instead. A call is only taken when its
- * name is an active DSH tool; anything else (the web app's own search/memory
- * calls, a markdown code sample, broken JSON) stays visible text.
+ * Only fenced blocks are recognized: the prompt teaches the model to emit a
+ * ```shell fence (or a tool-name fence with a JSON body). Anything else — the
+ * web app's own/memory calls, a markdown code sample, broken JSON — stays
+ * visible text. A call is only taken when its name is an active DSH tool.
  */
 function parseAnswer(answer, tools) {
   const names = new Set(shellOnly(tools).map((tool) => tool.name));
   if (names.size === 0) return [{ type: 'text', text: answer }];
-  const blocks = [];
   const state = { calls: 0, truncated: false };
-  let last = 0;
-  for (const match of answer.matchAll(DSML_INVOKE)) {
-    const before = answer.slice(last, match.index);
-    if (before) blocks.push(...parseFences(before, names, state));
-    const name = match[1];
-    const parsed = dsmlArgs(match[2]);
-    const malformed = parsed.malformed || match[2].includes('invoke name=');
-    if (!names.has(name) || malformed || state.calls >= MAX_TOOL_CALLS) {
-      if (names.has(name) && !malformed) state.truncated = true;
-      blocks.push({ type: 'text', text: match[0] });
-    } else {
-      state.calls += 1;
-      blocks.push({ type: 'tool-call', name, arguments: JSON.stringify(parsed.args) });
-    }
-    last = match.index + match[0].length;
-  }
-  const tail = answer.slice(last);
-  if (tail) blocks.push(...parseFences(tail, names, state));
+  const blocks = parseFences(answer, names, state);
   if (state.truncated) {
     blocks.push({ type: 'text', text: `（本轮工具调用超过 ${MAX_TOOL_CALLS} 个，其余未执行）` });
   }
@@ -254,11 +200,14 @@ function promptFor(fresh, rebuild, tools, system) {
   if (typeof system === 'string' && system.trim()) parts.push(`SYSTEM:\n${system.trim()}`);
   const catalog = rebuild ? toolCatalog(tools) : '';
   if (catalog) parts.push(catalog);
+  let asked = 0;
   for (const message of send) {
     const text = messageText(message).trim();
     if (!text) continue;
+    if (message.role === 'user' || message.role === 'tool') asked += 1;
     parts.push(transcript ? `${LABEL[message.role] || message.role}:\n${text}` : text);
   }
+  if (asked === 0) return '';
   return parts.join('\n\n');
 }
 
@@ -267,6 +216,7 @@ export function createWebModelAdapter({
   token = () => readVault().token,
   create = createSession,
   complete = streamCompletion,
+  history = fetchMessages,
   lock = createLock(),
   pace = createPacer(),
 } = {}) {
@@ -317,13 +267,34 @@ export function createWebModelAdapter({
       try {
         const pending = isTurn ? map.pending(key, messages) : { fresh: messages, rebuild: true };
         let webSessionId = isTurn ? map.webSessionFor(key) : '';
+        // The web app is a second writer: a user can append to (or edit) the
+        // same chat on chat.deepseek.com between steps. The map only tracks the
+        // DSH prefix, so without this check the next delta would hang off a web
+        // branch DSH never saw. The web is the authority here: re-point the
+        // branch tip at the web tip so the next completion continues from the
+        // real web history instead of forking a fresh session.
+        // shortcut: tip-only check misses a mid-history edit that keeps the last
+        //   assistant id, upgrade to a full-history digest if that ever matters.
+        if (isTurn && webSessionId && !pending.rebuild) {
+          const tip = await history(credential, webSessionId, options.signal);
+          if (tip) {
+            const lastAssistant = [...tip].reverse().find((m) => m.role === 'assistant');
+            const webTip = lastAssistant && Number.isInteger(lastAssistant.id) ? lastAssistant.id : 0;
+            if (webTip !== map.parentFor(key)) {
+              map.setParent(key, webTip);
+            }
+          }
+        }
+        const prompt = promptFor(pending.fresh, pending.rebuild, options.tools, options.system);
+        if (!prompt) {
+          yield { type: 'finish', kind: 'stop' };
+          return;
+        }
         if (!webSessionId || pending.rebuild) {
           webSessionId = await create(credential, options.signal);
           fresh = isTurn;
           if (isTurn) map.bind(key, webSessionId);
         }
-        const prompt = promptFor(pending.fresh, pending.rebuild, options.tools, options.system);
-        if (!prompt) throw new Error('没有可发送的新消息');
         await pace.wait(options.signal);
 
         const readTurn = async (promptText, parent) => {

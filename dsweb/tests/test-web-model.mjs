@@ -16,7 +16,8 @@ import { createSessionMap } from '../lib/session-map.js';
 import { createWebModelAdapter, MODEL, PROVIDER } from '../lib/web-model.js';
 
 const noPace = { wait: async () => {} };
-const makeAdapter = (options = {}) => createWebModelAdapter({ pace: noPace, ...options });
+const makeAdapter = (options = {}) =>
+  createWebModelAdapter({ pace: noPace, history: async () => null, ...options });
 
 const dir = mkdtempSync(join(tmpdir(), 'dsb-web-model-'));
 const file = join(dir, 'map.json');
@@ -293,90 +294,6 @@ try {
       );
     }
 
-    // The web model's native format: DSML invoke blocks, not our fences.
-    const bar = '\uFF5C\uFF5C';
-    const dsml = [
-      `<${bar}DSML${bar} calls>`,
-      `<${bar}DSML${bar} invoke name="bash">`,
-      `<${bar}DSML${bar} parameter name="command" string="true">cat a.txt</${bar}DSML${bar} parameter>`,
-      `</${bar}DSML${bar} invoke>`,
-      `</${bar}DSML${bar} calls>`,
-    ].join('\n');
-    const dsmlAdapter = makeAdapter({
-      map: createSessionMap({ file: join(dir, 'dsml.json') }),
-      token: () => 'token',
-      create: async () => 'web-dsml',
-      complete: async function* () {
-        yield { type: 'text', text: dsml };
-        yield { type: 'message', messageId: 3 };
-      },
-    });
-    const native = await collect(dsmlAdapter.stream({
-      sessionId: 'native',
-      toolHistory: [],
-      messages: [text('user', 'read a file')],
-      tools,
-    }));
-    const nativeCall = native.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-    assert.equal(nativeCall.block.name, 'bash');
-    assert.deepEqual(JSON.parse(nativeCall.block.arguments), { command: 'cat a.txt' });
-
-    // The web model also merges a parameter close and the next open into one
-    // `</... parameter name="next"...>` tag; the parser must split it or the
-    // whole call degrades to text.
-    const merged = [
-      `<${bar}DSML${bar} calls>`,
-      `<${bar}DSML${bar} invoke name="bash">`,
-      `<${bar}DSML${bar} parameter name="command" string="true">cat a.txt</${bar}DSML${bar} parameter name="timeout" string="false">2</${bar}DSML${bar} parameter>`,
-      `</${bar}DSML${bar} invoke>`,
-      `</${bar}DSML${bar} calls>`,
-    ].join('\n');
-    const mergedAdapter = createWebModelAdapter({
-      map: createSessionMap({ file: join(dir, 'merged.json') }),
-      token: () => 'token',
-      create: async () => 'web-merged',
-      pace: noPace,
-      complete: async function* () {
-        yield { type: 'text', text: merged };
-        yield { type: 'message', messageId: 4 };
-      },
-    });
-    const mergedChunks = await collect(mergedAdapter.stream({
-      sessionId: 'merged',
-      toolHistory: [],
-      messages: [text('user', 'read a file')],
-      tools,
-    }));
-    const mergedCall = mergedChunks.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-    assert.equal(mergedCall.block.name, 'bash');
-    assert.deepEqual(JSON.parse(mergedCall.block.arguments), { command: 'cat a.txt', timeout: 2 });
-
-    // And it can omit the `</... invoke>` close, ending the call at `calls>`.
-    const unclosed = [
-      `<${bar}DSML${bar} calls>`,
-      `<${bar}DSML${bar} invoke name="bash">`,
-      `<${bar}DSML${bar} parameter name="command" string="true">cat b.txt</${bar}DSML${bar} parameter>`,
-      `</${bar}DSML${bar} calls>`,
-    ].join('\n');
-    const unclosedAdapter = createWebModelAdapter({
-      map: createSessionMap({ file: join(dir, 'unclosed.json') }),
-      token: () => 'token',
-      create: async () => 'web-unclosed',
-      pace: noPace,
-      complete: async function* () {
-        yield { type: 'text', text: unclosed };
-        yield { type: 'message', messageId: 6 };
-      },
-    });
-    const unclosedChunks = await collect(unclosedAdapter.stream({
-      sessionId: 'unclosed',
-      toolHistory: [],
-      messages: [text('user', 'read a file')],
-      tools,
-    }));
-    const unclosedCall = unclosedChunks.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-    assert.equal(unclosedCall.block.name, 'bash');
-    assert.deepEqual(JSON.parse(unclosedCall.block.arguments), { command: 'cat b.txt' });
 
     const many = Array.from({ length: 12 }, (_, i) => `\u0060\u0060\u0060shell\ncat f${i}\n\u0060\u0060\u0060`).join('\n');
     const capped = makeAdapter({
@@ -417,6 +334,63 @@ try {
     assert.equal(waits, 1, 'each turn goes through the outbound pace');
   }
 
+  {
+    // The web app is a second writer: appending there moves the tip off the id
+    // the map recorded, and the next DSH step must rebuild instead of sending a
+    // delta on a branch DSH never saw.
+    const driftMap = createSessionMap({ file: join(dir, 'map-drift.json') });
+    let tip = 0;
+    const created = [];
+    const sent = [];
+    const drift = makeAdapter({
+      map: driftMap,
+      token: () => 'token',
+      history: async () => [{ role: 'assistant', id: tip }],
+      create: async () => {
+        created.push(created.length + 1);
+        return `web-${created.length}`;
+      },
+      complete: async function* (_token, request) {
+        sent.push(request);
+        yield { type: 'text', text: 'hi' };
+        yield { type: 'message', messageId: 11 };
+        yield { type: 'done', status: 'FINISHED' };
+      },
+    });
+    const m1 = [text('user', 'q1')];
+    await collect(drift.stream({ sessionId: 'dsh-drift', toolHistory: [], messages: m1 }));
+    tip = 11; // the web answer DSH just produced
+    const m2 = [...m1, text('assistant', 'hi'), text('user', 'q2')];
+    await collect(drift.stream({ sessionId: 'dsh-drift', toolHistory: [], messages: m2 }));
+    assert.equal(created.length, 1, 'a matching web tip reuses the session');
+
+    tip = 99; // someone appended on chat.deepseek.com
+    await collect(drift.stream({ sessionId: 'dsh-drift', toolHistory: [], messages: m2 }));
+    assert.equal(created.length, 1, 'a drifted web tip must not fork a new web session');
+    assert.equal(created.length, 1, 'a drifted web tip must not fork a new web session');
+    assert.equal(driftMap.parentFor('dsh-drift'), 99, 'the map adopts the web branch tip');    assert.equal(driftMap.parentFor('dsh-drift'), 99, 'the map adopts the web branch tip');
+  }
+
+  {
+    // A rebuild with only a system prompt and no real question used to send the
+    // whole tool catalog as a user message; the web model then answered "what do
+    // you want?" and that phantom turn poisoned the session. No question, no send.
+    const emptyMap = createSessionMap({ file: join(dir, 'map-empty.json') });
+    let created = 0;
+    const empty = makeAdapter({
+      map: emptyMap,
+      token: () => 'token',
+      create: async () => { created += 1; return 'web-empty'; },
+      complete: async function* () {
+        throw new Error('a turn with no question must not reach the web');
+      },
+    });
+    const chunks = await collect(
+      empty.stream({ sessionId: 'dsh-empty', toolHistory: [], messages: [text('system', 'only a system prompt')] }),
+    );
+    assert.equal(created, 0, 'an empty turn must not create a web session');
+    assert.deepEqual(chunks, [{ type: 'finish', kind: 'stop' }], 'a system-only turn ends quietly');
+  }
   console.log('web model: all passing');
 } finally {
   rmSync(dir, { recursive: true, force: true });

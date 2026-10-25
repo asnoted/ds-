@@ -18,7 +18,7 @@ DeepSeek 网页侧。一个包两半：
 
 向 `ctx.llm` 注册 `deepseek-web` provider（模型名同名），供 agent loop 的单步请求使用：每个 DSH session 绑定一个网页会话，首轮发全量 transcript，之后只发增量；上一轮 assistant 的 message id 存进 `$DSH_HOME/dsh-dsb/web-sessions.json`，下一轮作为 `parent_message_id` 续在同一分支上，所以上下文跨进程保留。
 
-网页会话一次只占一个 turn（后来的排队）；自动 turn 之间按 Beta(2,4) 抽 3–15 秒间隔（峰值 6 秒），上次发送时刻记在 `$DSH_HOME/dsh-dsb/pace.json`，DSH 重启后仍然生效。面板的手动 `/chat` 不经过这条限速。工具调用走围栏 JSON（代码块的 info string 是工具名，正文是一个 JSON 对象），单轮最多执行 9 个；解析器仍兼容网页模型偶发吐出的原生 DSML，但提示词只教围栏；只支持文本，不处理图片 / 附件。
+网页会话一次只占一个 turn（后来的排队）；自动 turn 之间按 Beta(2,4) 抽 3–15 秒间隔（峰值 6 秒），上次发送时刻记在 `$DSH_HOME/dsh-dsb/pace.json`，DSH 重启后仍然生效。面板的手动 `/chat` 不经过这条限速。工具调用走围栏 JSON（代码块的 info string 是工具名，正文是一个 JSON 对象），单轮最多执行 9 个；解析器只认围栏，原生 DSML 不再解析；只支持文本，不处理图片 / 附件。
 
 要让它成为默认模型，用 overlay 覆盖 `agent-default-model`：
 
