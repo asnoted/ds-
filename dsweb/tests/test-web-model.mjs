@@ -262,6 +262,27 @@ try {
       const visible = shellOut.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join('');
       assert.match(visible, /```bash/, 'a bash fence stays text');
     }
+    {
+      // The command may sit on the fence line itself; it still runs.
+      const inlineAdapter = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'inline.json') }),
+        token: () => 'token',
+        create: async () => 'web-inline',
+        complete: async function* () {
+          yield { type: 'text', text: 'ok\n```shell ls```' };
+          yield { type: 'message', messageId: 31 };
+        },
+      });
+      const inlineOut = await collect(inlineAdapter.stream({
+        sessionId: 'inline',
+        toolHistory: [],
+        messages: [text('user', 'go')],
+        tools,
+      }));
+      const inlineCall = inlineOut.find((c) => c.type === 'block-end' && c.block.type === 'tool-call');
+      assert.equal(inlineCall.block.name, 'bash', 'a same-line shell fence still runs');
+      assert.equal(JSON.parse(inlineCall.block.arguments).command, 'ls', 'the fence-line tail is the command');
+    }
 
     {
       const echoAsks = [];
@@ -293,7 +314,6 @@ try {
         'the directory has README.md and dsweb',
       );
     }
-
 
     const many = Array.from({ length: 12 }, (_, i) => `\u0060\u0060\u0060shell\ncat f${i}\n\u0060\u0060\u0060`).join('\n');
     const capped = makeAdapter({
