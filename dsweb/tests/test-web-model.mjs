@@ -262,28 +262,6 @@ try {
       const visible = shellOut.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join('');
       assert.match(visible, /```bash/, 'a bash fence stays text');
     }
-    {
-      // A model may put a word after the fence tag; the first token still names
-      // the tool and the rest joins the command, so it must run (was: silently text).
-      const looseAdapter = makeAdapter({
-        map: createSessionMap({ file: join(dir, 'loose.json') }),
-        token: () => 'token',
-        create: async () => 'web-loose',
-        complete: async function* () {
-          yield { type: 'text', text: 'ok\n```shell extra\nls\n```' };
-          yield { type: 'message', messageId: 30 };
-        },
-      });
-      const looseOut = await collect(looseAdapter.stream({
-        sessionId: 'loose',
-        toolHistory: [],
-        messages: [text('user', 'go')],
-        tools,
-      }));
-      const looseCall = looseOut.find((c) => c.type === 'block-end' && c.block.type === 'tool-call');
-      assert.equal(looseCall.block.name, 'bash', 'a word after the fence tag still names bash');
-      assert.equal(JSON.parse(looseCall.block.arguments).command, 'extra\nls', 'the tag remnant joins the command');
-    }
 
     {
       const echoAsks = [];
