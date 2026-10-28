@@ -19,8 +19,6 @@ __pycache__/
 screenshots/
 captures/
 # DeepSeek 网页 bundle 与分词器（legacy/dsweb 的取数脚本产物）
-legacy/dsweb/bundle/
-legacy/dsweb/tokenizer.json
 *.log
 .DS_Store
 # 本机装出来的东西，不进库（守则钉死）

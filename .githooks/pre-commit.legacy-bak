@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+pnpm test
+if command -v uv >/dev/null 2>&1; then
+  (cd legacy && uv run pytest -q)
+fi

@@ -7,11 +7,7 @@
   "scripts": {
     "test": "pnpm -r --workspace-concurrency=1 test",
     "test:plugins": "pnpm --filter dsh-dsb --filter dsh-dsweb test",
-    "test:legacy": "pnpm --filter dsb-extension test",
     "smoke:web": "node scripts/smoke-web.mjs",
-    "legacy:dev": "pnpm --filter dsb-extension dev",
-    "legacy:build": "pnpm --filter dsb-extension build",
-    "legacy:relay": "pnpm --filter dsb-extension relay:dev",
     "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {

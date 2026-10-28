@@ -67,17 +67,6 @@ DSH_WEB_URL='http://127.0.0.1:18787/?token=…' pnpm smoke:web
 
 它会检查聊天/工作开关、面板打开、`/dsh-dsb/state` 返回 200，以及页面无 console 错误。
 
-## 旧实现
-
-Python MCP 网关和 WXT 浏览器扩展移到了 [`legacy/`](legacy/README.md)，保持可运行：
-
-```sh
-cd legacy
-uv run dsb up
-pnpm build
-pnpm test
-```
-
 ## 许可
 
 `dsb` / `dsweb` 的 host/client 代码派生自 [HAN-050917/dsh-plugin-dsweb-harness](https://github.com/HAN-050917/dsh-plugin-dsweb-harness)（MIT），许可证见各包的 `LICENSE`。
