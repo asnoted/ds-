@@ -1030,7 +1030,7 @@ function envelopeFailure(raw) {
 }
 
 /** Pump one SSE body, yielding deltas and recording the round's continue signals. */
-export async function* readStream(body, state, round) {
+export async function* readStream(body, state, round, idleTimeoutMs = 90_000) {
   const decoder = new TextDecoder();
   let buffer = '';
   let pendingStatus = null;
@@ -1092,20 +1092,44 @@ export async function* readStream(body, state, round) {
     if (usage) yield { type: 'usage', usage };
   };
 
-  for await (const bytes of body) {
-    const text = decoder.decode(bytes, { stream: true });
-    buffer += text;
-    if (rawSeen.length < 8192) rawSeen += text;
-    let index;
-    while ((index = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, index);
-      buffer = buffer.slice(index + 1);
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      sawData = true;
-      yield* handleData(trimmed.slice(5));
+  const reader = body.getReader();
+  try {
+    for (;;) {
+      let timer;
+      let result;
+      try {
+        // A stalled upstream otherwise leaves the turn (and the panel) waiting
+        // forever: race each read against the idle budget instead of the body.
+        result = await Promise.race([
+          reader.read(),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () => reject(new DeepSeekWebError('上游长时间没有返回新数据，已断开')),
+              idleTimeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (result.done) break;
+      const text = decoder.decode(result.value, { stream: true });
+      buffer += text;
+      if (rawSeen.length < 8192) rawSeen += text;
+      let index;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        sawData = true;
+        yield* handleData(trimmed.slice(5));
+      }
     }
+  } finally {
+    await reader.cancel().catch(() => {});
   }
+
   if (buffer.trim().startsWith('data:')) {
     sawData = true;
     yield* handleData(buffer.trim().slice(5));

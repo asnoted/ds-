@@ -211,6 +211,41 @@ console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);
   );
 }
 
+/* ---- a stalled upstream must not leave the turn hanging forever ---- */
+
+{
+  // The stream delivers its first frame and then never closes or sends again.
+  // Without the idle budget the panel waits on this read for as long as the
+  // socket lives; the read has to fail and release the turn instead.
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: {"v":"hi"}\n'));
+    },
+  });
+  const state = { fragmentKind: 'text', tip: null };
+  const round = { responseMessageId: 0, lastStatus: '', finished: false, autoContinue: false };
+  const events = [];
+  let error = null;
+  const started = Date.now();
+  try {
+    for await (const event of readStream(body, state, round, 50)) events.push(event);
+  } catch (caught) {
+    error = caught;
+  }
+  check(
+    'a stalled stream ends with an error instead of hanging',
+    Boolean(error && /没有返回新数据/.test(error.message)),
+    error ? error.message : `events=${events.map((e) => e.type).join(',')}`,
+  );
+  check(
+    'text streamed before the stall is still delivered',
+    events.some((event) => event.type === 'text'),
+    `events=${events.map((e) => e.type).join(',')}`,
+  );
+  check('the idle read gives up promptly', Date.now() - started < 5000, `${Date.now() - started}ms`);
+}
+
 /** Wrap a string as a web ReadableStream the way fetch().body behaves. */
 function rawToWebStream(raw) {
   const encoder = new TextEncoder();
