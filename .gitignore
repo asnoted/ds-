@@ -1,36 +1,9 @@
 # 构建与生成物
-dist/
-.output/
-.wxt/
-coverage/
 node_modules/
 
-# Python（legacy 网关）
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-
-# 本机配置与临时产物
+# 配置
 .env
-.dsb-token
-.archify/
-screenshots/
-captures/
-# DeepSeek 网页 bundle 与分词器（legacy/dsweb 的取数脚本产物）
-*.log
 .DS_Store
-# 本机装出来的东西，不进库（守则钉死）
-vendor/
 
-# dsh 子会话的持久日志
-.dsh-state/
-# 本机 MCP servers 配置（legacy/dsb/gateway.py 的形状；不进版本库）
-mcp.json
-# legacy dsb 追踪状态（track_file 的快照与列表）
+# 临时文件
 .cache/
-
-# 本地临时产物
-tmp/
-tmp.txt
