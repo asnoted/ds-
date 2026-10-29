@@ -558,6 +558,12 @@ holdTurns = true;
     body: '',
   });
   check('an empty upload body is rejected', empty.status === 400, `got ${empty.status}`);
+  const badName = await realFetch(`http://127.0.0.1:${port}/dsh-dsb/upload`, {
+    method: 'POST',
+    headers: { host: `127.0.0.1:${port}`, 'content-type': 'text/plain', 'x-file-name': 'bad%zz.txt' },
+    body: 'x',
+  });
+  check('a malformed percent in the file name does not 500', badName.status === 200, `got ${badName.status}`);
   const tooLarge = await new Promise((resolve, reject) => {
     const request = http.request(`http://127.0.0.1:${port}/dsh-dsb/upload`, {
       method: 'POST',

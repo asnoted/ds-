@@ -25,6 +25,7 @@ import {
   MAX_FILE_BYTES,
   MODEL_TYPES,
   createSession,
+  decodeTitle,
   fetchCurrentUser,
   fetchFiles,
   fetchMessages,
@@ -460,7 +461,7 @@ async function handleUpload(request, response, vault) {
   const token = requireToken(response, vault);
   if (!token) return;
   const rawName = request.headers['x-file-name'] || '';
-  const fileName = decodeURIComponent(String(rawName)) || 'file';
+  const fileName = decodeTitle(String(rawName)) || 'file';
   const declared = Number(request.headers['content-length']) || 0;
   if (declared > MAX_FILE_BYTES) {
     return sendJson(response, 413, { error: `文件超过 100MB 上限` });
