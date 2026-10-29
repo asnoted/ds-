@@ -28,7 +28,7 @@ export const PROVIDER = 'deepseek-web';
 export const MODEL = 'deepseek-web';
 const CONTEXT_WINDOW = 128_000;
 /** Bump when the catalog or tool protocol changes; bound chats then rebuild. */
-const PROMPT_VERSION = 5;
+const PROMPT_VERSION = 10;
 
 const LABEL = { system: 'SYSTEM', user: 'USER', assistant: 'ASSISTANT', tool: 'TOOL' };
 
@@ -97,11 +97,11 @@ function messageText(message) {
 
 function toolProtocol() {
   return [
-    'You can call tools with a fenced block tagged `tool`. A call looks like:',
-    '```tool',
-    '{TOOLNAME: PARAMETERS}',
+    'This chat has no native tool API. To call a tool, tag the fence with its name and put its arguments in the body:',
+    '```TOOLNAME',
+    'ARGUMENTS',
     '```',
-    'The key is a tool name from TOOL CATALOG and the value is that call\'s argument text, not JSON. One call per block; emit several blocks for several calls. Text outside the blocks is shown to the user.',
+    'TOOLNAME is an exact name from TOOL CATALOG. Write a program or command as-is, never inside a JSON string; a tool with several named values takes a JSON object. Text outside the fence is shown to the user.',
   ].join('\n');
 }
 
@@ -124,26 +124,13 @@ function coerceArg(value, schema) {
   return value;
 }
 
-/**
- * The fence body is the argument text itself, not JSON: the command for a
- * shell tool, the program for run_code. A single-parameter tool takes the whole
- * body; otherwise it goes to the first required string parameter.
- */
-function fenceArgs(body, tool) {
-  const parameters = tool && tool.parameters && typeof tool.parameters === 'object' ? tool.parameters : {};
-  const properties = parameters.properties && typeof parameters.properties === 'object' ? parameters.properties : {};
-  const required = Array.isArray(parameters.required) ? parameters.required : [];
-  const names = Object.keys(properties);
-  if (names.length === 0) return {};
-  const isString = (name) => properties[name] && properties[name].type === 'string';
-  const target = names.length === 1
-    ? names[0]
-    : required.find(isString) || names.find(isString) || names[0];
-  const args = { [target]: coerceArg(body.trim(), properties[target]) };
-  // run_code requires a non-empty UI label; the argument's first line is the
-  // only summary the model actually wrote.
-  if (target !== 'description' && required.includes('description') && properties.description) {
-    args.description = body.trim().split('\n')[0].slice(0, 80);
+function coerceArgs(args, tool) {
+  const properties = tool && tool.parameters && typeof tool.parameters === 'object'
+    ? tool.parameters.properties
+    : undefined;
+  if (!properties) return args;
+  for (const [name, value] of Object.entries(args)) {
+    if (properties[name]) args[name] = coerceArg(value, properties[name]);
   }
   return args;
 }
@@ -166,7 +153,8 @@ function toolCatalog(tools) {
       lines.push(`  parameters: ${JSON.stringify(tool.parameters)}`);
     }
   }
-  return lines.length === 0 ? '' : `${toolProtocol()}\n\nTOOL CATALOG\n${lines.join('\n')}`;
+  // The protocol goes last: the model copies whatever it read most recently.
+  return lines.length === 0 ? '' : `TOOL CATALOG\n${lines.join('\n')}\n\n${toolProtocol()}`;
 }
 
 /** The host's current tool declarations decide when a bound web chat is stale. */
@@ -178,13 +166,169 @@ function protocolFor(tools) {
 /** A model that loses the thread can repeat a call forever; 9 bounds one answer's damage. */
 const MAX_TOOL_CALLS = 9;
 
+/** Quote bare object keys so the JS-style literal the system prompt shows parses as JSON. */
+function unquoteKeys(source) {
+  let out = '';
+  let quote = '';
+  let key = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quote) {
+      out += ch;
+      if (ch === '\\') {
+        out += source[i + 1] ?? '';
+        i += 1;
+      } else if (ch === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      out += ch;
+      key = false;
+      continue;
+    }
+    if (ch === '{' || ch === ',') {
+      key = true;
+      out += ch;
+      continue;
+    }
+    if (key && /[A-Za-z_$]/.test(ch)) {
+      let name = '';
+      while (i < source.length && /[\w$]/.test(source[i])) {
+        name += source[i];
+        i += 1;
+      }
+      i -= 1;
+      out += `"${name}"`;
+      key = false;
+      continue;
+    }
+    if (!/\s/.test(ch)) key = false;
+    out += ch;
+  }
+  return out;
+}
+
+/**
+ * The model writes code inside JSON strings without escaping: raw newlines and
+ * bare quotes. Close a string only when a delimiter follows; anything else in
+ * the string is content.
+ */
+function normalizeObject(source) {
+  let out = '';
+  let quote = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === '\\') {
+        out += ch + (source[i + 1] ?? '');
+        i += 1;
+      } else if (ch === '"') {
+        const next = source.slice(i + 1).trimStart();
+        if (next === '' || /^[,}\]:]/.test(next)) {
+          quote = false;
+          out += ch;
+        } else {
+          out += '\\"';
+        }
+      } else if (ch === '\n') {
+        out += '\\n';
+      } else if (ch !== '\r') {
+        out += ch;
+      }
+      continue;
+    }
+    if (ch === '"') quote = true;
+    out += ch;
+  }
+  return out;
+}
+
+/** A raw body is the tool's argument text: the program, the command, the path. */
+function rawArgs(body, tool) {
+  const parameters = tool.parameters && typeof tool.parameters === 'object' ? tool.parameters : {};
+  const properties = parameters.properties && typeof parameters.properties === 'object' ? parameters.properties : {};
+  const required = Array.isArray(parameters.required) ? parameters.required : [];
+  const names = Object.keys(properties);
+  if (names.length === 0) return {};
+  const isString = (name) => properties[name] && properties[name].type === 'string';
+  const target = names.length === 1
+    ? names[0]
+    : required.find(isString) || names.find(isString) || names[0];
+  const args = { [target]: coerceArg(body, properties[target]) };
+  // A description is a UI label; the body's first line is the summary written.
+  if (target !== 'description' && required.includes('description') && properties.description) {
+    args.description = body.split('\n')[0].slice(0, 80);
+  }
+  return args;
+}
+
+function parseArgs(source) {
+  for (const candidate of [source, unquoteKeys(source), normalizeObject(source), normalizeObject(unquoteKeys(source))]) {
+    try {
+      const value = JSON.parse(candidate);
+      if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    } catch {
+      // try the next form
+    }
+  }
+  return undefined;
+}
+
+/** The one tool whose schema accepts exactly these keys; ambiguity stays text. */
+function schemaMatch(args, byName) {
+  const keys = Object.keys(args);
+  if (keys.length === 0) return undefined;
+  let found;
+  for (const tool of byName.values()) {
+    const parameters = tool.parameters && typeof tool.parameters === 'object' ? tool.parameters : {};
+    const names = Object.keys(parameters.properties || {});
+    const required = Array.isArray(parameters.required) ? parameters.required : [];
+    if (!keys.every((key) => names.includes(key))) continue;
+    if (!required.every((key) => keys.includes(key))) continue;
+    if (found) return undefined;
+    found = tool;
+  }
+  return found;
+}
+
 /**
  * Split a buffered answer into text and tool calls.
  *
- * Only `tool` fences holding `{name: arguments}` are calls: the prompt teaches
- * exactly that shape. Anything else — the web app's own/memory calls, a
- * markdown code sample, an unknown name — stays visible text.
+ * A call is a fence tagged with a catalog tool name whose body is the native
+ * JSON arguments object. A fence holding only that object is taken too, when
+ * one tool schema fits it exactly. Anything else stays visible text.
  */
+/**
+ * Recover `{"a":"...","b":"..."}` when the code inside was never escaped: take
+ * the text up to the last other string parameter's marker as the first value.
+ * shortcut: two string parameters only, upgrade if a three-argument tool needs it.
+ */
+function salvageArgs(source, tool) {
+  const properties = tool.parameters && typeof tool.parameters === 'object' ? tool.parameters.properties : undefined;
+  if (!properties) return undefined;
+  const head = /^\{\s*"([^"]+)"\s*:\s*"/.exec(source);
+  if (!head || !properties[head[1]]) return undefined;
+  const first = head[1];
+  let at = -1;
+  let second = '';
+  for (const name of Object.keys(properties)) {
+    if (name === first || properties[name].type !== 'string') continue;
+    const index = source.lastIndexOf(`","${name}":`);
+    if (index > at) {
+      at = index;
+      second = name;
+    }
+  }
+  if (at < 0) return undefined;
+  const value = source.slice(head[0].length, at);
+  const tail = source.slice(at + `","${second}":`.length).replace(/^"/, '').replace(/"\s*\}\s*$/, '');
+  if (!value.trim()) return undefined;
+  return { [first]: value, [second]: tail };
+}
+
 function parseAnswer(answer, tools) {
   const byName = new Map(namedTools(tools).map((tool) => [tool.name, tool]));
   if (byName.size === 0) return [{ type: 'text', text: answer }];
@@ -194,11 +338,38 @@ function parseAnswer(answer, tools) {
   let last = 0;
   let match;
   while ((match = fence.exec(answer)) !== null) {
-    const payload = [match[1].trim().replace(/^tool\b/, ''), match[2].trim()].filter(Boolean).join('\n').trim();
-    const call = /^\{\s*([^{}\s:]+)\s*:\s*([\s\S]*?)\s*\}$/.exec(payload);
-    const tool = call && byName.get(call[1]);
-    const args = tool && call[2].trim() ? fenceArgs(call[2], tool) : undefined;
-    if (!args) continue;
+    const info = match[1].trim();
+    const split = info.search(/\s/);
+    const name = split === -1 ? info : info.slice(0, split);
+    const rest = split === -1 ? '' : info.slice(split).trim();
+    const payload = [rest, match[2].trim()].filter(Boolean).join('\n').trim();
+    const tool = byName.get(name);
+    let call;
+    if (tool) {
+      let args;
+      if (payload) {
+        args = payload.startsWith('{')
+          ? parseArgs(payload) || salvageArgs(payload, tool)
+          : rawArgs(payload, tool);
+      }
+      if (args) call = { name: tool.name, args: coerceArgs(args, tool) };
+    } else if ((info === '' || info === 'json') && payload.startsWith('{')) {
+      const args = parseArgs(payload);
+      const matched = args && schemaMatch(args, byName);
+      if (matched) {
+        call = { name: matched.name, args: coerceArgs(args, matched) };
+      } else {
+        for (const option of byName.values()) {
+          const salvaged = salvageArgs(payload, option);
+          const required = option.parameters && Array.isArray(option.parameters.required) ? option.parameters.required : [];
+          if (salvaged && required.every((key) => key in salvaged)) {
+            call = { name: option.name, args: coerceArgs(salvaged, option) };
+            break;
+          }
+        }
+      }
+    }
+    if (!call) continue;
     const before = answer.slice(last, match.index);
     if (before) blocks.push({ type: 'text', text: before });
     if (state.calls >= MAX_TOOL_CALLS) {
@@ -206,7 +377,7 @@ function parseAnswer(answer, tools) {
       blocks.push({ type: 'text', text: match[0] });
     } else {
       state.calls += 1;
-      blocks.push({ type: 'tool-call', name: call[1], arguments: JSON.stringify(args) });
+      blocks.push({ type: 'tool-call', name: call.name, arguments: JSON.stringify(call.args) });
     }
     last = fence.lastIndex;
   }
@@ -228,18 +399,28 @@ function parseAnswer(answer, tools) {
 function promptFor(fresh, rebuild, tools, system) {
   const send = rebuild ? fresh : fresh.filter((message) => message.role !== 'assistant');
   const transcript = rebuild || send.length !== 1 || send[0].role !== 'user';
-  const parts = [];
-  if (typeof system === 'string' && system.trim()) parts.push(`SYSTEM:\n${system.trim()}`);
-  const catalog = rebuild ? toolCatalog(tools) : '';
-  if (catalog) parts.push(catalog);
+  const systems = [];
+  if (typeof system === 'string' && system.trim()) systems.push(system.trim());
+  const body = [];
   let asked = 0;
   for (const message of send) {
     const text = messageText(message).trim();
     if (!text) continue;
+    if (message.role === 'system') {
+      systems.push(text);
+      continue;
+    }
     if (message.role === 'user' || message.role === 'tool') asked += 1;
-    parts.push(transcript ? `${LABEL[message.role] || message.role}:\n${text}` : text);
+    body.push(transcript ? `${LABEL[message.role] || message.role}:\n${text}` : text);
   }
   if (asked === 0) return '';
+  // System first: a headless loop passes it as a system message, and a catalog
+  // ahead of it made the model answer with its own DSML instead.
+  const parts = [];
+  if (systems.length > 0) parts.push(`SYSTEM:\n${systems.join('\n\n')}`);
+  const catalog = rebuild ? toolCatalog(tools) : '';
+  if (catalog) parts.push(catalog);
+  parts.push(...body);
   return parts.join('\n\n');
 }
 

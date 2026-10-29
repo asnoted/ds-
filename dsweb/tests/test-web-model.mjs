@@ -58,7 +58,7 @@ try {
 
   assert.equal(creates.length, 1);
   assert.equal(map.webSessionFor('dsh-1'), 'web-1');
-  assert.match(calls[0].prompt, /SYSTEM:\nyou are a test agent/, 'the first turn carries the system prompt');
+  assert.ok(calls[0].prompt.startsWith('SYSTEM:\nyou are a test agent'), 'a system message leads the prompt');
   assert.match(calls[0].prompt, /USER:\nfirst question/);
   assert.equal(calls[0].sessionId, 'web-1');
   assert.deepEqual(chunks.filter((c) => c.type === 'block-start').map((c) => c.blockType), ['text']);
@@ -181,7 +181,7 @@ try {
       complete: async function* (_token, request) {
         asks.push(request);
         if (asks.length === 1) {
-          yield { type: 'text', text: 'let me read it\n```tool\n{bash: cat a.txt}\n```\n```js\n1+1\n```' };
+          yield { type: 'text', text: 'let me read it\n```bash\n{"command":"cat a.txt"}\n```\n```js\n1+1\n```' };
           yield { type: 'message', messageId: 7 };
         } else {
           yield { type: 'text', text: 'the file says hi' };
@@ -198,8 +198,8 @@ try {
     assert.match(asks[0].prompt, /TOOL CATALOG/);
     assert.match(asks[0].prompt, /- bash: Run a shell command/);
     assert.match(asks[0].prompt, /"command"/, 'the catalog carries the tool schema, not a hand-written example');
-    assert.ok(asks[0].prompt.includes('```tool'), 'the taught protocol is a tool fence');
-    assert.ok(asks[0].prompt.includes('not JSON'), 'the prompt says the parameters are raw text');
+    assert.ok(asks[0].prompt.includes('```TOOLNAME'), 'the taught protocol is a tool-name fence');
+    assert.ok(asks[0].prompt.includes('as-is'), 'the prompt says a program goes in as-is');
     const call = toolTurn.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
     assert.equal(call.block.name, 'bash');
     assert.deepEqual(JSON.parse(call.block.arguments), { command: 'cat a.txt' });
@@ -235,7 +235,7 @@ try {
         token: () => 'token',
         create: async () => 'web-inline',
         complete: async function* () {
-          yield { type: 'text', text: 'ok\n```shell ls```\n```tool {bash: lsof -i :3080}```\n```tool {nope: x}```' };
+          yield { type: 'text', text: 'ok\n```shell ls```\n```bash {"command":"lsof -i :3080"}```\n```nope {"x":1}```\nnot a call: tools.bash({"command":"no"})' };
         },
       });
       const inlineOut = await collect(inlineAdapter.stream({
@@ -246,10 +246,134 @@ try {
       }));
       const inlineCalls = inlineOut.filter((c) => c.type === 'block-end' && c.block.type === 'tool-call');
       assert.equal(inlineCalls.length, 1, 'only a known tool fence is a call, got ' + inlineCalls.length);
-      assert.equal(JSON.parse(inlineCalls[0].block.arguments).command, 'lsof -i :3080', 'the brace value is the command');
+      assert.equal(JSON.parse(inlineCalls[0].block.arguments).command, 'lsof -i :3080', 'the call argument is the command');
       const visible = inlineOut.filter((c) => c.type === 'text-delta').map((c) => c.text).join('');
       assert.match(visible, /```shell ls```/, 'an unknown fence tag stays text');
-      assert.match(visible, /\{nope: x\}/, 'an unknown tool name stays text');
+      assert.match(visible, /nope \{"x":1\}/, 'an unknown tool name stays text');
+      assert.ok(visible.includes('tools.bash({"command":"no"})'), 'an SDK binding inside a sentence is not a direct call');
+    }
+
+    {
+      // Code inside the JSON string arrives with raw newlines and bare quotes.
+      const messy = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'messy.json') }),
+        token: () => 'token',
+        create: async () => 'web-messy',
+        complete: async function* () {
+          yield { type: 'text', text: '```bash\n{"command":"find dsweb -not -path "*/node_modules/*"\necho done"}\n```' };
+        },
+      });
+      const messyOut = await collect(messy.stream({
+        sessionId: 'messy',
+        toolHistory: [],
+        messages: [text('user', 'go')],
+        tools,
+      }));
+      const messyCall = messyOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.equal(messyCall.block.name, 'bash', 'the call survives unescaped strings');
+      assert.deepEqual(
+        JSON.parse(messyCall.block.arguments),
+        { command: 'find dsweb -not -path "*/node_modules/*"\necho done' },
+        'raw newlines and bare quotes stay in the argument',
+      );
+    }
+
+    {
+      // A raw body is the argument itself; no JSON escaping involved.
+      const rawAdapter = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'raw.json') }),
+        token: () => 'token',
+        create: async () => 'web-raw',
+        complete: async function* () {
+          yield { type: 'text', text: '```bash\nls -la && echo "hi"\n```' };
+        },
+      });
+      const rawOut = await collect(rawAdapter.stream({
+        sessionId: 'raw',
+        toolHistory: [],
+        messages: [text('user', 'go')],
+        tools,
+      }));
+      const rawCall = rawOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.deepEqual(JSON.parse(rawCall.block.arguments), { command: 'ls -la && echo "hi"' }, 'the body is the command');
+
+      const rawCodeTool = {
+        name: 'run_code',
+        description: 'Execute a program',
+        parameters: {
+          type: 'object',
+          properties: { code: { type: 'string' }, description: { type: 'string' } },
+          required: ['code', 'description'],
+        },
+      };
+      const rawCode = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'raw-code.json') }),
+        token: () => 'token',
+        create: async () => 'web-raw-code',
+        complete: async function* () {
+          yield { type: 'text', text: '```run_code\nconst r = await tools.read({ file_path: "a.txt" });\nconsole.log(r.lines.length);\n```' };
+        },
+      });
+      const rawCodeOut = await collect(rawCode.stream({
+        sessionId: 'raw-code',
+        toolHistory: [],
+        messages: [text('user', 'go')],
+        tools: [rawCodeTool],
+      }));
+      const rawCodeCall = rawCodeOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      const rawCodeArgs = JSON.parse(rawCodeCall.block.arguments);
+      assert.equal(rawCodeArgs.code, 'const r = await tools.read({ file_path: "a.txt" });\nconsole.log(r.lines.length);');
+      assert.equal(rawCodeArgs.description, 'const r = await tools.read({ file_path: "a.txt" });', 'the first line labels the call');
+    }
+
+    {
+      // The program carries unescaped quotes; plain JSON fails, so it is salvaged.
+      const runCodeTool = {
+        name: 'run_code',
+        description: 'Execute a program',
+        parameters: {
+          type: 'object',
+          properties: { code: { type: 'string' }, description: { type: 'string' } },
+          required: ['code', 'description'],
+        },
+      };
+      const salvaged = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'salvage.json') }),
+        token: () => 'token',
+        create: async () => 'web-salvage',
+        complete: async function* () {
+          yield { type: 'text', text: '```run_code\n{"code":"const r = await tools.read({\n  file_path: "a.txt",\n  limit: 5\n});","description":"Read a.txt"}\n```' };
+        },
+      });
+      const salvagedOut = await collect(salvaged.stream({
+        sessionId: 'salvage',
+        toolHistory: [],
+        messages: [text('user', 'go')],
+        tools: [runCodeTool],
+      }));
+      const salvagedCall = salvagedOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.equal(salvagedCall.block.name, 'run_code');
+      const salvagedArgs = JSON.parse(salvagedCall.block.arguments);
+      assert.equal(salvagedArgs.description, 'Read a.txt');
+      assert.ok(salvagedArgs.code.includes('"a.txt"'), 'inner quotes survive');
+      assert.ok(salvagedArgs.code.includes('\n  limit: 5\n'), 'raw newlines survive');
+
+      const bareSalvage = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'salvage-bare.json') }),
+        token: () => 'token',
+        create: async () => 'web-salvage-bare',
+        complete: async function* () {
+          yield { type: 'text', text: '```\n{"code":"const r = await tools.read({\n  file_path: "a.txt",\n  limit: 5\n});","description":"Read a.txt"}\n```' };
+        },
+      });
+      const bareSalvageOut = await collect(bareSalvage.stream({
+        sessionId: 'salvage-bare',
+        toolHistory: [],
+        messages: [text('user', 'go')],
+        tools: [runCodeTool],
+      }));
+      const bareSalvageCall = bareSalvageOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.equal(bareSalvageCall.block.name, 'run_code', 'an untagged broken object is salvaged by its keys');
     }
 
     {
@@ -268,7 +392,7 @@ try {
         token: () => 'token',
         create: async () => 'web-coerced',
         complete: async function* () {
-          yield { type: 'text', text: '```tool\n{wait: 42}\n```' };
+          yield { type: 'text', text: '```wait {"seconds":"42"}```' };
         },
       });
       const coercedOut = await collect(coerced.stream({
@@ -301,7 +425,7 @@ try {
         create: async () => 'web-ptc',
         complete: async function* (_token, request) {
           ptcAsks.push(request);
-          yield { type: 'text', text: '```tool\n{run_code: console.log(1)}\n```' };
+          yield { type: 'text', text: '```run_code\n{"code":"console.log(1)","description":"Print"}\n```' };
         },
       });
       const ptcOut = await collect(ptc.stream({
@@ -316,8 +440,59 @@ try {
       const ptcCall = ptcOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
       assert.deepEqual(
         JSON.parse(ptcCall.block.arguments),
-        { code: 'console.log(1)', description: 'console.log(1)' },
-        'the body is the program; the required description follows its first line',
+        { code: 'console.log(1)', description: 'Print' },
+        'the native call object is taken as the arguments',
+      );
+    }
+
+    {
+      // The web model sometimes writes the arguments object on its own, with no
+      // tool tag. Exactly one schema must fit, or the JSON stays text.
+      const bareRunCode = {
+        name: 'run_code',
+        description: 'Execute a TypeScript program against the available tools',
+        parameters: {
+          type: 'object',
+          properties: { code: { type: 'string' }, description: { type: 'string' } },
+          required: ['code', 'description'],
+        },
+      };
+      const bare = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'bare.json') }),
+        token: () => 'token',
+        create: async () => 'web-bare',
+        complete: async function* () {
+          yield { type: 'text', text: '```\n{"code":"console.log(1)","description":"Print"}\n```' };
+        },
+      });
+      const bareOut = await collect(bare.stream({
+        sessionId: 'bare',
+        toolHistory: [],
+        messages: [text('user', 'print one')],
+        tools: [bareRunCode],
+      }));
+      const bareCall = bareOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.equal(bareCall.block.name, 'run_code', 'a bare arguments object runs when its schema fits');
+      assert.deepEqual(JSON.parse(bareCall.block.arguments), { code: 'console.log(1)', description: 'Print' });
+
+      const sample = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'sample.json') }),
+        token: () => 'token',
+        create: async () => 'web-sample',
+        complete: async function* () {
+          yield { type: 'text', text: '```json\n{"name":"x","value":1}\n```' };
+        },
+      });
+      const sampleOut = await collect(sample.stream({
+        sessionId: 'sample',
+        toolHistory: [],
+        messages: [text('user', 'show me json')],
+        tools: [bareRunCode],
+      }));
+      assert.equal(
+        sampleOut.filter((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call').length,
+        0,
+        'a JSON sample that fits no schema stays text',
       );
     }
 
@@ -402,7 +577,7 @@ try {
       );
     }
 
-    const many = Array.from({ length: 12 }, (_, i) => '```tool\n{bash: cat f' + i + '}\n```').join('\n');
+    const many = Array.from({ length: 12 }, (_, i) => '```bash\n{"command":"cat f' + i + '"}\n```').join('\n');
     const capped = makeAdapter({
       map: createSessionMap({ file: join(dir, 'cap.json') }),
       token: () => 'token',

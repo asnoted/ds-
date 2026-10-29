@@ -10,8 +10,8 @@
     "smoke:web": "node scripts/smoke-web.mjs",
     "prepare": "git config core.hooksPath .githooks",
     "package:plugins": "pnpm --filter dsh-dsb --filter dsh-dsweb pack --pack-destination dist",
-    "build": "pnpm package:plugins && dsh plugin --profile web add --force ./dist/dsh-dsb-0.1.0.tgz ./dist/dsh-dsweb-0.1.0.tgz",
-    "deploy:plugins": "pnpm build"
+    "build": "pnpm package:plugins",
+    "deploy:plugins": "pnpm package:plugins && dsh plugin --profile web add --force ./dist/dsh-dsb-0.1.0.tgz ./dist/dsh-dsweb-0.1.0.tgz"
   },
   "devDependencies": {
     "playwright": "^1.64.1"

@@ -35,6 +35,7 @@ import {
   uploadFile,
   waitForFiles,
 } from './deepseek.js';
+import { createSessionMap } from './session-map.js';
 import { clearToken, readVault, resolveStateDir, saveToken, tokenPreview } from './vault.js';
 import { normalizeToken } from './token.js';
 import {
@@ -771,6 +772,35 @@ export function apply(ctx) {
     llmCtx.effect(
       () => llmCtx.llm.registerAdapter([WEB_MODEL_PROVIDER], adapter),
       'dsb: deepseek-web model',
+    );
+  });
+
+  // A DSH session bound to a web chat already has a title upstream. Reuse it
+  // instead of spending a second model request on dsh-session-title-llm; an
+  // unbound session throws, so the service keeps its own fallback.
+  ctx.inject(['sessionTitle'], (titleCtx) => {
+    if (!titleCtx || !titleCtx.sessionTitle) return;
+    const sessions = createSessionMap();
+    titleCtx.effect(
+      () => titleCtx.sessionTitle.register({
+        id: 'deepseek-web',
+        automatic: 'first-prompt',
+        async generate({ session, messages, signal }) {
+          const webSessionId = sessions.webSessionFor(session.id);
+          if (!webSessionId) throw new Error('session is not bound to a web chat');
+          const token = requireTokenValue();
+          if (!token) throw new Error('DeepSeek 网页登录态不存在');
+          const { sessions: list } = await listSessions(token, { count: 100, maxPages: 3, signal });
+          const hit = list.find((item) => item.id === webSessionId);
+          if (!hit || !hit.title || hit.title === '未命名对话') {
+            throw new Error('web chat has no title yet');
+          }
+          // The service wants the seqs this title came from; the web title is
+          // derived from the first prompt, which is the oldest message here.
+          return { title: hit.title, messageSeqs: [messages[0].seq] };
+        },
+      }),
+      'dsb: deepseek-web session title',
     );
   });
 

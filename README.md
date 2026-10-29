@@ -22,7 +22,7 @@ pnpm package:plugins
 dsh plugin --profile web add dsh-dsb dsh-dsweb
 ```
 
-更新流程：改源码 → `pnpm build`。build 用 `add --force` 覆盖同版本快照，不先卸载；DSH 会尝试热应用，日志提示 restart required 时再重启。运行中的进程只读 profile 里解包后的拷贝，不读工作区。客户端 `lib/client.js` 是手写 lazy-CJS bundle，没有构建步骤；host 半边是 ESM。
+更新流程：web profile 用 `link:` 指向 `dsweb/`、`dsb/`，hmr 监听这两个目录，改完源码会热替换；进程还没重启过时要重启一次。发版或给别人用时 `pnpm build` 只打 `dist/*.tgz`，再 `pnpm deploy:plugins` 装快照（会覆盖 link）。客户端 `lib/client.js` 是手写 lazy-CJS bundle，没有构建步骤；host 半边是 ESM。
 
 首次打开面板点“用浏览器登录”：dsweb 会用独立的 Chromium 配置打开 chat.deepseek.com，登录后自动读回 `localStorage.userToken` 并关闭窗口。配置保存在 `~/.dsh/dsh-dsb/browser-profile`，不碰日常浏览器的 cookie / 历史；令牌只写入 `~/.dsh/dsh-dsb/vault.json`（0600）。需要本机有 Chromium / Chrome / Edge / Brave，找不到时可用 `DSB_BROWSER_PATH` 指定路径；手动粘贴令牌仍然保留为兜底。令牌失效时面板会先用同一配置无头重读一次，真退出登录才弹出窗口。
 
@@ -32,7 +32,7 @@ dsweb 向 `ctx.llm` 注册 `deepseek-web` provider（模型名同名），让 DS
 
 - 每个 DSH session 绑定一个网页会话：首轮发全量 transcript，之后只发增量；上一轮 assistant 的 message id 作为下一轮的 `parent_message_id`，上下文跨进程保留。
 - 网页会话一次只占一个 turn；自动 turn 之间按 Beta(2,4) 抽 3–15 秒间隔（峰值 6 秒），记录在 `~/.dsh/dsh-dsb/pace.json`，DSH 重启后仍然生效。
-- 工具调用走 `tool` 围栏：正文是 `{工具名: 参数}`，参数是原始文本不是 JSON（提示词只教这一种；工具目录随首轮 transcript 一起发），单轮最多执行 9 个，只认目录里存在的工具名。只支持文本，不处理图片 / 附件。
+- 工具调用走 `工具名` 围栏，正文是原生 JSON 参数对象；模型只写参数对象、不带工具名时，按唯一匹配的 schema 认领（裸键名也能解析；工具目录随首轮 transcript 一起发），单轮最多执行 9 个，只认目录里存在的工具名。只支持文本，不处理图片 / 附件。
 
 模型选择器暂时还没有 `deepseek-web`，用 overlay 指定：
 
