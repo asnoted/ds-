@@ -1,6 +1,6 @@
 # ADR-0002: 续聊替换: 一轮可排多块
 
-- **Status**: accepted
+- **Status**: accepted — 历史文档: 所描述的 Python 中继 + 浏览器扩展在 3d0c51a 已删除, 现行实现是 dsweb/lib 与 dsb/lib 两个 DSH 插件
 - **Date**: 2026-10-22
 
 工具结果作为一条可见的长消息回灌

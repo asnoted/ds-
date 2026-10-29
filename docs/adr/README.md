@@ -3,6 +3,8 @@
 > **本文件是生成的, 手改会被 `pnpm quality:ci` 判红.** 重新生成: `uv run scripts/adrs-index.py`; 只核对: `uv run scripts/adrs-index.py --check`.
 >
 > 由 `scripts/adrs-index.py` 扫 6 篇 ADR 生成. 判据与格式见该脚本的文档字符串.
+>
+> **2026-10-29 注**: 该生成器与 `quality:ci` 已随 3d0c51a 删除, 本表此后为手维护; 下面六篇描述的是已删除的 Python 中继 + 浏览器扩展, 只作历史记录.
 
 ## 6 篇
 

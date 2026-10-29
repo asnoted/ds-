@@ -1,6 +1,6 @@
 # ADR-0003: 发送闸只管send; 闸关着时自动续聊变半自动
 
-- **Status**: accepted
+- **Status**: accepted — 历史文档: 所描述的 Python 中继 + 浏览器扩展在 3d0c51a 已删除, 现行实现是 dsweb/lib 与 dsb/lib 两个 DSH 插件
 - **Date**: 2026-10-17
 
 闸(选项页的复选框, 默认关)管的是"**是否允许把消息发出去**":

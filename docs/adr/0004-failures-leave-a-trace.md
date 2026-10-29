@@ -1,6 +1,6 @@
 # ADR-0004: 失败必须留痕; 发送类失败当场留一帧
 
-- **Status**: accepted
+- **Status**: accepted — 历史文档: 所描述的 Python 中继 + 浏览器扩展在 3d0c51a 已删除, 现行实现是 dsweb/lib 与 dsb/lib 两个 DSH 插件
 - **Date**: 2026-10-17
 
 图标翻红之后还得查得出**为什么**, **几点红的**, **多久自己绿的**. 中继在 stderr 上记一行

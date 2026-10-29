@@ -778,6 +778,8 @@ export function apply(ctx) {
   // A DSH session bound to a web chat already has a title upstream. Reuse it
   // instead of spending a second model request on dsh-session-title-llm; an
   // unbound session throws, so the service keeps its own fallback.
+  // The service allows one provider, so registering here would collide with
+  // session-title-first-prompt-llm; an overlay swaps that plugin for this one.
   ctx.inject(['sessionTitle'], (titleCtx) => {
     if (!titleCtx || !titleCtx.sessionTitle) return;
     const sessions = createSessionMap();
@@ -795,8 +797,8 @@ export function apply(ctx) {
           if (!hit || !hit.title || hit.title === '未命名对话') {
             throw new Error('web chat has no title yet');
           }
-          // The service wants the seqs this title came from; the web title is
-          // derived from the first prompt, which is the oldest message here.
+          // The provider must name the exact request messages its title came
+          // from; the web title is derived from the first prompt.
           return { title: hit.title, messageSeqs: [messages[0].seq] };
         },
       }),
