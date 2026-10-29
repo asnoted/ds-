@@ -133,6 +133,8 @@ globalThis.fetch = async (url, init = {}) => {
   calls.push({ path, method: init.method || 'GET', body: init.body });
   const entry = responses[path];
   const payload = typeof entry === 'function' ? entry() : entry;
+  // A streaming reply brings its own Response shape.
+  if (payload && payload.body) return payload;
   if (!payload) {
     return { ok: false, status: 404, async text() { return JSON.stringify({ error: `no fake for ${path}` }); } };
   }
@@ -312,7 +314,7 @@ if (typeof boundary.getDerivedStateFromError === 'function') {
 /* Renders the tree the same way `drawNode` does, but keeps the class names and
    text so the panel's SHAPE can be asserted, not just "it did not throw". */
 const surfaceOf = (out) => {
-  const found = { classes: [], texts: [] };
+  const found = { classes: [], texts: [], values: [] };
   const walk = (node, depth = 0) => {
     if (node == null || depth > 40) return;
     if (Array.isArray(node)) {
@@ -325,6 +327,7 @@ const surfaceOf = (out) => {
     }
     if (typeof node !== 'object') return;
     if (node.props && typeof node.props.className === 'string') found.classes.push(node.props.className);
+    if (node.props && typeof node.props.value === 'string') found.values.push(node.props.value);
     const type = node.type;
     if (typeof type === 'function') {
       const props = { ...(node.props || {}), children: node.children };
@@ -362,6 +365,51 @@ check(
   withoutSidebar.classes.includes('dswc-side'),
   withoutSidebar.classes.join(' '),
 );
+
+/* ---- a turn that ends early keeps what it already showed ----------- */
+
+// The user bubble is not drawn live, so before this the answer streamed under
+// a question that was invisible, and both vanished together on 停止 or when the
+// upstream stream failed halfway.
+{
+  const sse = (frames) =>
+    new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const frame of frames) controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
+        controller.close();
+      },
+    });
+  responses['/dsh-dsb/chat'] = () => ({
+    ok: true,
+    status: 200,
+    body: sse([
+      { type: 'session', sessionId: 's1' },
+      { type: 'text', text: '第一段。' },
+      { type: 'error', error: '上游中断' },
+    ]),
+  });
+  await panelProps.actions.startNewSession();
+  await panelProps.actions.send('被中断的问题');
+  const partial = surfaceOf(panelElement);
+  const shown = partial.texts.join('');
+  check('a mid-stream error keeps the question on screen', shown.includes('被中断的问题'), shown.slice(0, 120));
+  check('a mid-stream error keeps the partial answer', shown.includes('第一段。'), shown.slice(0, 120));
+  check('a mid-stream error still reports the failure', shown.includes('上游中断'), shown.slice(0, 160));
+
+  // Nothing reached the stream at all: the prompt belongs back in the composer.
+  responses['/dsh-dsb/chat'] = () => {
+    throw new Error('network down');
+  };
+  await panelProps.actions.startNewSession();
+  await panelProps.actions.send('没发出去的提问');
+  const unsent = surfaceOf(panelElement);
+  check(
+    'a send that never reached the host hands the prompt back',
+    unsent.values.includes('没发出去的提问'),
+    unsent.values.join(' | '),
+  );
+}
 
 process.stdout.write('\nrender smoke: ' + (failures.length ? failures.length + ' FAILING' : 'all passing'));
 if (failures.length) { for (const line of failures) process.stdout.write('  - ' + line + '\n'); process.exit(1); }

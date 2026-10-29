@@ -1920,9 +1920,35 @@ window.__ModuleLoader__.load({
         stream: { sessionId, text: '', thinking: '', note: '', status: '' },
       });
 
+      let settled = null;
+      let answer = '';
+      let reasoning = '';
+
       const finish = (patch) => {
         flight.controller = null;
         store.set({ streaming: false, stream: null, ...patch });
+      };
+
+      // Everything the reader has been shown so far. The user bubble is not
+      // drawn live, so a turn that ends any other way (stop, mid-stream error)
+      // takes the question down with the partial answer unless it lands here.
+      const commit = (target) => {
+        const live = store.value.stream || {};
+        const list = Array.isArray(store.value.messages[target]) ? store.value.messages[target].slice() : [];
+        list.push({ role: 'user', content: text, names: sentAttachments.map((a) => a.name) });
+        if (answer || live.note || live.filtered) {
+          // The live stream object is dropped on finish, so anything the reader
+          // still needs (auto-continue cutoff, safety-filter caveat) rides along
+          // on the committed message instead of vanishing with it.
+          list.push({
+            role: 'assistant',
+            content: answer,
+            note: live.note || '',
+            filtered: Boolean(live.filtered),
+          });
+        }
+        store.set({ messages: { ...store.value.messages, [target]: list }, detachFiles: false });
+        if (answer) syncSessions({ silent: true });
       };
 
       try {
@@ -1957,9 +1983,6 @@ window.__ModuleLoader__.load({
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let settled = null;
-        let answer = '';
-        let reasoning = '';
 
         for (;;) {
           const { value, done } = await reader.read();
@@ -2006,34 +2029,22 @@ window.__ModuleLoader__.load({
           }
         }
 
-        if (settled) {
-          const live = store.value.stream || {};
-          const list = Array.isArray(store.value.messages[settled]) ? store.value.messages[settled].slice() : [];
-          list.push({ role: 'user', content: text, names: sentAttachments.map((a) => a.name) });
-          if (answer || live.note || live.filtered) {
-            // The live stream object is dropped on finish, so anything the reader
-            // still needs (auto-continue cutoff, safety-filter caveat) rides along
-            // on the committed message instead of vanishing with it.
-            list.push({
-              role: 'assistant',
-              content: answer,
-              note: live.note || '',
-              filtered: Boolean(live.filtered),
-            });
-          }
-          store.set({ messages: { ...store.value.messages, [settled]: list }, detachFiles: false });
-          if (answer) syncSessions({ silent: true });
-        }
+        if (settled) commit(settled);
         finish(settled ? { activeId: settled } : {});
       } catch (error) {
+        // A turn that reached the stream keeps what it showed; one that never
+        // started hands the prompt back to the composer.
+        if (settled) commit(settled);
+        const draft = settled ? {} : { draft: store.value.draft || text };
         if (controller.signal.aborted) {
-          finish({});
+          finish(draft);
           return;
         }
         const message = error && error.authFailed ? null : describe(error);
         finish({
           error: error && error.authFailed ? i18n('error.token') : message || i18n('error.send'),
           valid: error && error.authFailed ? false : store.value.valid,
+          ...draft,
         });
       }
     }
