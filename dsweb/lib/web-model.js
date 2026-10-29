@@ -10,9 +10,9 @@
  * long round trip, so a second request queues (and cancellation leaves the
  * queue) instead of opening a parallel turn.
  *
- * Text only for now. Tool schemas ride in the transcript (they are part of the
- * system prompt), but the model's answer is emitted as text; tool-call fences
- * are a later layer.
+ * Text only. Tool schemas ride in the transcript as a catalog, and the model
+ * calls them with DSML invoke blocks that {@link parseAnswer} turns back into
+ * tool-call blocks.
  *
  * @module dsh-dsb/web-model
  */
@@ -92,7 +92,7 @@ function messageText(message) {
 }
 
 function toolProtocol(tools) {
-  const list = shellOnly(tools);
+  const list = namedTools(tools);
   const bar = "｜｜DSML｜｜";
   return [
     'You can call tools by emitting DeepSeek DSML invoke blocks. Only the tools listed below exist. Do not use any other tool-call syntax.',
@@ -102,38 +102,73 @@ function toolProtocol(tools) {
   ].join('\n');
 }
 
-const DSML_BAR = "｜｜DSML｜｜";
+// The web model emits the token's bar count inconsistently, and sometimes
+// merges a closing tag with the next opening tag. Accept all observed shapes.
+const DSML_TAG = '｜{0,2}DSML｜{0,2}';
 const DSML_INVOKE = new RegExp(
-  `<${DSML_BAR}\\s*invoke name="([^"]+)">([\\s\\S]*?)(?:<\\/${DSML_BAR}\\s*invoke>|<\\/${DSML_BAR}\\s*calls>|$)`,
+  `<${DSML_TAG}\\s*invoke\\s+name="([^"]+)"\\s*>([\\s\\S]*?)(?:<\\/${DSML_TAG}\\s*invoke\\s*>|<\\/${DSML_TAG}\\s*calls\\s*>|<\\/${DSML_TAG}\\s*>|$)`,
   'g',
 );
 const DSML_PARAM = new RegExp(
-  `<${DSML_BAR}\\s*parameter name="([^"]+)"(?:\\s+string="(true|false)")?>([\\s\\S]*?)<\\/${DSML_BAR}\\s*parameter>`,
+  `<${DSML_TAG}\\s*parameter\\s+name="([^"]+)"([^>]*)>([\\s\\S]*?)<\\/${DSML_TAG}\\s*parameter\\s*>`,
   'g',
 );
-const DSML_CLOSE_OPEN = new RegExp(`</${DSML_BAR}\\s*parameter\\s+name=`, 'g');
+const DSML_CLOSE_PARAM = new RegExp(`<\\/(${DSML_TAG})\\s*parameter\\s+name=`, 'g');
+const DSML_CLOSE_INVOKE = new RegExp(`<\\/(${DSML_TAG})\\s*invoke\\s+name=`, 'g');
 
-function dsmlArgs(raw) {
-  const body = raw.replace(DSML_CLOSE_OPEN, `</${DSML_BAR} parameter>\n<${DSML_BAR} parameter name=`);
+/** Split `</invoke name="x">` into a close and a new open, same for parameters. */
+function normalizeDsml(raw) {
+  return raw
+    .replace(DSML_CLOSE_PARAM, (_match, tag) => `</${tag} parameter>\n<${tag} parameter name=`)
+    .replace(DSML_CLOSE_INVOKE, (_match, tag) => `</${tag} invoke>\n<${tag} invoke name=`);
+}
+
+/** Use the tool schema's type as the authority, falling back to the DSML flag. */
+function coerceArg(value, schema, stringFlag) {
+  const type = schema && typeof schema === 'object' ? schema.type : undefined;
+  if (type === 'string') return value;
+  if (type === 'number' || type === 'integer') {
+    const number = Number(value);
+    return value !== '' && Number.isFinite(number) ? number : value;
+  }
+  if (type === 'boolean') {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  }
+  if (type === 'array' || type === 'object' || stringFlag === 'false') {
+    try { return JSON.parse(value); } catch { return value; }
+  }
+  return value;
+}
+
+function dsmlArgs(raw, tool) {
+  const body = normalizeDsml(raw);
+  const properties = tool && tool.parameters && typeof tool.parameters === 'object'
+    ? tool.parameters.properties
+    : undefined;
   const args = {};
   let malformed = false;
   for (const match of body.matchAll(DSML_PARAM)) {
-    const [, name, isString, value] = match;
+    const [, name, attributes, value] = match;
     const v = value.trim();
     if (v.includes('parameter name=') || v.includes('invoke name=')) malformed = true;
-    if (isString === 'true' || isString === undefined) args[name] = v;
-    else { try { args[name] = JSON.parse(v); } catch { args[name] = v; } }
+    const stringFlag = /\bstring\s*=\s*"?(true|false)"?/.exec(attributes);
+    args[name] = coerceArg(v, properties && properties[name], stringFlag && stringFlag[1]);
   }
+  // A parameter-shaped body that yielded nothing means the tag was malformed;
+  // turning it into an empty call would run a tool with `{}` by accident.
+  if (Object.keys(args).length === 0 && /parameter\s+name=/.test(body)) malformed = true;
   return { args, malformed };
 }
 
-/** Expose every DSH tool: `shell` fences run bash, `toolname` fences run the named tool. */
-function shellOnly(tools) {
+/** Every tool the host exposes with a usable name; a nameless entry cannot be called. */
+function namedTools(tools) {
   return (Array.isArray(tools) ? tools : []).filter((tool) => tool && typeof tool.name === 'string' && tool.name);
 }
 
 function toolCatalog(tools) {
-  const list = shellOnly(tools);
+  const list = namedTools(tools);
   const lines = [];
   for (const tool of list) {
     if (!tool || typeof tool.name !== 'string' || !tool.name) continue;
@@ -145,31 +180,32 @@ function toolCatalog(tools) {
   return lines.length === 0 ? '' : `${toolProtocol(list)}\n\nTOOL CATALOG\n${lines.join('\n')}`;
 }
 
-/** A model that loses the thread can repeat a call forever; 9 matches the fence cap. */
+/** A model that loses the thread can repeat a call forever; 9 bounds one answer's damage. */
 const MAX_TOOL_CALLS = 9;
 
 /**
  * Split a buffered answer into text and tool calls.
  *
- * Only fenced blocks are recognized: the prompt teaches the model to emit a
- * ```shell fence (or a tool-name fence with a JSON body). Anything else — the
- * web app's own/memory calls, a markdown code sample, broken JSON — stays
- * visible text. A call is only taken when its name is an active DSH tool.
+ * Only DSML invoke blocks are recognized: the prompt teaches exactly that
+ * shape. Anything else — the web app's own/memory calls, a markdown code
+ * sample, a malformed block — stays visible text. A call is only taken when
+ * its name is an active DSH tool.
  */
 function parseAnswer(answer, tools) {
-  const names = new Set(shellOnly(tools).map((tool) => tool.name));
-  if (names.size === 0) return [{ type: 'text', text: answer }];
+  const byName = new Map(namedTools(tools).map((tool) => [tool.name, tool]));
+  if (byName.size === 0) return [{ type: 'text', text: answer }];
+  const normalized = normalizeDsml(answer);
   const blocks = [];
   const state = { calls: 0, truncated: false };
   let last = 0;
-  for (const match of answer.matchAll(DSML_INVOKE)) {
-    const before = answer.slice(last, match.index);
+  for (const match of normalized.matchAll(DSML_INVOKE)) {
+    const before = normalized.slice(last, match.index);
     if (before) blocks.push({ type: 'text', text: before });
     const name = match[1];
-    const parsed = dsmlArgs(match[2]);
+    const parsed = dsmlArgs(match[2], byName.get(name));
     const malformed = parsed.malformed || match[2].includes('invoke name=');
-    if (!names.has(name) || malformed || state.calls >= MAX_TOOL_CALLS) {
-      if (names.has(name) && !malformed) state.truncated = true;
+    if (!byName.has(name) || malformed || state.calls >= MAX_TOOL_CALLS) {
+      if (byName.has(name) && !malformed) state.truncated = true;
       blocks.push({ type: 'text', text: match[0] });
     } else {
       state.calls += 1;
@@ -177,7 +213,7 @@ function parseAnswer(answer, tools) {
     }
     last = match.index + match[0].length;
   }
-  const tail = answer.slice(last);
+  const tail = normalized.slice(last);
   if (tail) blocks.push({ type: 'text', text: tail });
   if (state.truncated) {
     blocks.push({ type: 'text', text: '（本轮工具调用超过 ' + MAX_TOOL_CALLS + ' 个，其余未执行）' });
@@ -286,7 +322,7 @@ export function createWebModelAdapter({
         }
         const prompt = promptFor(pending.fresh, pending.rebuild, options.tools, options.system);
         if (!prompt) {
-          yield { type: 'finish', kind: 'stop' };
+          yield { type: 'finish', reason: { kind: 'stop' } };
           return;
         }
         if (!webSessionId || pending.rebuild) {
@@ -345,9 +381,9 @@ export function createWebModelAdapter({
           messageId = turn.mid;
         }
 
-        // The answer is buffered because a fenced tool call has to be parsed
-        // before any of it can be emitted as text. Agent turns are not the
-        // panel's token stream, so the end-of-turn wait costs nothing here.
+        // The answer is buffered because a tool call has to be parsed before any
+        // of it can be emitted as text. Agent turns are not the panel's token
+        // stream, so the end-of-turn wait costs nothing here.
         let index = 0;
         const emitText = function* emitText(value) {
           if (!value.trim()) return;
@@ -376,15 +412,18 @@ export function createWebModelAdapter({
         };
 
         yield* emitReasoning(reasoning);
+        let sawCall = false;
         for (const block of parseAnswer(answer, options.tools)) {
-          if (block.type === 'tool-call') yield* emitToolCall(block);
-          else yield* emitText(block.text);
+          if (block.type === 'tool-call') {
+            sawCall = true;
+            yield* emitToolCall(block);
+          } else yield* emitText(block.text);
         }
         if (isTurn) {
           if (messageId > 0) map.setParent(key, messageId);
           map.commit(key, messages);
         }
-        yield { type: 'finish', kind: 'stop' };
+        yield { type: 'finish', reason: { kind: sawCall ? 'tool-calls' : 'stop' } };
       } catch (error) {
         // A brand-new web session that produced nothing is dead weight: forget it
         // so the retry rebuilds instead of sending a delta into an empty chat.

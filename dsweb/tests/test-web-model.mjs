@@ -65,7 +65,7 @@ try {
   assert.equal(chunks.filter((c) => c.type === 'text-delta').map((c) => c.text).join(''), 'hello');
   const end = chunks.find((c) => c.type === 'block-end');
   assert.deepEqual(end.block, { type: 'text', text: 'hello' });
-  assert.deepEqual(chunks.at(-1), { type: 'finish', kind: 'stop' });
+  assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'stop' } });
 
   const second = [...first, text('assistant', 'hello'), text('user', 'second question')];
   const again = await collect(adapter.stream({ sessionId: 'dsh-1', toolHistory: [], messages: second }));
@@ -74,7 +74,7 @@ try {
   assert.equal(calls[1].sessionId, 'web-1');
   assert.equal(map.parentFor('dsh-1'), 11, 'the assistant message id is remembered for the branch');
   assert.equal(calls[1].parentMessageId, 11, 'the next turn continues from that message');
-  assert.equal(again.at(-1).kind, 'stop');
+  assert.equal(again.at(-1).reason.kind, 'stop');
 
   {
     let open;
@@ -153,7 +153,7 @@ try {
 
   {
     const oneShot = await collect(adapter.stream({ messages: [text('user', 'title me')] }));
-    assert.equal(oneShot.at(-1).kind, 'stop', 'a request without a session id is a one-shot turn');
+    assert.equal(oneShot.at(-1).reason.kind, 'stop', 'a request without a session id is a one-shot turn');
     assert.equal(creates.length, 2, 'one-shot turns get their own web session');
 
     const before = creates.length;
@@ -161,7 +161,7 @@ try {
       sessionId: 'aux-title',
       messages: [text('user', 'title me')],
     }));
-    assert.equal(auxiliary.at(-1).kind, 'stop');
+    assert.equal(auxiliary.at(-1).reason.kind, 'stop');
     assert.equal(map.webSessionFor('aux-title'), '', 'a title/compaction call must not bind the conversation');
     assert.equal(creates.length, before + 1, 'it still gets its own web session');
   }
@@ -198,7 +198,6 @@ try {
     assert.match(asks[0].prompt, /TOOL CATALOG/);
     assert.match(asks[0].prompt, /- bash: Run a shell command/);
     assert.ok(asks[0].prompt.includes(String.fromCharCode(0xFF5C,0xFF5C)+'DSML'+String.fromCharCode(0xFF5C,0xFF5C)), 'the taught protocol is DSML');
-    assert.ok(!asks[0].prompt.includes('```tool_name'), 'bash is the only tool exposed');
     assert.ok(asks[0].prompt.includes('invoke name'), 'the prompt teaches the DSML invoke protocol');
     const call = toolTurn.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
     assert.equal(call.block.name, 'bash');
@@ -256,21 +255,22 @@ try {
       }));
       assert.ok(shellAsks[0].prompt.includes(String.fromCharCode(0xFF5C,0xFF5C)+'DSML'+String.fromCharCode(0xFF5C,0xFF5C)), 'the prompt teaches DSML');
       const calls = shellOut.filter((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-      assert.equal(calls.length, 1, 'only the shell fence is a call, got ' + calls.length);
+      assert.equal(calls.length, 1, 'only the DSML block is a call, got ' + calls.length);
       assert.equal(calls[0].block.name, 'bash');
       assert.deepEqual(JSON.parse(calls[0].block.arguments), { command: 'lsof -i :3080' }, JSON.stringify(calls[0].block.arguments));
       const visible = shellOut.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join('');
       assert.match(visible, /```bash/, 'a bash fence stays text');
     }
     {
-      // The command may sit on the fence line itself; it still runs.
+      // A ```shell fence is NOT the protocol; the DSML block after it is.
       const inlineAdapter = makeAdapter({
         map: createSessionMap({ file: join(dir, 'inline.json') }),
         token: () => 'token',
         create: async () => 'web-inline',
         complete: async function* () {
           yield { type: 'text', text: 'ok\n```shell ls```' };
-          yield { type: 'text', text: 'ok\n<\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke name="bash"><\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter name="command">ls</\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter></\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke>' };        },
+          yield { type: 'text', text: 'ok\n<\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke name="bash"><\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter name="command">ls</\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter></\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke>' };
+        },
       });
       const inlineOut = await collect(inlineAdapter.stream({
         sessionId: 'inline',
@@ -279,8 +279,63 @@ try {
         tools,
       }));
       const inlineCall = inlineOut.find((c) => c.type === 'block-end' && c.block.type === 'tool-call');
-      assert.equal(inlineCall.block.name, 'bash', 'a same-line shell fence still runs');
-      assert.equal(JSON.parse(inlineCall.block.arguments).command, 'ls', 'the fence-line tail is the command');
+      assert.equal(inlineCall.block.name, 'bash', 'the DSML block runs next to a markdown fence');
+      assert.equal(JSON.parse(inlineCall.block.arguments).command, 'ls', 'the parameter body is the command');
+    }
+
+    {
+      // The web model drifts: one bar in closing tags, merged close/open tags,
+      // and string="true" on numeric arguments. None of that may empty the call.
+      const readTool = {
+        name: 'read',
+        description: 'Read a file',
+        parameters: {
+          type: 'object',
+          properties: {
+            file_path: { type: 'string' },
+            offset: { type: 'number' },
+            limit: { type: 'number' },
+            replace_all: { type: 'boolean' },
+          },
+        },
+      };
+      const bar = '\uFF5C\uFF5CDSML\uFF5C\uFF5C';
+      const close = '\uFF5CDSML\uFF5C\uFF5C';
+      const answer = [
+        '<' + bar + ' calls>',
+        '<' + bar + ' invoke name="read">',
+        '<' + bar + ' parameter name="file_path" string="true">a.txt</' + close + ' parameter>',
+        '<' + bar + ' parameter name="offset" string="true">42</' + close + ' parameter>',
+        '<' + bar + ' parameter name="limit" string="false">10</' + close + ' parameter>',
+        '<' + bar + ' parameter name="replace_all" string="true">true</' + close + ' parameter>',
+        '</' + close + ' invoke>',
+        '<' + bar + ' invoke name="read"><' + bar + ' parameter name="file_path">b.txt</' + bar
+          + ' parameter name="offset">7</' + close + ' parameter></' + close + ' invoke>',
+      ].join('\n');
+      const drift = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'drift-tags.json') }),
+        token: () => 'token',
+        create: async () => 'web-drift-tags',
+        complete: async function* () {
+          yield { type: 'text', text: answer };
+        },
+      });
+      const driftOut = await collect(drift.stream({
+        sessionId: 'drift-tags',
+        toolHistory: [],
+        messages: [text('user', 'read both')],
+        tools: [readTool],
+      }));
+      const driftCalls = driftOut.filter((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.equal(driftCalls.length, 2, 'tolerates one-bar closing tags and merged tags, got ' + driftCalls.length);
+      assert.deepEqual(JSON.parse(driftCalls[0].block.arguments), {
+        file_path: 'a.txt',
+        offset: 42,
+        limit: 10,
+        replace_all: true,
+      }, 'the tool schema decides argument types, not the DSML string flag');
+      assert.deepEqual(JSON.parse(driftCalls[1].block.arguments), { file_path: 'b.txt', offset: 7 });
+      assert.deepEqual(driftOut.at(-1), { type: 'finish', reason: { kind: 'tool-calls' } });
     }
 
     {
@@ -385,8 +440,7 @@ try {
     tip = 99; // someone appended on chat.deepseek.com
     await collect(drift.stream({ sessionId: 'dsh-drift', toolHistory: [], messages: m2 }));
     assert.equal(created.length, 1, 'a drifted web tip must not fork a new web session');
-    assert.equal(created.length, 1, 'a drifted web tip must not fork a new web session');
-    assert.equal(driftMap.parentFor('dsh-drift'), 99, 'the map adopts the web branch tip');    assert.equal(driftMap.parentFor('dsh-drift'), 99, 'the map adopts the web branch tip');
+    assert.equal(driftMap.parentFor('dsh-drift'), 99, 'the map adopts the web branch tip');
   }
 
   {
@@ -407,7 +461,7 @@ try {
       empty.stream({ sessionId: 'dsh-empty', toolHistory: [], messages: [text('system', 'only a system prompt')] }),
     );
     assert.equal(created, 0, 'an empty turn must not create a web session');
-    assert.deepEqual(chunks, [{ type: 'finish', kind: 'stop' }], 'a system-only turn ends quietly');
+    assert.deepEqual(chunks, [{ type: 'finish', reason: { kind: 'stop' } }], 'a system-only turn ends quietly');
   }
   console.log('web model: all passing');
 } finally {
