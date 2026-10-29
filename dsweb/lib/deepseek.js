@@ -1161,6 +1161,8 @@ export async function* readStream(body, state, round, idleTimeoutMs = 90_000) {
  * A `BATCH` patch list is reached through `v`, so the walk must descend into it.
  */
 export function observeRound(chunk, round) {
+  // `data: null` is a legal SSE frame; upstream/proxies send it as a no-op.
+  if (!chunk || typeof chunk !== 'object') return;
   if (typeof chunk.response_message_id === 'number' && chunk.response_message_id > 0) {
     round.responseMessageId = chunk.response_message_id;
   }

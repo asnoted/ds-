@@ -246,6 +246,37 @@ console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);
   check('the idle read gives up promptly', Date.now() - started < 5000, `${Date.now() - started}ms`);
 }
 
+/* ---- a `data: null` frame is a no-op, not the end of the turn ------- */
+
+{
+  // SSE allows a payload that is not an object (`data: null` is what several
+  // gateways send as a keep-alive). It used to reach observeRound and throw a
+  // TypeError, which failed the whole turn and threw away the answer that
+  // arrived after it.
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: null\n\ndata: {"v":"仍要继续"}\n\n'));
+      controller.close();
+    },
+  });
+  const state = { fragmentKind: 'text', tip: null };
+  const round = { responseMessageId: 0, lastStatus: '', finished: false, autoContinue: false };
+  const events = [];
+  let error = null;
+  try {
+    for await (const event of readStream(body, state, round)) events.push(event);
+  } catch (caught) {
+    error = caught;
+  }
+  check('a data: null frame does not fail the turn', error === null, error ? error.message : '');
+  check(
+    'the answer after a data: null frame still arrives',
+    events.some((event) => event.type === 'text' && event.text.includes('仍要继续')),
+    `events=${events.map((e) => `${e.type}:${e.text ?? ''}`).join(',')}`,
+  );
+}
+
 /** Wrap a string as a web ReadableStream the way fetch().body behaves. */
 function rawToWebStream(raw) {
   const encoder = new TextEncoder();
