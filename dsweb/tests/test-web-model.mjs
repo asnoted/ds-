@@ -181,7 +181,7 @@ try {
       complete: async function* (_token, request) {
         asks.push(request);
         if (asks.length === 1) {
-          yield { type: 'text', text: 'let me read it\n```shell\ncat a.txt\n```\n```js\n1+1\n```' };
+          const __bar = '\uFF5C\uFF5CDSML\uFF5C\uFF5C'; yield { type: 'text', text: 'let me read it\n<' + __bar + 'invoke name="bash"><' + __bar + 'parameter name="command">cat a.txt</' + __bar + 'parameter></' + __bar + 'invoke>\n' + String.fromCharCode(96).repeat(3) + 'js\n1+1\n' + String.fromCharCode(96).repeat(3) };
           yield { type: 'message', messageId: 7 };
         } else {
           yield { type: 'text', text: 'the file says hi' };
@@ -197,9 +197,9 @@ try {
     }));
     assert.match(asks[0].prompt, /TOOL CATALOG/);
     assert.match(asks[0].prompt, /- bash: Run a shell command/);
-    assert.ok(asks[0].prompt.includes('```shell'), 'the taught protocol is the shell fence');
+    assert.ok(asks[0].prompt.includes(String.fromCharCode(0xFF5C,0xFF5C)+'DSML'+String.fromCharCode(0xFF5C,0xFF5C)), 'the taught protocol is DSML');
     assert.ok(!asks[0].prompt.includes('```tool_name'), 'bash is the only tool exposed');
-    assert.ok(!asks[0].prompt.includes('invoke name'), 'the prompt must not teach the DSML invoke protocol');
+    assert.ok(asks[0].prompt.includes('invoke name'), 'the prompt teaches the DSML invoke protocol');
     const call = toolTurn.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
     assert.equal(call.block.name, 'bash');
     assert.deepEqual(JSON.parse(call.block.arguments), { command: 'cat a.txt' });
@@ -239,7 +239,7 @@ try {
           shellAsks.push(request);
           yield {
             type: 'text',
-            text: 'checking\n```shell\nlsof -i :3080\n```\n```bash\n{"command":"echo nope"}\n```',
+            text: 'checking\n' + String.fromCharCode(60) + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'invoke name="bash">' + String.fromCharCode(60) + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'parameter name="command">lsof -i :3080</' + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'parameter></' + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'invoke>\n' + String.fromCharCode(96).repeat(3) + 'bash\n{"command":"echo nope"}\n' + String.fromCharCode(96).repeat(3),
           };
           yield { type: 'message', messageId: 12 };
         },
@@ -254,11 +254,11 @@ try {
           parameters: { type: 'object', properties: { command: { type: 'string' } } },
         }],
       }));
-      assert.match(shellAsks[0].prompt, /```shell/, 'the prompt teaches the shell fence');
+      assert.ok(shellAsks[0].prompt.includes(String.fromCharCode(0xFF5C,0xFF5C)+'DSML'+String.fromCharCode(0xFF5C,0xFF5C)), 'the prompt teaches DSML');
       const calls = shellOut.filter((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-      assert.equal(calls.length, 1, 'only the shell fence is a call');
+      assert.equal(calls.length, 1, 'only the shell fence is a call, got ' + calls.length);
       assert.equal(calls[0].block.name, 'bash');
-      assert.deepEqual(JSON.parse(calls[0].block.arguments), { command: 'lsof -i :3080' });
+      assert.deepEqual(JSON.parse(calls[0].block.arguments), { command: 'lsof -i :3080' }, JSON.stringify(calls[0].block.arguments));
       const visible = shellOut.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join('');
       assert.match(visible, /```bash/, 'a bash fence stays text');
     }
@@ -270,8 +270,7 @@ try {
         create: async () => 'web-inline',
         complete: async function* () {
           yield { type: 'text', text: 'ok\n```shell ls```' };
-          yield { type: 'message', messageId: 31 };
-        },
+          yield { type: 'text', text: 'ok\n<\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke name="bash"><\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter name="command">ls</\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter></\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke>' };        },
       });
       const inlineOut = await collect(inlineAdapter.stream({
         sessionId: 'inline',
@@ -315,8 +314,7 @@ try {
       );
     }
 
-    const many = Array.from({ length: 12 }, (_, i) => `\u0060\u0060\u0060shell\ncat f${i}\n\u0060\u0060\u0060`).join('\n');
-    const capped = makeAdapter({
+    const many = Array.from({ length: 12 }, (_, i) => '<\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke name="bash"><\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter name="command">cat f' + i + '</\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter></\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke>').join('\n');    const capped = makeAdapter({
       map: createSessionMap({ file: join(dir, 'cap.json') }),
       token: () => 'token',
       create: async () => 'web-cap',

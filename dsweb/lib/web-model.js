@@ -91,7 +91,41 @@ function messageText(message) {
   return message.content.map(blockText).filter(Boolean).join('\n');
 }
 
-function toolProtocol(tools) { const fence = String.fromCharCode(96).repeat(3); const list = shellOnly(tools); const hasBash = list.some((t) => t.name === 'bash'); const other = list.find((t) => t.name !== 'bash'); const parts = ['You can call tools.']; if (hasBash) parts.push('A ' + fence + 'shell' + fence + ' fence runs the bash tool; its body is the command (e.g. ' + fence + 'shell' + fence + ' ls -la ' + fence + ').'); if (other) parts.push('A fence tagged with a tool name from the catalog runs that tool; its body is the tool JSON arguments (e.g. ' + fence + other.name + fence + ' {"arg":"value"} ' + fence + ').'); parts.push('A bash fence is always shown as a code block, never executed. Text outside the fences is shown to the user. You may emit several calls in one answer. Only the tools listed below exist. Do not use any other tool-call syntax.'); return parts.join('\n'); }
+function toolProtocol(tools) {
+  const list = shellOnly(tools);
+  const bar = "｜｜DSML｜｜";
+  return [
+    'You can call tools by emitting DeepSeek DSML invoke blocks. Only the tools listed below exist. Do not use any other tool-call syntax.',
+    'A call looks like: <' + bar + 'invoke name="TOOLNAME"><' + bar + 'parameter name="ARG">VALUE</' + bar + 'parameter></' + bar + 'invoke>',
+    'For bash, the argument is "command": <' + bar + 'invoke name="bash"><' + bar + 'parameter name="command">ls -la</' + bar + 'parameter></' + bar + 'invoke>',
+    'Text outside the invoke blocks is shown to the user. You may emit several calls in one answer.',
+  ].join('\n');
+}
+
+const DSML_BAR = "｜｜DSML｜｜";
+const DSML_INVOKE = new RegExp(
+  `<${DSML_BAR}\\s*invoke name="([^"]+)">([\\s\\S]*?)(?:<\\/${DSML_BAR}\\s*invoke>|<\\/${DSML_BAR}\\s*calls>|$)`,
+  'g',
+);
+const DSML_PARAM = new RegExp(
+  `<${DSML_BAR}\\s*parameter name="([^"]+)"(?:\\s+string="(true|false)")?>([\\s\\S]*?)<\\/${DSML_BAR}\\s*parameter>`,
+  'g',
+);
+const DSML_CLOSE_OPEN = new RegExp(`</${DSML_BAR}\\s*parameter\\s+name=`, 'g');
+
+function dsmlArgs(raw) {
+  const body = raw.replace(DSML_CLOSE_OPEN, `</${DSML_BAR} parameter>\n<${DSML_BAR} parameter name=`);
+  const args = {};
+  let malformed = false;
+  for (const match of body.matchAll(DSML_PARAM)) {
+    const [, name, isString, value] = match;
+    const v = value.trim();
+    if (v.includes('parameter name=') || v.includes('invoke name=')) malformed = true;
+    if (isString === 'true' || isString === undefined) args[name] = v;
+    else { try { args[name] = JSON.parse(v); } catch { args[name] = v; } }
+  }
+  return { args, malformed };
+}
 
 /** Expose every DSH tool: `shell` fences run bash, `toolname` fences run the named tool. */
 function shellOnly(tools) {
@@ -114,54 +148,6 @@ function toolCatalog(tools) {
 /** A model that loses the thread can repeat a call forever; 9 matches the fence cap. */
 const MAX_TOOL_CALLS = 9;
 
-/** Fenced calls: the protocol we taught, used when the model follows it. */
-function parseFences(text, names, state) {
-  const blocks = [];
-  const fence = /```([^\n`]*)(?:\n([\s\S]*?))?```/g;
-  let last = 0;
-  let match;
-  while ((match = fence.exec(text)) !== null) {
-    const parts = match[1].trim().split(/\s+/);
-    const info = parts[0] || '';
-    const lead = parts.slice(1).join(' ');
-    const body = [lead, (match[2] || '').trim()].filter(Boolean).join('\n');
-    // `shell` is the only fence that runs the bash tool; `bash` stays visible
-    // text even when its body is JSON, so a code sample is never executed.
-    if (info === 'bash' && names.has('bash')) continue;
-    const shell = info === 'shell' && names.has('bash');
-    let name = info;
-    let argsText;
-    if (shell) {
-      if (!body) continue;
-      argsText = JSON.stringify({ command: body });
-      name = 'bash';
-    } else {
-      if (!names.has(info)) continue;
-      let args;
-      try {
-        args = JSON.parse(body);
-      } catch {
-        continue;
-      }
-      if (!args || typeof args !== 'object' || Array.isArray(args)) continue;
-      argsText = body;
-    }
-    const before = text.slice(last, match.index);
-    if (before) blocks.push({ type: 'text', text: before });
-    if (state.calls >= MAX_TOOL_CALLS) {
-      state.truncated = true;
-      blocks.push({ type: 'text', text: match[0] });
-    } else {
-      state.calls += 1;
-      blocks.push({ type: 'tool-call', name, arguments: argsText });
-    }
-    last = fence.lastIndex;
-  }
-  const tail = text.slice(last);
-  if (tail) blocks.push({ type: 'text', text: tail });
-  return blocks;
-}
-
 /**
  * Split a buffered answer into text and tool calls.
  *
@@ -173,14 +159,31 @@ function parseFences(text, names, state) {
 function parseAnswer(answer, tools) {
   const names = new Set(shellOnly(tools).map((tool) => tool.name));
   if (names.size === 0) return [{ type: 'text', text: answer }];
+  const blocks = [];
   const state = { calls: 0, truncated: false };
-  const blocks = parseFences(answer, names, state);
+  let last = 0;
+  for (const match of answer.matchAll(DSML_INVOKE)) {
+    const before = answer.slice(last, match.index);
+    if (before) blocks.push({ type: 'text', text: before });
+    const name = match[1];
+    const parsed = dsmlArgs(match[2]);
+    const malformed = parsed.malformed || match[2].includes('invoke name=');
+    if (!names.has(name) || malformed || state.calls >= MAX_TOOL_CALLS) {
+      if (names.has(name) && !malformed) state.truncated = true;
+      blocks.push({ type: 'text', text: match[0] });
+    } else {
+      state.calls += 1;
+      blocks.push({ type: 'tool-call', name, arguments: JSON.stringify(parsed.args) });
+    }
+    last = match.index + match[0].length;
+  }
+  const tail = answer.slice(last);
+  if (tail) blocks.push({ type: 'text', text: tail });
   if (state.truncated) {
-    blocks.push({ type: 'text', text: `（本轮工具调用超过 ${MAX_TOOL_CALLS} 个，其余未执行）` });
+    blocks.push({ type: 'text', text: '（本轮工具调用超过 ' + MAX_TOOL_CALLS + ' 个，其余未执行）' });
   }
   return blocks;
 }
-
 /**
  * A fresh web session has no history, so the whole log goes in one transcript.
  * An ordinary step is one new user message; send it as it was typed.
