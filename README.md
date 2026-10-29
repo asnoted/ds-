@@ -11,17 +11,18 @@
 
 ## 安装
 
-装的是打好的 tarball 快照，不是工作区软链——改源码不会影响正在运行的 DSH。
+装的是打好的 tarball 快照，不是工作区软链——改源码本身不会影响正在运行的 DSH，`pnpm build` 才会同步。
 
 ```sh
-# 在本仓根目录，打两个插件包的快照
+# 打两个插件包的快照并同步进 web profile
+pnpm build
+# 只打快照，不安装
 pnpm package:plugins
-dsh plugin --profile web add ./dist/dsh-dsb-0.1.0.tgz ./dist/dsh-dsweb-0.1.0.tgz
 # 或发布后
 dsh plugin --profile web add dsh-dsb dsh-dsweb
 ```
 
-更新流程：改源码 → `pnpm package:plugins` → 重新 `add` → 重启 DSH。运行中的进程只读 profile 里解包后的拷贝，不读工作区。客户端 `lib/client.js` 是手写 lazy-CJS bundle，没有构建步骤；host 半边是 ESM，改代码后必须重启。
+更新流程：改源码 → `pnpm build`。build 用 `add --force` 覆盖同版本快照，不先卸载；DSH 会尝试热应用，日志提示 restart required 时再重启。运行中的进程只读 profile 里解包后的拷贝，不读工作区。客户端 `lib/client.js` 是手写 lazy-CJS bundle，没有构建步骤；host 半边是 ESM。
 
 首次打开面板点“用浏览器登录”：dsweb 会用独立的 Chromium 配置打开 chat.deepseek.com，登录后自动读回 `localStorage.userToken` 并关闭窗口。配置保存在 `~/.dsh/dsh-dsb/browser-profile`，不碰日常浏览器的 cookie / 历史；令牌只写入 `~/.dsh/dsh-dsb/vault.json`（0600）。需要本机有 Chromium / Chrome / Edge / Brave，找不到时可用 `DSB_BROWSER_PATH` 指定路径；手动粘贴令牌仍然保留为兜底。令牌失效时面板会先用同一配置无头重读一次，真退出登录才弹出窗口。
 

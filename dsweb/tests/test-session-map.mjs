@@ -66,6 +66,15 @@ try {
   }
 
   {
+    const map = createSessionMap({ file: join(dir, 'protocol.json') });
+    map.bind('dsh-p', 'web-p', 'v1');
+    assert.equal(map.pending('dsh-p', first, 'v1').rebuild, false, 'the same prompt version is a delta');
+    assert.equal(map.pending('dsh-p', first, 'v2').rebuild, true, 'a new prompt version must rebuild');
+    assert.equal(map.commit('dsh-p', first, 'v2'), true);
+    assert.equal(map.pending('dsh-p', first, 'v2').rebuild, false, 'the committed version is remembered');
+  }
+
+  {
     const many = { version: 1, sessions: {} };
     for (let i = 0; i < 201; i += 1) {
       many.sessions[`dsh-${i}`] = { webSessionId: `web-${i}`, parentMessageId: 0, cursor: 0, digest: '', updatedAt: new Date(2026, 0, 1, 0, 0, i).toISOString() };

@@ -197,6 +197,7 @@ try {
     }));
     assert.match(asks[0].prompt, /TOOL CATALOG/);
     assert.match(asks[0].prompt, /- bash: Run a shell command/);
+    assert.match(asks[0].prompt, /"command"/, 'the catalog carries the tool schema, not a hand-written example');
     assert.ok(asks[0].prompt.includes(String.fromCharCode(0xFF5C,0xFF5C)+'DSML'+String.fromCharCode(0xFF5C,0xFF5C)), 'the taught protocol is DSML');
     assert.ok(asks[0].prompt.includes('invoke name'), 'the prompt teaches the DSML invoke protocol');
     const call = toolTurn.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
@@ -336,6 +337,89 @@ try {
       }, 'the tool schema decides argument types, not the DSML string flag');
       assert.deepEqual(JSON.parse(driftCalls[1].block.arguments), { file_path: 'b.txt', offset: 7 });
       assert.deepEqual(driftOut.at(-1), { type: 'finish', reason: { kind: 'tool-calls' } });
+    }
+
+    {
+      // The ptc preset exposes only run_code. Teaching a direct bash call here
+      // makes the model emit a bash invoke the adapter must reject as unknown.
+      const runCode = {
+        name: 'run_code',
+        description: 'Execute a TypeScript program against the available tools',
+        parameters: {
+          type: 'object',
+          properties: { code: { type: 'string' }, description: { type: 'string' } },
+          required: ['code', 'description'],
+        },
+      };
+      const ptcAsks = [];
+      const ptc = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'ptc.json') }),
+        token: () => 'token',
+        create: async () => 'web-ptc',
+        complete: async function* (_token, request) {
+          ptcAsks.push(request);
+          yield { type: 'text', text: 'ok' };
+        },
+      });
+      await collect(ptc.stream({
+        sessionId: 'ptc',
+        toolHistory: [],
+        messages: [text('user', 'pwd')],
+        tools: [runCode],
+      }));
+      assert.match(ptcAsks[0].prompt, /- run_code:/);
+      assert.ok(!ptcAsks[0].prompt.includes('invoke name="bash"'), 'no direct bash example when bash is not a tool');
+      assert.match(ptcAsks[0].prompt, /"code"/, 'the catalog carries the tool schema, not a hand-written example');
+    }
+
+    {
+      // A bound web chat keeps the prompt it was created with. A new prompt
+      // version must start a fresh web session, or the old catalog stays live.
+      const staleMap = createSessionMap({ file: join(dir, 'stale-prompt.json') });
+      staleMap.bind('stale', 'web-stale');
+      let creates = 0;
+      const stale = makeAdapter({
+        map: staleMap,
+        token: () => 'token',
+        create: async () => {
+          creates += 1;
+          return 'web-stale-new';
+        },
+        complete: async function* () {
+          yield { type: 'text', text: 'ok' };
+        },
+      });
+      await collect(stale.stream({ sessionId: 'stale', toolHistory: [], messages: [text('user', 'q')] }));
+      assert.equal(creates, 1, 'a stale prompt version rebuilds the web session');
+      assert.equal(staleMap.webSessionFor('stale'), 'web-stale-new');
+    }
+
+    {
+      // DSH owns the tool list. When it changes, the bound web chat must rebuild
+      // so the model sees the new catalog instead of the one it first received.
+      const changeMap = createSessionMap({ file: join(dir, 'tool-change.json') });
+      const prompts = [];
+      let creates = 0;
+      const changing = makeAdapter({
+        map: changeMap,
+        token: () => 'token',
+        create: async () => {
+          creates += 1;
+          return `web-change-${creates}`;
+        },
+        complete: async function* (_token, request) {
+          prompts.push(request.prompt);
+          yield { type: 'text', text: 'ok' };
+        },
+      });
+      const bashTool = { name: 'bash', description: 'Run a shell command', parameters: { type: 'object', properties: { command: { type: 'string' } } } };
+      const readTool = { name: 'read', description: 'Read a file', parameters: { type: 'object', properties: { file_path: { type: 'string' } } } };
+      const messages = [text('user', 'go')];
+      await collect(changing.stream({ sessionId: 'change', toolHistory: [], messages, tools: [bashTool] }));
+      await collect(changing.stream({ sessionId: 'change', toolHistory: [], messages, tools: [readTool] }));
+      assert.equal(creates, 2, 'a changed tool catalog rebuilds the web session');
+      assert.match(prompts[1], /- read:/);
+      assert.ok(!prompts[1].includes('- bash:'), 'the rebuild carries the current catalog');
     }
 
     {

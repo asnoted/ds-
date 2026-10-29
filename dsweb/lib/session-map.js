@@ -85,12 +85,13 @@ export function createSessionMap({ file = defaultFile() } = {}) {
     },
 
     /** Bind a freshly created web session; nothing has been sent yet. */
-    bind(dshSessionId, webSessionId) {
+    bind(dshSessionId, webSessionId, protocol) {
       data.sessions[dshSessionId] = {
         webSessionId,
         parentMessageId: 0,
         cursor: 0,
         digest: digest([]),
+        ...protocol === undefined ? {} : { protocol },
         updatedAt: new Date().toISOString(),
       };
       trim(data.sessions);
@@ -124,12 +125,16 @@ export function createSessionMap({ file = defaultFile() } = {}) {
      * Messages the web session has not seen yet.
      *
      * `rebuild` means the stored prefix no longer matches the log (compaction,
-     * edit, resume against a foreign web session): the caller creates a new web
-     * session and sends `fresh` — the full current log — as its first prompt.
+     * edit, resume against a foreign web session), or the prompt that built the
+     * web session is stale: the caller creates a new web session and sends
+     * `fresh` — the full current log — as its first prompt.
      */
-    pending(dshSessionId, messages) {
+    pending(dshSessionId, messages, protocol) {
       const entry = data.sessions[dshSessionId];
       if (!entry || !entry.webSessionId) {
+        return { fresh: messages, rebuild: true, cursor: 0 };
+      }
+      if (protocol !== undefined && entry.protocol !== protocol) {
         return { fresh: messages, rebuild: true, cursor: 0 };
       }
       if (entry.cursor > messages.length) {
@@ -149,11 +154,12 @@ export function createSessionMap({ file = defaultFile() } = {}) {
      * on restart (at-least-once), upgrade with an upstream turn id if duplicate
      * prompts ever matter.
      */
-    commit(dshSessionId, messages) {
+    commit(dshSessionId, messages, protocol) {
       const entry = data.sessions[dshSessionId];
       if (!entry) return false;
       entry.cursor = messages.length;
       entry.digest = digest(messages);
+      if (protocol !== undefined) entry.protocol = protocol;
       entry.updatedAt = new Date().toISOString();
       save();
       return true;

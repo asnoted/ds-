@@ -17,6 +17,8 @@
  * @module dsh-dsb/web-model
  */
 
+import { createHash } from 'node:crypto';
+
 import { createPacer } from './pace.js';
 import { createSessionMap } from './session-map.js';
 import { createSession, fetchMessages, streamCompletion } from './deepseek.js';
@@ -25,6 +27,8 @@ import { readVault } from './vault.js';
 export const PROVIDER = 'deepseek-web';
 export const MODEL = 'deepseek-web';
 const CONTEXT_WINDOW = 128_000;
+/** Bump when the catalog or DSML protocol changes; bound chats then rebuild. */
+const PROMPT_VERSION = 2;
 
 const LABEL = { system: 'SYSTEM', user: 'USER', assistant: 'ASSISTANT', tool: 'TOOL' };
 
@@ -91,13 +95,12 @@ function messageText(message) {
   return message.content.map(blockText).filter(Boolean).join('\n');
 }
 
-function toolProtocol(tools) {
-  const list = namedTools(tools);
+function toolProtocol() {
   const bar = "｜｜DSML｜｜";
   return [
-    'You can call tools by emitting DeepSeek DSML invoke blocks. Only the tools listed below exist. Do not use any other tool-call syntax.',
+    'You can call tools by emitting DeepSeek DSML invoke blocks. Only the names in TOOL CATALOG exist. Do not use any other tool-call syntax.',
     'A call looks like: <' + bar + 'invoke name="TOOLNAME"><' + bar + 'parameter name="ARG">VALUE</' + bar + 'parameter></' + bar + 'invoke>',
-    'For bash, the argument is "command": <' + bar + 'invoke name="bash"><' + bar + 'parameter name="command">ls -la</' + bar + 'parameter></' + bar + 'invoke>',
+    'The parameter body is a JSON value when the schema says number, boolean, array or object; add string="true" to keep it a string.',
     'Text outside the invoke blocks is shown to the user. You may emit several calls in one answer.',
   ].join('\n');
 }
@@ -176,8 +179,17 @@ function toolCatalog(tools) {
       ? tool.description.replace(/\s+/g, ' ').slice(0, 300)
       : '';
     lines.push(`- ${tool.name}: ${description}`);
+    if (tool.parameters && typeof tool.parameters === 'object') {
+      lines.push(`  parameters: ${JSON.stringify(tool.parameters)}`);
+    }
   }
-  return lines.length === 0 ? '' : `${toolProtocol(list)}\n\nTOOL CATALOG\n${lines.join('\n')}`;
+  return lines.length === 0 ? '' : `${toolProtocol()}\n\nTOOL CATALOG\n${lines.join('\n')}`;
+}
+
+/** The host's current tool declarations decide when a bound web chat is stale. */
+function protocolFor(tools) {
+  const schemas = namedTools(tools).map((tool) => [tool.name, tool.description, tool.parameters]);
+  return `${PROMPT_VERSION}:${createHash('sha256').update(JSON.stringify(schemas)).digest('hex').slice(0, 16)}`;
 }
 
 /** A model that loses the thread can repeat a call forever; 9 bounds one answer's damage. */
@@ -300,7 +312,10 @@ export function createWebModelAdapter({
       let fresh = false;
       let produced = false;
       try {
-        const pending = isTurn ? map.pending(key, messages) : { fresh: messages, rebuild: true };
+        const protocol = protocolFor(options.tools);
+        const pending = isTurn
+          ? map.pending(key, messages, protocol)
+          : { fresh: messages, rebuild: true };
         let webSessionId = isTurn ? map.webSessionFor(key) : '';
         // The web app is a second writer: a user can append to (or edit) the
         // same chat on chat.deepseek.com between steps. The map only tracks the
@@ -328,7 +343,7 @@ export function createWebModelAdapter({
         if (!webSessionId || pending.rebuild) {
           webSessionId = await create(credential, options.signal);
           fresh = isTurn;
-          if (isTurn) map.bind(key, webSessionId);
+          if (isTurn) map.bind(key, webSessionId, protocol);
         }
         await pace.wait(options.signal);
 
@@ -421,7 +436,7 @@ export function createWebModelAdapter({
         }
         if (isTurn) {
           if (messageId > 0) map.setParent(key, messageId);
-          map.commit(key, messages);
+          map.commit(key, messages, protocol);
         }
         yield { type: 'finish', reason: { kind: sawCall ? 'tool-calls' : 'stop' } };
       } catch (error) {
