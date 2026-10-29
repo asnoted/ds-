@@ -92,16 +92,20 @@ function messageText(message) {
 }
 
 const TOOL_PROTOCOL = [
-  'You can call tools. When you need one, emit a fenced block tagged `shell` whose body is the command itself, not JSON:',
+  'You can call tools. Two fence forms are recognized:',
   '```shell',
   'ls -la',
   '```',
-  'Text outside the fences is shown to the user. You may emit several calls in one answer. Only the tools listed below exist. Do not use any other tool-call syntax.',
+  'The shell fence runs the bash tool with its body as the command.',
+  '```toolname',
+  '{"arg":"value"}',
+  '```',
+  'A fence tagged with a tool name from the catalog runs that tool; its body is the tool\'s JSON arguments.',
+  'A bash fence is always shown as a code block, never executed. Text outside the fences is shown to the user. You may emit several calls in one answer. Only the tools listed below exist. Do not use any other tool-call syntax.',
 ].join('\n');
-
-/** The web model is script-first: expose bash, hide every other DSH tool. */
+/** Expose every DSH tool: `shell` fences run bash, `toolname` fences run the named tool. */
 function shellOnly(tools) {
-  return (Array.isArray(tools) ? tools : []).filter((tool) => tool && tool.name === 'bash');
+  return (Array.isArray(tools) ? tools : []).filter((tool) => tool && typeof tool.name === 'string' && tool.name);
 }
 
 function toolCatalog(tools) {
