@@ -438,6 +438,7 @@ export function createWebModelAdapter({
   history = fetchMessages,
   lock = createLock(),
   pace = createPacer(),
+  onBind = () => {},
 } = {}) {
   return {
     providerInfo(provider) {
@@ -515,7 +516,10 @@ export function createWebModelAdapter({
         if (!webSessionId || pending.rebuild) {
           webSessionId = await create(credential, options.signal);
           fresh = isTurn;
-          if (isTurn) map.bind(key, webSessionId, protocol);
+          if (isTurn) {
+            map.bind(key, webSessionId, protocol);
+            onBind(key, webSessionId);
+          }
         }
         await pace.wait(options.signal);
 

@@ -766,15 +766,64 @@ export function apply(ctx) {
     writeCache(cache);
   }, 'dsb: flush cache');
 
+  const map = createSessionMap();
+  let onBind = () => {};
+
+  ctx.inject(['sessionTitle', 'sessions'], (titleCtx) => {
+    if (!titleCtx || !titleCtx.sessionTitle) {
+      console.log('[dsb] sessionTitle service not available');
+      return;
+    }
+    const titleService = titleCtx.sessionTitle;
+    const sessionsService = titleCtx.sessions;
+    onBind = (dshSessionId) => {
+      if (!sessionsService) return;
+      const session = sessionsService.get(dshSessionId);
+      if (!session) return;
+      console.log('[dsb] refresh title after bind', dshSessionId);
+      // The web app names a chat a few seconds after the first turn; retry
+      // until it does, then stop.
+      const attempt = (left) => {
+        titleService.refresh(session).catch((error) => {
+          if (left <= 0) return;
+          setTimeout(() => attempt(left - 1), 5000);
+        });
+      };
+      attempt(3);
+    };
+    titleCtx.effect(
+      () => {
+        return titleService.register({
+          id: 'deepseek-web',
+          automatic: 'first-prompt',
+          async generate({ session, messages, signal }) {
+            const webSessionId = map.webSessionFor(session.id);
+            console.log('[dsb] title generate', session.id, 'bound:', webSessionId);
+            if (!webSessionId) throw new Error('not bound to a web chat');
+            const token = readVault().token;
+            if (!token) throw new Error('no web token');
+            const { sessions: list } = await listSessions(token, { count: 100, maxPages: 3, signal });
+            const hit = list.find((item) => item.id === webSessionId);
+            console.log('[dsb] title lookup', webSessionId, '->', hit && hit.title);
+            if (!hit || !hit.title || hit.title === '未命名对话') {
+              throw new Error('web chat has no title yet');
+            }
+            return { title: hit.title, messageSeqs: [messages[0].seq] };
+          },
+        });
+      },
+      'dsb: deepseek-web session title',
+    );
+  });
+
   ctx.inject(['llm'], (llmCtx) => {
     if (!llmCtx || !llmCtx.llm) return;
-    const adapter = createWebModelAdapter();
+    const adapter = createWebModelAdapter({ map, onBind: (id) => onBind(id) });
     llmCtx.effect(
       () => llmCtx.llm.registerAdapter([WEB_MODEL_PROVIDER], adapter),
       'dsb: deepseek-web model',
     );
   });
-
   ctx.inject(['webServer'], (hostCtx) => {
     const register = (kind, path, method, handler) =>
       hostCtx.effect(
