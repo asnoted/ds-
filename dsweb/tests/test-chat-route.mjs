@@ -269,7 +269,7 @@ globalThis.fetch = (input, init) => {
 /* ---- load the real host half through a fake cordis context ---------- */
 
 const { apply } = await import('../lib/index.js');
-const { saveToken } = await import('../lib/vault.js');
+const { saveToken, readVault } = await import('../lib/vault.js');
 
 saveToken('fake-token', null);
 
@@ -851,6 +851,21 @@ holdTurns = true;
     powFails = false;
   }
 }
+
+/* ---- saveToken is atomic: a failed write leaves the old vault ---- */
+saveToken("original-token", null);
+{
+  let threw = null;
+  try {
+    saveToken("new-token", null, {
+      writeFileSync() { throw new Error("disk full"); },
+      renameSync() { throw new Error("unreachable"); },
+    });
+  } catch (error) { threw = error; }
+  check("saveToken throws when its write fails", Boolean(threw) && /disk full/.test(threw.message), threw ? threw.message : "no throw");
+  check("a failed write leaves the old vault intact", readVault().token === "original-token", readVault().token);
+}
+saveToken("fake-token", null);
 
 /* ---- teardown ------------------------------------------------------ */
 

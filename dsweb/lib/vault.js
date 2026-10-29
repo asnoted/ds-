@@ -14,7 +14,7 @@
  * @module dsh-dsb/vault
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -50,7 +50,7 @@ export function readVault() {
 }
 
 /** Persist a token and the account it belongs to. */
-export function saveToken(token, user) {
+export function saveToken(token, user, io = { writeFileSync, renameSync }) {
   const record = {
     token: String(token || '').trim(),
     savedAt: new Date().toISOString(),
@@ -58,7 +58,9 @@ export function saveToken(token, user) {
   };
   mkdirSync(resolveStateDir(), { recursive: true });
   const path = vaultPath();
-  writeFileSync(path, JSON.stringify(record, null, 2), { encoding: 'utf8', mode: 0o600 });
+  const temporary = `${path}.${process.pid}.tmp`;
+  io.writeFileSync(temporary, JSON.stringify(record, null, 2), { encoding: 'utf8', mode: 0o600 });
+  io.renameSync(temporary, path);
   try {
     // `mode` is ignored when the file already exists on some platforms.
     chmodSync(path, 0o600);
