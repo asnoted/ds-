@@ -21,6 +21,8 @@ import { dirname, join } from 'node:path';
 
 const VERSION = 1;
 const FILE = 'web-sessions.json';
+/** Cap the map so a long-lived DSH does not grow it without bound. */
+const MAX_SESSIONS = 200;
 
 /** Kept local so the map does not depend on whichever package owns the vault. */
 function defaultFile() {
@@ -31,6 +33,14 @@ function digest(messages) {
   return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
 }
 
+/** Drop the oldest sessions by updatedAt so the file stays bounded. */
+function trim(sessions) {
+  const ids = Object.keys(sessions);
+  if (ids.length <= MAX_SESSIONS) return;
+  ids.sort((a, b) => String(sessions[a].updatedAt || '').localeCompare(String(sessions[b].updatedAt || '')));
+  for (const id of ids.slice(0, ids.length - MAX_SESSIONS)) delete sessions[id];
+}
+
 function empty() {
   return { version: VERSION, sessions: {} };
 }
@@ -39,6 +49,7 @@ function load(file) {
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8'));
     if (parsed && parsed.version === VERSION && parsed.sessions && typeof parsed.sessions === 'object') {
+      trim(parsed.sessions);
       return parsed;
     }
   } catch {
@@ -82,6 +93,7 @@ export function createSessionMap({ file = defaultFile() } = {}) {
         digest: digest([]),
         updatedAt: new Date().toISOString(),
       };
+      trim(data.sessions);
       save();
     },
 

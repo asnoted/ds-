@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -63,6 +63,20 @@ try {
     assert.equal(map.webSessionFor('dsh-1'), 'web-1', 'binding one session must not disturb another');
     map.forget('dsh-2');
     assert.equal(map.webSessionFor('dsh-2'), '');
+  }
+
+  {
+    const many = { version: 1, sessions: {} };
+    for (let i = 0; i < 201; i += 1) {
+      many.sessions[`dsh-${i}`] = { webSessionId: `web-${i}`, parentMessageId: 0, cursor: 0, digest: '', updatedAt: new Date(2026, 0, 1, 0, 0, i).toISOString() };
+    }
+    writeFileSync(file, JSON.stringify(many));
+    const map = createSessionMap({ file });
+    assert.equal(map.webSessionFor('dsh-0'), '', 'the oldest session must be trimmed');
+    assert.equal(map.webSessionFor('dsh-200'), 'web-200', 'the newest session survives');
+    map.bind('dsh-new', 'web-new');
+    const reloaded = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(Object.keys(reloaded.sessions).length, 200, 'the map stays bounded at 200');
   }
 
   console.log('session map: all passing');
