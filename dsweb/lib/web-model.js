@@ -91,18 +91,8 @@ function messageText(message) {
   return message.content.map(blockText).filter(Boolean).join('\n');
 }
 
-const TOOL_PROTOCOL = [
-  'You can call tools. Two fence forms are recognized:',
-  '```shell',
-  'ls -la',
-  '```',
-  'The shell fence runs the bash tool with its body as the command.',
-  '```toolname',
-  '{"arg":"value"}',
-  '```',
-  'A fence tagged with a tool name from the catalog runs that tool; its body is the tool\'s JSON arguments.',
-  'A bash fence is always shown as a code block, never executed. Text outside the fences is shown to the user. You may emit several calls in one answer. Only the tools listed below exist. Do not use any other tool-call syntax.',
-].join('\n');
+function toolProtocol(tools) { const fence = String.fromCharCode(96).repeat(3); const list = shellOnly(tools); const hasBash = list.some((t) => t.name === 'bash'); const other = list.find((t) => t.name !== 'bash'); const parts = ['You can call tools.']; if (hasBash) parts.push('A ' + fence + 'shell' + fence + ' fence runs the bash tool; its body is the command (e.g. ' + fence + 'shell' + fence + ' ls -la ' + fence + ').'); if (other) parts.push('A fence tagged with a tool name from the catalog runs that tool; its body is the tool JSON arguments (e.g. ' + fence + other.name + fence + ' {"arg":"value"} ' + fence + ').'); parts.push('A bash fence is always shown as a code block, never executed. Text outside the fences is shown to the user. You may emit several calls in one answer. Only the tools listed below exist. Do not use any other tool-call syntax.'); return parts.join('\n'); }
+
 /** Expose every DSH tool: `shell` fences run bash, `toolname` fences run the named tool. */
 function shellOnly(tools) {
   return (Array.isArray(tools) ? tools : []).filter((tool) => tool && typeof tool.name === 'string' && tool.name);
@@ -118,7 +108,7 @@ function toolCatalog(tools) {
       : '';
     lines.push(`- ${tool.name}: ${description}`);
   }
-  return lines.length === 0 ? '' : `${TOOL_PROTOCOL}\n\nTOOL CATALOG\n${lines.join('\n')}`;
+  return lines.length === 0 ? '' : `${toolProtocol(list)}\n\nTOOL CATALOG\n${lines.join('\n')}`;
 }
 
 /** A model that loses the thread can repeat a call forever; 9 matches the fence cap. */
