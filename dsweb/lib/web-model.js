@@ -302,9 +302,11 @@ function schemaMatch(args, byName) {
  * one tool schema fits it exactly. Anything else stays visible text.
  */
 /**
- * Recover `{"a":"...","b":"..."}` when the code inside was never escaped: take
- * the text up to the last other string parameter's marker as the first value.
- * shortcut: two string parameters only, upgrade if a three-argument tool needs it.
+ * Last resort for a two-string-parameter call whose code was never escaped.
+ * normalizeObject repairs unescaped quotes and raw newlines before this runs,
+ * so the probe reaches here only when that repair also failed. With three
+ * string parameters no text rule says which slice belongs to the middle one,
+ * so a broken three-argument call stays text rather than guessing.
  */
 function salvageArgs(source, tool) {
   const properties = tool.parameters && typeof tool.parameters === 'object' ? tool.parameters.properties : undefined;
@@ -338,12 +340,12 @@ function parseAnswer(answer, tools) {
   let last = 0;
   let match;
   while ((match = fence.exec(answer)) !== null) {
-    const info = match[1].trim();
+    const info = match[1].replace(/\r/g, '').trim();
     const split = info.search(/\s/);
     const name = split === -1 ? info : info.slice(0, split);
     const rest = split === -1 ? '' : info.slice(split).trim();
     const payload = [rest, match[2].trim()].filter(Boolean).join('\n').trim();
-    const tool = byName.get(name);
+    const tool = byName.get(name) || byName.get(name.toLowerCase());
     let call;
     if (tool) {
       let args;
