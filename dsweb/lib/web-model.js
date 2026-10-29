@@ -101,7 +101,11 @@ function toolProtocol() {
     '```TOOLNAME',
     'ARGUMENTS',
     '```',
-    'TOOLNAME is an exact name from TOOL CATALOG. Write a program or command as-is, never inside a JSON string; a tool with several named values takes a JSON object. Text outside the fence is shown to the user.',
+    'TOOLNAME is a name from TOOL CATALOG, case-insensitive. ARGUMENTS is the call itself:',
+    '- A one-parameter tool takes the raw program, command, or path, with no JSON escaping.',
+    '- A tool with several named values takes a JSON object.',
+    '- A fence tagged json, or no tag at all, is accepted when its JSON object matches exactly one tool schema.',
+    'Text outside the fence is shown to the user.',
   ].join('\n');
 }
 

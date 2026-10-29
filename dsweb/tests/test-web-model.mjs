@@ -199,7 +199,7 @@ try {
     assert.match(asks[0].prompt, /- bash: Run a shell command/);
     assert.match(asks[0].prompt, /"command"/, 'the catalog carries the tool schema, not a hand-written example');
     assert.ok(asks[0].prompt.includes('```TOOLNAME'), 'the taught protocol is a tool-name fence');
-    assert.ok(asks[0].prompt.includes('as-is'), 'the prompt says a program goes in as-is');
+    assert.ok(asks[0].prompt.includes('no JSON escaping'), 'the prompt says a program goes in raw');
     const call = toolTurn.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
     assert.equal(call.block.name, 'bash');
     assert.deepEqual(JSON.parse(call.block.arguments), { command: 'cat a.txt' });
