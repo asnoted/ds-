@@ -35,19 +35,6 @@ Limit the number of comments in code to a strict minimum.
 
 NEVER edit `AGENTS.md` and adrs; maintainers only.
 
-## Tools
-
-All new tools go `scripts`.
-
-## 测试要求
-
-- 只有至少有一次通不过的测试留下.
-- 全部嵌入 pre-commit,自动化.
-
 ## IMPORTANT
 
-- **本项目维护者水平不一致,注意合作**
-- **走流程`/ask-matt`**
-- **用人类习惯测试网页**
-- **必须**唯一限速,**禁止**绕过
-- **禁止**一次性脚本,**应当**集成cli.
+All new tools go `scripts`.
