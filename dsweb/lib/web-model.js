@@ -11,7 +11,7 @@
  * queue) instead of opening a parallel turn.
  *
  * Text only. Tool schemas ride in the transcript as a catalog, and the model
- * calls them with DSML invoke blocks that {@link parseAnswer} turns back into
+ * calls them with fenced blocks that {@link parseAnswer} turns back into
  * tool-call blocks.
  *
  * @module dsh-dsb/web-model
@@ -27,8 +27,8 @@ import { readVault } from './vault.js';
 export const PROVIDER = 'deepseek-web';
 export const MODEL = 'deepseek-web';
 const CONTEXT_WINDOW = 128_000;
-/** Bump when the catalog or DSML protocol changes; bound chats then rebuild. */
-const PROMPT_VERSION = 2;
+/** Bump when the catalog or tool protocol changes; bound chats then rebuild. */
+const PROMPT_VERSION = 5;
 
 const LABEL = { system: 'SYSTEM', user: 'USER', assistant: 'ASSISTANT', tool: 'TOOL' };
 
@@ -96,73 +96,56 @@ function messageText(message) {
 }
 
 function toolProtocol() {
-  const bar = "｜｜DSML｜｜";
   return [
-    'You can call tools by emitting DeepSeek DSML invoke blocks. Only the names in TOOL CATALOG exist. Do not use any other tool-call syntax.',
-    'A call looks like: <' + bar + 'invoke name="TOOLNAME"><' + bar + 'parameter name="ARG">VALUE</' + bar + 'parameter></' + bar + 'invoke>',
-    'The parameter body is a JSON value when the schema says number, boolean, array or object; add string="true" to keep it a string.',
-    'Text outside the invoke blocks is shown to the user. You may emit several calls in one answer.',
+    'You can call tools with a fenced block tagged `tool`. A call looks like:',
+    '```tool',
+    '{TOOLNAME: PARAMETERS}',
+    '```',
+    'The key is a tool name from TOOL CATALOG and the value is that call\'s argument text, not JSON. One call per block; emit several blocks for several calls. Text outside the blocks is shown to the user.',
   ].join('\n');
 }
 
-// The web model emits the token's bar count inconsistently, and sometimes
-// merges a closing tag with the next opening tag. Accept all observed shapes.
-const DSML_TAG = '｜{0,2}DSML｜{0,2}';
-const DSML_INVOKE = new RegExp(
-  `<${DSML_TAG}\\s*invoke\\s+name="([^"]+)"\\s*>([\\s\\S]*?)(?:<\\/${DSML_TAG}\\s*invoke\\s*>|<\\/${DSML_TAG}\\s*calls\\s*>|<\\/${DSML_TAG}\\s*>|$)`,
-  'g',
-);
-const DSML_PARAM = new RegExp(
-  `<${DSML_TAG}\\s*parameter\\s+name="([^"]+)"([^>]*)>([\\s\\S]*?)<\\/${DSML_TAG}\\s*parameter\\s*>`,
-  'g',
-);
-const DSML_CLOSE_PARAM = new RegExp(`<\\/(${DSML_TAG})\\s*parameter\\s+name=`, 'g');
-const DSML_CLOSE_INVOKE = new RegExp(`<\\/(${DSML_TAG})\\s*invoke\\s+name=`, 'g');
-
-/** Split `</invoke name="x">` into a close and a new open, same for parameters. */
-function normalizeDsml(raw) {
-  return raw
-    .replace(DSML_CLOSE_PARAM, (_match, tag) => `</${tag} parameter>\n<${tag} parameter name=`)
-    .replace(DSML_CLOSE_INVOKE, (_match, tag) => `</${tag} invoke>\n<${tag} invoke name=`);
-}
-
-/** Use the tool schema's type as the authority, falling back to the DSML flag. */
-function coerceArg(value, schema, stringFlag) {
+/** The tool schema's type is the authority; the model sometimes stringifies numbers and booleans. */
+function coerceArg(value, schema) {
   const type = schema && typeof schema === 'object' ? schema.type : undefined;
-  if (type === 'string') return value;
   if (type === 'number' || type === 'integer') {
+    if (typeof value !== 'string' || value.trim() === '') return value;
     const number = Number(value);
-    return value !== '' && Number.isFinite(number) ? number : value;
+    return Number.isFinite(number) ? number : value;
   }
   if (type === 'boolean') {
     if (value === 'true') return true;
     if (value === 'false') return false;
     return value;
   }
-  if (type === 'array' || type === 'object' || stringFlag === 'false') {
+  if ((type === 'array' || type === 'object') && typeof value === 'string') {
     try { return JSON.parse(value); } catch { return value; }
   }
   return value;
 }
 
-function dsmlArgs(raw, tool) {
-  const body = normalizeDsml(raw);
-  const properties = tool && tool.parameters && typeof tool.parameters === 'object'
-    ? tool.parameters.properties
-    : undefined;
-  const args = {};
-  let malformed = false;
-  for (const match of body.matchAll(DSML_PARAM)) {
-    const [, name, attributes, value] = match;
-    const v = value.trim();
-    if (v.includes('parameter name=') || v.includes('invoke name=')) malformed = true;
-    const stringFlag = /\bstring\s*=\s*"?(true|false)"?/.exec(attributes);
-    args[name] = coerceArg(v, properties && properties[name], stringFlag && stringFlag[1]);
+/**
+ * The fence body is the argument text itself, not JSON: the command for a
+ * shell tool, the program for run_code. A single-parameter tool takes the whole
+ * body; otherwise it goes to the first required string parameter.
+ */
+function fenceArgs(body, tool) {
+  const parameters = tool && tool.parameters && typeof tool.parameters === 'object' ? tool.parameters : {};
+  const properties = parameters.properties && typeof parameters.properties === 'object' ? parameters.properties : {};
+  const required = Array.isArray(parameters.required) ? parameters.required : [];
+  const names = Object.keys(properties);
+  if (names.length === 0) return {};
+  const isString = (name) => properties[name] && properties[name].type === 'string';
+  const target = names.length === 1
+    ? names[0]
+    : required.find(isString) || names.find(isString) || names[0];
+  const args = { [target]: coerceArg(body.trim(), properties[target]) };
+  // run_code requires a non-empty UI label; the argument's first line is the
+  // only summary the model actually wrote.
+  if (target !== 'description' && required.includes('description') && properties.description) {
+    args.description = body.trim().split('\n')[0].slice(0, 80);
   }
-  // A parameter-shaped body that yielded nothing means the tag was malformed;
-  // turning it into an empty call would run a tool with `{}` by accident.
-  if (Object.keys(args).length === 0 && /parameter\s+name=/.test(body)) malformed = true;
-  return { args, malformed };
+  return args;
 }
 
 /** Every tool the host exposes with a usable name; a nameless entry cannot be called. */
@@ -198,34 +181,36 @@ const MAX_TOOL_CALLS = 9;
 /**
  * Split a buffered answer into text and tool calls.
  *
- * Only DSML invoke blocks are recognized: the prompt teaches exactly that
- * shape. Anything else — the web app's own/memory calls, a markdown code
- * sample, a malformed block — stays visible text. A call is only taken when
- * its name is an active DSH tool.
+ * Only `tool` fences holding `{name: arguments}` are calls: the prompt teaches
+ * exactly that shape. Anything else — the web app's own/memory calls, a
+ * markdown code sample, an unknown name — stays visible text.
  */
 function parseAnswer(answer, tools) {
   const byName = new Map(namedTools(tools).map((tool) => [tool.name, tool]));
   if (byName.size === 0) return [{ type: 'text', text: answer }];
-  const normalized = normalizeDsml(answer);
   const blocks = [];
   const state = { calls: 0, truncated: false };
+  const fence = /```([^\n`]*)\n?([\s\S]*?)```/g;
   let last = 0;
-  for (const match of normalized.matchAll(DSML_INVOKE)) {
-    const before = normalized.slice(last, match.index);
+  let match;
+  while ((match = fence.exec(answer)) !== null) {
+    const payload = [match[1].trim().replace(/^tool\b/, ''), match[2].trim()].filter(Boolean).join('\n').trim();
+    const call = /^\{\s*([^{}\s:]+)\s*:\s*([\s\S]*?)\s*\}$/.exec(payload);
+    const tool = call && byName.get(call[1]);
+    const args = tool && call[2].trim() ? fenceArgs(call[2], tool) : undefined;
+    if (!args) continue;
+    const before = answer.slice(last, match.index);
     if (before) blocks.push({ type: 'text', text: before });
-    const name = match[1];
-    const parsed = dsmlArgs(match[2], byName.get(name));
-    const malformed = parsed.malformed || match[2].includes('invoke name=');
-    if (!byName.has(name) || malformed || state.calls >= MAX_TOOL_CALLS) {
-      if (byName.has(name) && !malformed) state.truncated = true;
+    if (state.calls >= MAX_TOOL_CALLS) {
+      state.truncated = true;
       blocks.push({ type: 'text', text: match[0] });
     } else {
       state.calls += 1;
-      blocks.push({ type: 'tool-call', name, arguments: JSON.stringify(parsed.args) });
+      blocks.push({ type: 'tool-call', name: call[1], arguments: JSON.stringify(args) });
     }
-    last = match.index + match[0].length;
+    last = fence.lastIndex;
   }
-  const tail = normalized.slice(last);
+  const tail = answer.slice(last);
   if (tail) blocks.push({ type: 'text', text: tail });
   if (state.truncated) {
     blocks.push({ type: 'text', text: '（本轮工具调用超过 ' + MAX_TOOL_CALLS + ' 个，其余未执行）' });

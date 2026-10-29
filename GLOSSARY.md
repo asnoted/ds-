@@ -6,12 +6,12 @@ dsh-dsweb + dsh-dsb
 
 **工具协议**:
 
-```bash
-echo hello
+```tool
+{name:params}
 ```
 
-```toolname
-[options] [args...]
+```tool
+{bash:ls -a}
 ```
 
 _Avoid_: 工具调用块

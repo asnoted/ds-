@@ -32,7 +32,7 @@ dsweb 向 `ctx.llm` 注册 `deepseek-web` provider（模型名同名），让 DS
 
 - 每个 DSH session 绑定一个网页会话：首轮发全量 transcript，之后只发增量；上一轮 assistant 的 message id 作为下一轮的 `parent_message_id`，上下文跨进程保留。
 - 网页会话一次只占一个 turn；自动 turn 之间按 Beta(2,4) 抽 3–15 秒间隔（峰值 6 秒），记录在 `~/.dsh/dsh-dsb/pace.json`，DSH 重启后仍然生效。
-- 工具调用走 DSML invoke 块（提示词只教这一种；工具目录随首轮 transcript 一起发），单轮最多执行 9 个，只认目录里存在的工具名。只支持文本，不处理图片 / 附件。
+- 工具调用走 `tool` 围栏：正文是 `{工具名: 参数}`，参数是原始文本不是 JSON（提示词只教这一种；工具目录随首轮 transcript 一起发），单轮最多执行 9 个，只认目录里存在的工具名。只支持文本，不处理图片 / 附件。
 
 模型选择器暂时还没有 `deepseek-web`，用 overlay 指定：
 

@@ -181,7 +181,7 @@ try {
       complete: async function* (_token, request) {
         asks.push(request);
         if (asks.length === 1) {
-          const __bar = '\uFF5C\uFF5CDSML\uFF5C\uFF5C'; yield { type: 'text', text: 'let me read it\n<' + __bar + 'invoke name="bash"><' + __bar + 'parameter name="command">cat a.txt</' + __bar + 'parameter></' + __bar + 'invoke>\n' + String.fromCharCode(96).repeat(3) + 'js\n1+1\n' + String.fromCharCode(96).repeat(3) };
+          yield { type: 'text', text: 'let me read it\n```tool\n{bash: cat a.txt}\n```\n```js\n1+1\n```' };
           yield { type: 'message', messageId: 7 };
         } else {
           yield { type: 'text', text: 'the file says hi' };
@@ -198,8 +198,8 @@ try {
     assert.match(asks[0].prompt, /TOOL CATALOG/);
     assert.match(asks[0].prompt, /- bash: Run a shell command/);
     assert.match(asks[0].prompt, /"command"/, 'the catalog carries the tool schema, not a hand-written example');
-    assert.ok(asks[0].prompt.includes(String.fromCharCode(0xFF5C,0xFF5C)+'DSML'+String.fromCharCode(0xFF5C,0xFF5C)), 'the taught protocol is DSML');
-    assert.ok(asks[0].prompt.includes('invoke name'), 'the prompt teaches the DSML invoke protocol');
+    assert.ok(asks[0].prompt.includes('```tool'), 'the taught protocol is a tool fence');
+    assert.ok(asks[0].prompt.includes('not JSON'), 'the prompt says the parameters are raw text');
     const call = toolTurn.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
     assert.equal(call.block.name, 'bash');
     assert.deepEqual(JSON.parse(call.block.arguments), { command: 'cat a.txt' });
@@ -229,48 +229,13 @@ try {
     assert.equal(after.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join(''), 'the file says hi');
 
     {
-      const shellMap = createSessionMap({ file: join(dir, 'shell.json') });
-      const shellAsks = [];
-      const shellAdapter = makeAdapter({
-        map: shellMap,
-        token: () => 'token',
-        create: async () => 'web-shell',
-        complete: async function* (_token, request) {
-          shellAsks.push(request);
-          yield {
-            type: 'text',
-            text: 'checking\n' + String.fromCharCode(60) + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'invoke name="bash">' + String.fromCharCode(60) + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'parameter name="command">lsof -i :3080</' + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'parameter></' + String.fromCharCode(0xFF5C,0xFF5C,68,83,77,76,0xFF5C,0xFF5C) + 'invoke>\n' + String.fromCharCode(96).repeat(3) + 'bash\n{"command":"echo nope"}\n' + String.fromCharCode(96).repeat(3),
-          };
-          yield { type: 'message', messageId: 12 };
-        },
-      });
-      const shellOut = await collect(shellAdapter.stream({
-        sessionId: 'shell',
-        toolHistory: [],
-        messages: [text('user', 'check the port')],
-        tools: [{
-          name: 'bash',
-          description: 'Run a shell command',
-          parameters: { type: 'object', properties: { command: { type: 'string' } } },
-        }],
-      }));
-      assert.ok(shellAsks[0].prompt.includes(String.fromCharCode(0xFF5C,0xFF5C)+'DSML'+String.fromCharCode(0xFF5C,0xFF5C)), 'the prompt teaches DSML');
-      const calls = shellOut.filter((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-      assert.equal(calls.length, 1, 'only the DSML block is a call, got ' + calls.length);
-      assert.equal(calls[0].block.name, 'bash');
-      assert.deepEqual(JSON.parse(calls[0].block.arguments), { command: 'lsof -i :3080' }, JSON.stringify(calls[0].block.arguments));
-      const visible = shellOut.filter((chunk) => chunk.type === 'text-delta').map((chunk) => chunk.text).join('');
-      assert.match(visible, /```bash/, 'a bash fence stays text');
-    }
-    {
-      // A ```shell fence is NOT the protocol; the DSML block after it is.
+      // The info line may carry the parameters instead of a body.
       const inlineAdapter = makeAdapter({
         map: createSessionMap({ file: join(dir, 'inline.json') }),
         token: () => 'token',
         create: async () => 'web-inline',
         complete: async function* () {
-          yield { type: 'text', text: 'ok\n```shell ls```' };
-          yield { type: 'text', text: 'ok\n<\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke name="bash"><\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter name="command">ls</\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter></\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke>' };
+          yield { type: 'text', text: 'ok\n```shell ls```\n```tool {bash: lsof -i :3080}```\n```tool {nope: x}```' };
         },
       });
       const inlineOut = await collect(inlineAdapter.stream({
@@ -279,64 +244,42 @@ try {
         messages: [text('user', 'go')],
         tools,
       }));
-      const inlineCall = inlineOut.find((c) => c.type === 'block-end' && c.block.type === 'tool-call');
-      assert.equal(inlineCall.block.name, 'bash', 'the DSML block runs next to a markdown fence');
-      assert.equal(JSON.parse(inlineCall.block.arguments).command, 'ls', 'the parameter body is the command');
+      const inlineCalls = inlineOut.filter((c) => c.type === 'block-end' && c.block.type === 'tool-call');
+      assert.equal(inlineCalls.length, 1, 'only a known tool fence is a call, got ' + inlineCalls.length);
+      assert.equal(JSON.parse(inlineCalls[0].block.arguments).command, 'lsof -i :3080', 'the brace value is the command');
+      const visible = inlineOut.filter((c) => c.type === 'text-delta').map((c) => c.text).join('');
+      assert.match(visible, /```shell ls```/, 'an unknown fence tag stays text');
+      assert.match(visible, /\{nope: x\}/, 'an unknown tool name stays text');
     }
 
     {
-      // The web model drifts: one bar in closing tags, merged close/open tags,
-      // and string="true" on numeric arguments. None of that may empty the call.
-      const readTool = {
-        name: 'read',
-        description: 'Read a file',
+      // A lone parameter takes the whole body; its schema still decides the type.
+      const waitTool = {
+        name: 'wait',
+        description: 'Wait a number of seconds',
         parameters: {
           type: 'object',
-          properties: {
-            file_path: { type: 'string' },
-            offset: { type: 'number' },
-            limit: { type: 'number' },
-            replace_all: { type: 'boolean' },
-          },
+          properties: { seconds: { type: 'number' } },
+          required: ['seconds'],
         },
       };
-      const bar = '\uFF5C\uFF5CDSML\uFF5C\uFF5C';
-      const close = '\uFF5CDSML\uFF5C\uFF5C';
-      const answer = [
-        '<' + bar + ' calls>',
-        '<' + bar + ' invoke name="read">',
-        '<' + bar + ' parameter name="file_path" string="true">a.txt</' + close + ' parameter>',
-        '<' + bar + ' parameter name="offset" string="true">42</' + close + ' parameter>',
-        '<' + bar + ' parameter name="limit" string="false">10</' + close + ' parameter>',
-        '<' + bar + ' parameter name="replace_all" string="true">true</' + close + ' parameter>',
-        '</' + close + ' invoke>',
-        '<' + bar + ' invoke name="read"><' + bar + ' parameter name="file_path">b.txt</' + bar
-          + ' parameter name="offset">7</' + close + ' parameter></' + close + ' invoke>',
-      ].join('\n');
-      const drift = makeAdapter({
-        map: createSessionMap({ file: join(dir, 'drift-tags.json') }),
+      const coerced = makeAdapter({
+        map: createSessionMap({ file: join(dir, 'coerced.json') }),
         token: () => 'token',
-        create: async () => 'web-drift-tags',
+        create: async () => 'web-coerced',
         complete: async function* () {
-          yield { type: 'text', text: answer };
+          yield { type: 'text', text: '```tool\n{wait: 42}\n```' };
         },
       });
-      const driftOut = await collect(drift.stream({
-        sessionId: 'drift-tags',
+      const coercedOut = await collect(coerced.stream({
+        sessionId: 'coerced',
         toolHistory: [],
-        messages: [text('user', 'read both')],
-        tools: [readTool],
+        messages: [text('user', 'wait a bit')],
+        tools: [waitTool],
       }));
-      const driftCalls = driftOut.filter((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-      assert.equal(driftCalls.length, 2, 'tolerates one-bar closing tags and merged tags, got ' + driftCalls.length);
-      assert.deepEqual(JSON.parse(driftCalls[0].block.arguments), {
-        file_path: 'a.txt',
-        offset: 42,
-        limit: 10,
-        replace_all: true,
-      }, 'the tool schema decides argument types, not the DSML string flag');
-      assert.deepEqual(JSON.parse(driftCalls[1].block.arguments), { file_path: 'b.txt', offset: 7 });
-      assert.deepEqual(driftOut.at(-1), { type: 'finish', reason: { kind: 'tool-calls' } });
+      const coercedCall = coercedOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.deepEqual(JSON.parse(coercedCall.block.arguments), { seconds: 42 }, 'the tool schema decides the argument type');
+      assert.deepEqual(coercedOut.at(-1), { type: 'finish', reason: { kind: 'tool-calls' } });
     }
 
     {
@@ -358,18 +301,24 @@ try {
         create: async () => 'web-ptc',
         complete: async function* (_token, request) {
           ptcAsks.push(request);
-          yield { type: 'text', text: 'ok' };
+          yield { type: 'text', text: '```tool\n{run_code: console.log(1)}\n```' };
         },
       });
-      await collect(ptc.stream({
+      const ptcOut = await collect(ptc.stream({
         sessionId: 'ptc',
         toolHistory: [],
         messages: [text('user', 'pwd')],
         tools: [runCode],
       }));
       assert.match(ptcAsks[0].prompt, /- run_code:/);
-      assert.ok(!ptcAsks[0].prompt.includes('invoke name="bash"'), 'no direct bash example when bash is not a tool');
+      assert.ok(!ptcAsks[0].prompt.includes('```bash'), 'no direct bash example when bash is not a tool');
       assert.match(ptcAsks[0].prompt, /"code"/, 'the catalog carries the tool schema, not a hand-written example');
+      const ptcCall = ptcOut.find((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
+      assert.deepEqual(
+        JSON.parse(ptcCall.block.arguments),
+        { code: 'console.log(1)', description: 'console.log(1)' },
+        'the body is the program; the required description follows its first line',
+      );
     }
 
     {
@@ -453,7 +402,8 @@ try {
       );
     }
 
-    const many = Array.from({ length: 12 }, (_, i) => '<\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke name="bash"><\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter name="command">cat f' + i + '</\uFF5C\uFF5CDSML\uFF5C\uFF5Cparameter></\uFF5C\uFF5CDSML\uFF5C\uFF5Cinvoke>').join('\n');    const capped = makeAdapter({
+    const many = Array.from({ length: 12 }, (_, i) => '```tool\n{bash: cat f' + i + '}\n```').join('\n');
+    const capped = makeAdapter({
       map: createSessionMap({ file: join(dir, 'cap.json') }),
       token: () => 'token',
       create: async () => 'web-cap',
