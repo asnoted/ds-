@@ -1176,16 +1176,22 @@ export function observeRound(chunk, round) {
 
   // `inherited` is the path a nested patch list came from, so a patch whose own
   // `p` is a bare leaf (`accumulated_token_usage`) still resolves correctly.
-  const visit = (value, inherited, depth) => {
+  // `inFragments` marks a status that belongs to ONE fragment (a SEARCH result
+  // saying it is done) rather than to the answer as a whole: only the answer's
+  // own status may latch the turn as finished.
+  const visit = (value, inherited, depth, inFragments) => {
     if (depth > 6 || value === null || typeof value !== 'object') return;
     if (Array.isArray(value)) {
-      for (const item of value) visit(item, inherited, depth + 1);
+      for (const item of value) visit(item, inherited, depth + 1, inFragments);
       return;
     }
     const own = typeof value.p === 'string' && value.p ? value.p : '';
     const path = own || inherited;
+    const fragmentPath = inFragments || /(^|\/)fragments(\/|$)/.test(inherited);
 
-    if (own === 'response/status' || own === 'status' || own === 'response/quasi_status' || own === 'quasi_status') {
+    const responseStatus = own === 'response/status' || own === 'response/quasi_status';
+    const bareStatus = own === 'status' || own === 'quasi_status';
+    if (responseStatus || (bareStatus && !fragmentPath)) {
       applyStatus(value.v);
     } else if (own === 'response/auto_continue' || own === 'auto_continue') {
       if (value.v === true) round.autoContinue = true;
@@ -1196,12 +1202,12 @@ export function observeRound(chunk, round) {
     // output, which readStream folds into `round.finished`.
 
     if (typeof value.message_id === 'number' && value.message_id > 0) round.responseMessageId = value.message_id;
-    if (value.auto_continue === true) round.autoContinue = true;
-    if (typeof value.status === 'string') applyStatus(value.status);
+    if (!fragmentPath && value.auto_continue === true) round.autoContinue = true;
+    if (!fragmentPath && typeof value.status === 'string') applyStatus(value.status);
 
     for (const [key, nested] of Object.entries(value)) {
       if (key === 'content' || key === 'text' || key === 'p') continue;
-      visit(nested, path, depth + 1);
+      visit(nested, path, depth + 1, fragmentPath || key === 'fragments');
     }
   };
 

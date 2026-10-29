@@ -108,5 +108,47 @@ const readyObserved = { responseMessageId: 0, lastStatus: '', finished: false, a
 observeRound(JSON.parse(readyFrameBody), readyObserved);
 check('ready frame yields the response message id', readyObserved.responseMessageId > 0, `${readyObserved.responseMessageId}`);
 
+// A fragment's own status is not the answer's status. Real search turns send
+// `{"p":"response/fragments/-1","o":"BATCH","v":[{"p":"status","v":"FINISHED"},…]}`
+// when the SEARCH fragment is done — the answer is still being written.
+const fragmentStatus = { responseMessageId: 8, lastStatus: 'WIP', finished: false, autoContinue: false };
+observeRound(
+  { p: 'response/fragments/-1', o: 'BATCH', v: [{ p: 'status', v: 'FINISHED' }, { p: 'content', v: '搜索到 12 个网页' }] },
+  fragmentStatus,
+);
+check(
+  'a fragment status does not finish the turn',
+  fragmentStatus.finished === false && fragmentStatus.lastStatus === 'WIP',
+  `finished=${fragmentStatus.finished} lastStatus=${fragmentStatus.lastStatus}`,
+);
+
+const envelopeFragment = { responseMessageId: 8, lastStatus: 'INCOMPLETE', finished: false, autoContinue: false };
+observeRound(
+  { v: { response: { status: 'WIP', fragments: [{ id: 2, type: 'SEARCH', status: 'FINISHED' }] } } },
+  envelopeFragment,
+);
+check(
+  'an envelope fragment status does not override the turn status',
+  envelopeFragment.finished === false && envelopeFragment.lastStatus === 'WIP',
+  `finished=${envelopeFragment.finished} lastStatus=${envelopeFragment.lastStatus}`,
+);
+
+// The turn's own INCOMPLETE must still be read as "ask for more", not "done".
+const incomplete = { responseMessageId: 9, lastStatus: '', finished: false, autoContinue: false };
+observeRound({ p: 'response/status', v: 'INCOMPLETE' }, incomplete);
+check(
+  'a response-level INCOMPLETE still requests a continue',
+  incomplete.finished === false && shouldContinue(incomplete) === true,
+  `finished=${incomplete.finished} lastStatus=${incomplete.lastStatus}`,
+);
+
+const responseBatch = { responseMessageId: 9, lastStatus: 'INCOMPLETE', finished: false, autoContinue: false };
+observeRound({ p: 'response', o: 'BATCH', v: [{ p: 'quasi_status', v: 'FINISHED' }] }, responseBatch);
+check(
+  'a response-level batch status still finishes the turn',
+  responseBatch.finished === true && responseBatch.lastStatus === 'FINISHED',
+  `finished=${responseBatch.finished} lastStatus=${responseBatch.lastStatus}`,
+);
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`);
 process.exit(failures === 0 ? 0 : 1);
