@@ -493,11 +493,19 @@ async function handleUpload(request, response, vault) {
     // even returns, so most uploads still answer SUCCESS here (and no extra
     // /files round trip is needed). A document that is still parsing comes back
     // with its PENDING/PARSING status rather than blocking this handler.
-    const settled = await waitForFiles(token, [record.id], {
-      timeoutMs: UPLOAD_SETTLE_MS,
-      signal: controller.signal,
-    });
-    const file = settled[0] || record;
+    let file = record;
+    try {
+      const settled = await waitForFiles(token, [record.id], {
+        timeoutMs: UPLOAD_SETTLE_MS,
+        signal: controller.signal,
+      });
+      file = settled[0] || record;
+    } catch {
+      // The bytes are already upstream. A failed status poll must not turn a
+      // successful upload into an error: the panel polls /files itself and the
+      // record still carries whatever status the upload returned.
+      if (controller.signal.aborted) return;
+    }
     return sendJson(response, 200, { file, settled: FILE_TERMINAL.has(file.status) });
   } catch (error) {
     if (controller.signal.aborted) return;

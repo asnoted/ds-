@@ -42,6 +42,9 @@ let errorTurns = false;
 // When set, fetch_files reports a document whose parse has not finished yet,
 // which is what a large .docx looks like for the first ~16 seconds.
 let pendingFiles = false;
+// When set, fetch_files fails outright — a transient error after the bytes
+// have already been accepted by the upload endpoint.
+let filesFail = false;
 // When set, chat_session/create answers a rejection, before the SSE head.
 let sessionCreateFails = false;
 // When set, the PoW challenge request is rejected, before the SSE head.
@@ -154,6 +157,7 @@ const upstream = http.createServer(async (request, response) => {
   }
   if (path === '/api/v0/file/fetch_files') {
     const fileId = parsedUrl.searchParams.get('file_ids');
+    if (filesFail) return json({ code: 500, msg: 'status poll failed', data: null });
     return json({
       code: 0,
       data: {
@@ -582,6 +586,36 @@ holdTurns = true;
   );
 }
 
+
+/* ---- 6b2. a failed parse poll must not discard a successful upload ---- */
+
+{
+  // The bytes are already on the account when /files fails; answering 500 makes
+  // the panel drop a file that is really there (and the user re-uploads it).
+  filesFail = true;
+  const response = await realFetch(`http://127.0.0.1:${port}/dsh-dsb/upload`, {
+    method: 'POST',
+    headers: {
+      host: `127.0.0.1:${port}`,
+      'content-type': 'text/plain',
+      'x-file-name': encodeURIComponent('kept.txt'),
+    },
+    body: 'keep me',
+  }).finally(() => {
+    filesFail = false;
+  });
+  const payload = await response.json();
+  check(
+    'an upload survives a failed parse-status poll',
+    response.status === 200 && payload.file && payload.file.id === 'file-fake-1',
+    `status=${response.status} ${JSON.stringify(payload)}`,
+  );
+  check(
+    'the record keeps the status the upload itself reported',
+    payload.file && payload.file.status === 'PENDING' && payload.settled === false,
+    JSON.stringify(payload.file),
+  );
+}
 
 /* ---- 6c. a slow parse must neither block /upload nor reach /chat ---- */
 
