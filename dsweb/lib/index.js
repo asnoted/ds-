@@ -775,37 +775,6 @@ export function apply(ctx) {
     );
   });
 
-  // A DSH session bound to a web chat already has a title upstream. Reuse it
-  // instead of spending a second model request on dsh-session-title-llm; an
-  // unbound session throws, so the service keeps its own fallback.
-  // The service allows one provider, so registering here would collide with
-  // session-title-first-prompt-llm; an overlay swaps that plugin for this one.
-  ctx.inject(['sessionTitle'], (titleCtx) => {
-    if (!titleCtx || !titleCtx.sessionTitle) return;
-    const sessions = createSessionMap();
-    titleCtx.effect(
-      () => titleCtx.sessionTitle.register({
-        id: 'deepseek-web',
-        automatic: 'first-prompt',
-        async generate({ session, messages, signal }) {
-          const webSessionId = sessions.webSessionFor(session.id);
-          if (!webSessionId) throw new Error('session is not bound to a web chat');
-          const token = requireTokenValue();
-          if (!token) throw new Error('DeepSeek 网页登录态不存在');
-          const { sessions: list } = await listSessions(token, { count: 100, maxPages: 3, signal });
-          const hit = list.find((item) => item.id === webSessionId);
-          if (!hit || !hit.title || hit.title === '未命名对话') {
-            throw new Error('web chat has no title yet');
-          }
-          // The provider must name the exact request messages its title came
-          // from; the web title is derived from the first prompt.
-          return { title: hit.title, messageSeqs: [messages[0].seq] };
-        },
-      }),
-      'dsb: deepseek-web session title',
-    );
-  });
-
   ctx.inject(['webServer'], (hostCtx) => {
     const register = (kind, path, method, handler) =>
       hostCtx.effect(

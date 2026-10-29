@@ -76,16 +76,16 @@ try {
 
   {
     const many = { version: 1, sessions: {} };
-    for (let i = 0; i < 201; i += 1) {
+    for (let i = 0; i < 100; i += 1) {
       many.sessions[`dsh-${i}`] = { webSessionId: `web-${i}`, parentMessageId: 0, cursor: 0, digest: '', updatedAt: new Date(2026, 0, 1, 0, 0, i).toISOString() };
     }
     writeFileSync(file, JSON.stringify(many));
     const map = createSessionMap({ file });
     assert.equal(map.webSessionFor('dsh-0'), '', 'the oldest session must be trimmed');
-    assert.equal(map.webSessionFor('dsh-200'), 'web-200', 'the newest session survives');
+    assert.equal(map.webSessionFor('dsh-99'), 'web-99', 'the newest session survives');
     map.bind('dsh-new', 'web-new');
     const reloaded = JSON.parse(readFileSync(file, 'utf8'));
-    assert.equal(Object.keys(reloaded.sessions).length, 200, 'the map stays bounded at 200');
+    assert.equal(Object.keys(reloaded.sessions).length, 99, 'the map stays bounded at 99');
   }
 
   console.log('session map: all passing');

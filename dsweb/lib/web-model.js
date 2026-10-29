@@ -163,8 +163,8 @@ function protocolFor(tools) {
   return `${PROMPT_VERSION}:${createHash('sha256').update(JSON.stringify(schemas)).digest('hex').slice(0, 16)}`;
 }
 
-/** A model that loses the thread can repeat a call forever; 9 bounds one answer's damage. */
-const MAX_TOOL_CALLS = 9;
+/** A model that loses the thread can repeat a call forever; 99 bounds one answer's damage. */
+const MAX_TOOL_CALLS = 99;
 
 /** Quote bare object keys so the JS-style literal the system prompt shows parses as JSON. */
 function unquoteKeys(source) {

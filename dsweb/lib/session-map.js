@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path';
 const VERSION = 1;
 const FILE = 'web-sessions.json';
 /** Cap the map so a long-lived DSH does not grow it without bound. */
-const MAX_SESSIONS = 200;
+const MAX_SESSIONS = 99;
 
 /** Kept local so the map does not depend on whichever package owns the vault. */
 function defaultFile() {

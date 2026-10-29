@@ -577,7 +577,7 @@ try {
       );
     }
 
-    const many = Array.from({ length: 12 }, (_, i) => '```bash\n{"command":"cat f' + i + '"}\n```').join('\n');
+    const many = Array.from({ length: 102 }, (_, i) => '```bash\n{"command":"cat f' + i + '"}\n```').join('\n');
     const capped = makeAdapter({
       map: createSessionMap({ file: join(dir, 'cap.json') }),
       token: () => 'token',
@@ -594,9 +594,9 @@ try {
       tools,
     }));
     const capCalls = cappedChunks.filter((chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call');
-    assert.equal(capCalls.length, 9, 'a runaway answer is capped at nine tool calls');
+    assert.equal(capCalls.length, 99, 'a runaway answer is capped at ninety-nine tool calls');
     assert.ok(
-      cappedChunks.some((chunk) => chunk.type === 'text-delta' && chunk.text.includes('超过 9 个')),
+      cappedChunks.some((chunk) => chunk.type === 'text-delta' && chunk.text.includes('超过 99 个')),
       'the cap is reported to the reader',
     );
   }
