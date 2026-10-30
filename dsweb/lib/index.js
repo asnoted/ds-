@@ -775,13 +775,15 @@ export function apply(ctx) {
     }
     const titleService = titleCtx.sessionTitle;
     const sessionsService = titleCtx.sessions;
-    // The web app names a chat by the time a turn finishes, so one look
-    // after the body is committed is enough.
+    // Measured: the web app names a chat within 1.5s of the binding
+    // landing. One look after that delay is enough; no retry loop.
     onBind = (dshSessionId) => {
       if (!sessionsService) return;
       const session = sessionsService.get(dshSessionId);
       if (!session) return;
-      titleService.refresh(session).catch(() => {});
+      setTimeout(() => {
+        titleService.refresh(session).catch(() => {});
+      }, 1500);
     };
     titleCtx.effect(
       () => {

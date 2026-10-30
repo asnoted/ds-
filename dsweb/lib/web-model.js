@@ -516,7 +516,10 @@ export function createWebModelAdapter({
         if (!webSessionId || pending.rebuild) {
           webSessionId = await create(credential, options.signal);
           fresh = isTurn;
-          if (isTurn) map.bind(key, webSessionId, protocol);
+          if (isTurn) {
+            map.bind(key, webSessionId, protocol);
+            onBind(key, webSessionId);
+          }
         }
         await pace.wait(options.signal);
 
@@ -610,7 +613,6 @@ export function createWebModelAdapter({
         if (isTurn) {
           if (messageId > 0) map.setParent(key, messageId);
           map.commit(key, messages, protocol);
-          onBind(key, webSessionId);
         }
         yield { type: 'finish', reason: { kind: sawCall ? 'tool-calls' : 'stop' } };
       } catch (error) {
