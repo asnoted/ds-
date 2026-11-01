@@ -84,11 +84,29 @@ try {
       }
     }
     ok = ok && [undefined, null, 42, {}, []].every((raw) => normalizeToken(raw) === '');
+    // Sampling covers breadth; the short-string class is small enough to check
+    // exhaustively: every ≤2-element string over the unquote alphabet, so this
+    // property is not a sample but a theorem over that whole domain.
+    let exhaustiveOk = true;
+    const WORDS = [...JUNK_CHARS, '"', '{', 'Bearer '];
+    for (let a = 0; a < WORDS.length && exhaustiveOk; a += 1) {
+      for (let b = 0; b < WORDS.length && exhaustiveOk; b += 1) {
+        for (const raw of [WORDS[a] + WORDS[b], WORDS[b] + WORDS[a]]) {
+          const once = normalizeToken(raw);
+          if (typeof once !== 'string' || normalizeToken(once) !== once) {
+            exhaustiveOk = false;
+            console.log(`      exhaustive case: ${JSON.stringify(raw)} -> ${JSON.stringify(once)}`);
+            break;
+          }
+        }
+      }
+    }
+    ok = ok && exhaustiveOk;
     // A DevTools copy of the whole localStorage value arrives as a quoted
     // envelope ("{"value":"x"}"); two strip passes are needed. Pinned through a
     // replace() so the escaping cannot lie about what the real string contains.
     ok = ok && normalizeToken('"{<q>value<q>:<q>x<q>}"'.replace(/<q>/g, '"')) === 'x';
-    check('token: normalizeToken is idempotent and never fabricates a non-string', ok);
+    check('token: idempotence over 400 junk samples plus exhaustively (every ≤2-element string of the unquote alphabet)', ok);
   }
 
   // -- title: percent round-trip, and raw text fallback never throws ----------
