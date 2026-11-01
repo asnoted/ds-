@@ -155,7 +155,6 @@ function toolCatalog(tools) {
   const list = namedTools(tools);
   const lines = [];
   for (const tool of list) {
-    if (!tool || typeof tool.name !== 'string' || !tool.name) continue;
     const description = typeof tool.description === 'string'
       ? tool.description.replace(/\s+/g, ' ').slice(0, 300)
       : '';
