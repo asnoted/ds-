@@ -483,7 +483,7 @@ export function createWebModelAdapter({
 
     async *stream(options) {
       const credential = token();
-      if (!credential) throw new Error('DeepSeek 网页登录态不存在，请先在聊天面板连接账号');
+      if (!credential) throw new Error('DeepSeek 网页登录态不存在，请先完成浏览器登录以连接账号');
       const key = typeof options.sessionId === 'string' ? options.sessionId : '';
       const messages = Array.isArray(options.messages) ? options.messages : [];
       // Title/compaction calls carry the session id too, but they are not the
@@ -608,8 +608,8 @@ export function createWebModelAdapter({
         }
 
         // The answer is buffered because a tool call has to be parsed before any
-        // of it can be emitted as text. Agent turns are not the panel's token
-        // stream, so the end-of-turn wait costs nothing here.
+        // of it can be emitted as text. Agent turns do not need token-granular
+        // streaming, so the end-of-turn wait costs nothing here.
         let index = 0;
         const emitText = function* emitText(value) {
           if (!value.trim()) return;

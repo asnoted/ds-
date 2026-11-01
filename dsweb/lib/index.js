@@ -6,7 +6,7 @@
  *  - proxy chat.deepseek.com, because the browser cannot call it directly
  *    (cross-origin, and the token must never live in page JavaScript);
  *  - solve the proof of work the completion endpoint demands;
- *  - keep a local snapshot of the synced history so the panel opens instantly
+ *  - keep a local snapshot of the synced history so repeat reads answer instantly
  *    and still shows something when the network is down.
  *
  * Every route is registered on `webServer` under one prefix and re-applies the
@@ -60,7 +60,7 @@ const CACHE_LIMIT = 200;
  * uploading a 2MB .docx take 16s of dead time and, past the ceiling, handed the
  * picker a still-parsing file that upstream then refused — an empty answer with
  * no error. The parse is upstream work we cannot hurry, so the handler now only
- * covers the common "already parsed" case and the panel polls /files for the
+ * covers the common "already parsed" case and callers poll /files for the
  * rest (`status` stays PENDING/PARSING until it settles).
  */
 const UPLOAD_SETTLE_MS = 1500;
@@ -417,7 +417,7 @@ async function handleNewSession(response, vault) {
  *
  * The handler does NOT wait out the parse any more (see UPLOAD_SETTLE_MS): it
  * returns the first snapshot taken after a short settle window, and the record
- * carries its real `status`, so the panel can render "解析中" and poll /files
+ * carries its real `status`, so the caller can render "解析中" and poll /files
  * instead of holding the picker hostage for the whole parse.
  */
 async function handleUpload(request, response, vault) {
@@ -466,7 +466,7 @@ async function handleUpload(request, response, vault) {
       file = settled[0] || record;
     } catch {
       // The bytes are already upstream. A failed status poll must not turn a
-      // successful upload into an error: the panel polls /files itself and the
+      // successful upload into an error: the caller polls /files itself and the
       // record still carries whatever status the upload returned.
       if (controller.signal.aborted) return;
     }
@@ -528,7 +528,7 @@ function rememberSessionFiles(cache, sessionId, ids) {
   else cache.files[sessionId] = [...new Set(ids)];
 }
 
-/** Snapshot of one or more file records (the panel polls this while uploading). */
+/** Snapshot of one or more file records (clients poll this while uploading). */
 async function handleFiles(request, response, vault) {
   const token = requireToken(response, vault);
   if (!token) return;
@@ -576,8 +576,8 @@ async function handleChat(request, response, vault, cache, abortRef) {
     .map((a) => a.name);
 
   // Gate the turn on the attachments actually being parsed. This runs BEFORE the
-  // SSE head is written so an unparsed attachment is a clean 409 the panel can
-  // show, instead of an upstream biz_code 9 that surfaces as an empty answer.
+  // SSE head is written so an unparsed attachment is a clean 409 instead of an
+  // upstream biz_code 9 that surfaces as an empty answer.
   let usedRefFileIds = refFileIds;
   try {
     const { pending, alive } = await inspectRefFiles(token, refFileIds, controller.signal);
@@ -612,7 +612,7 @@ async function handleChat(request, response, vault, cache, abortRef) {
     return fail(response, error);
   }
   // Create the session BEFORE the SSE head: a failure here must be a plain JSON
-  // error the panel can show, not an empty 200 stream with no frames.
+  // error, not an empty 200 stream with no frames.
   if (!sessionId) {
     try {
       sessionId = await createSession(token, controller.signal);
@@ -806,7 +806,7 @@ export function apply(ctx) {
 
     register('exact', `${ROUTE_PREFIX}/state`, 'GET', async (request, response) => {
       try {
-        return await handleState(response, readVault(), cache);
+        return await handleState(response, readVault());
       } catch (error) {
         return fail(response, error);
       }

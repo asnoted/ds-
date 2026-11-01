@@ -1,7 +1,7 @@
 {
   "name": "dsh-dsweb",
   "version": "0.1.0",
-  "description": "DeepSeek 网页侧：聊天面板、/dsh-dsb/* host API 与 deepseek-web 模型",
+  "description": "DeepSeek 网页侧：/dsh-dsb/* host API 与 deepseek-web 模型",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -9,8 +9,7 @@
     "dsh",
     "dsh-plugin",
     "chat",
-    "web-chat",
-    "ui"
+    "web-chat"
   ],
   "main": "lib/index.js",
   "exports": {
@@ -39,7 +38,7 @@
     }  },
   "meta": {
     "title": "DeepSeek 网页侧",
-    "description": "面板、host API、令牌保险箱与 deepseek-web 模型"
+    "description": "host API、令牌保险箱与 deepseek-web 模型"
   },
   "dsh": {
     "manifestVersion": 1,

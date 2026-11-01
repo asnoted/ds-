@@ -388,7 +388,7 @@ function stripFragmentText(message, content) {
 }
 
 /**
- * Turn one upstream history envelope into the panel's message list.
+ * Turn one upstream history envelope into the /messages route's message list.
  *
  * Kept separate from the request so `test-history.mjs` can replay a real
  * captured payload: the shape of this endpoint is not documented anywhere and
@@ -558,7 +558,7 @@ export async function uploadFile(token, file, options = {}) {
   return record;
 }
 
-/** Normalize one upstream file record into the shape the panel renders. */
+/** Normalize one upstream file record into the shape the API returns. */
 export function fileRecord(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   return {
@@ -589,7 +589,7 @@ export const FILE_TERMINAL = new Set(['SUCCESS', 'FAILED', 'CONTENT_FILTER']);
  * Live behavior: PENDING → PARSING → SUCCESS within about a second, but the
  * first upload after a cold start has taken visibly longer, so the default
  * deadline is generous (20s) and every poll reports the freshest snapshot via
- * `onPoll` so the panel can keep a spinner honest.
+ * `onPoll` so a polling caller can keep its spinner honest.
  */
 export async function waitForFiles(token, fileIds, options = {}) {
   const deadline = Date.now() + (Number(options.timeoutMs) || 20000);
@@ -623,11 +623,9 @@ export async function waitForFiles(token, fileIds, options = {}) {
  * ------------------------------------------------------------------ */
 
 const SKIP_CONTAINS = ['quasi_status', 'elapsed_secs', 'pending_fragment', 'fragments/-1/status', 'fragments/-2/status', 'fragments/-3/status'];
-const SKIP_EXACT = new Set(['response/search_status']);
 
 function shouldSkipPath(path) {
   if (SKIP_PATHS.has(path)) return true;
-  if (SKIP_EXACT.has(path)) return true;
   if (path.startsWith('response/fragments/') && path.endsWith('/status')) {
     return /^-?\d+$/.test(path.slice('response/fragments/'.length, -'/status'.length));
   }
@@ -1080,7 +1078,7 @@ export async function* readStream(body, state, round, idleTimeoutMs = 90_000) {
         pendingStatus = reduced.status;
       }
     }
-    const usage = extractUsage(chunk);
+    const usage = walkUsage(chunk);
     if (usage) yield { type: 'usage', usage };
   };
 
@@ -1090,7 +1088,7 @@ export async function* readStream(body, state, round, idleTimeoutMs = 90_000) {
       let timer;
       let result;
       try {
-        // A stalled upstream otherwise leaves the turn (and the panel) waiting
+        // A stalled upstream otherwise leaves the turn waiting
         // forever: race each read against the idle budget instead of the body.
         result = await Promise.race([
           reader.read(),
@@ -1206,11 +1204,6 @@ export function observeRound(chunk, round) {
   };
 
   visit(chunk, '', 0);
-}
-
-function extractUsage(chunk) {
-  const found = walkUsage(chunk);
-  return found;
 }
 
 function walkUsage(value, depth = 0) {
