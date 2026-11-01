@@ -75,6 +75,21 @@ try {
   }
 
   {
+    // The bind window: the 4th argument makes bind store the bind-time log
+    // (cursor 0). Until the first commit nothing is claimed — a restart on
+    // the same log rebuilds, a reworded one rebuilds — and the commit is
+    // what turns the promise into a claim. The 3-arg binds above keep the
+    // shipped digest([]) shape.
+    const map = createSessionMap({ file: join(dir, 'bind-window.json') });
+    map.bind('dsh-b', 'web-b', undefined, first);
+    assert.equal(map.pending('dsh-b', first).rebuild, true, 'the bind window is a promise: even the bound log rebuilds until the first commit');
+    const windowReword = [msg('user', 'one (edited)'), ...first.slice(1)];
+    assert.equal(map.pending('dsh-b', windowReword).rebuild, true, 'a reworded log must not pose as "same as at bind"');
+    assert.equal(map.commit('dsh-b', first), true);
+    assert.deepEqual(map.pending('dsh-b', first), { fresh: [], rebuild: false, cursor: 2 }, 'the commit is the claim');
+  }
+
+  {
     const many = { version: 1, sessions: {} };
     for (let i = 0; i < 100; i += 1) {
       many.sessions[`dsh-${i}`] = { webSessionId: `web-${i}`, parentMessageId: 0, cursor: 0, digest: '', updatedAt: new Date(2026, 0, 1, 0, 0, i).toISOString() };

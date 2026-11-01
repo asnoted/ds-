@@ -221,6 +221,20 @@ try {
         && map.webSessionFor('dsh-2') === ''
         && map.pending('dsh-2', log, 'v1').rebuild === true;
 
+      // The bind fix: a 4th argument makes the bind window store the bind-time
+      // log (cursor 0). Until the first commit nothing is claimed — even the
+      // bound log itself rebuilds on a restart, and so does a rewritten one —
+      // while the 3-arg binds above keep the shipped digest([]) shape.
+      const fixedLog = makeLog();
+      map.bind('dsh-fix', 'web-fix', 'v1', fixedLog);
+      ok = ok
+        && map.pending('dsh-fix', fixedLog, 'v1').rebuild === true
+        && map.pending('dsh-fix', [...fixedLog.slice(0, fixedLog.length - 1), 'edited'], 'v1').rebuild === true;
+      map.commit('dsh-fix', fixedLog, 'v1');
+      ok = ok
+        && map.pending('dsh-fix', fixedLog, 'v1').rebuild === false
+        && map.pending('dsh-fix', fixedLog, 'v1').cursor === fixedLog.length;
+
       // The map file stays bounded: 105 binds leave at most 99 entries, with the
       // last-bound one among the survivors.
       const bounded = createSessionMap({ file: join(directory, 'bounded.json') });

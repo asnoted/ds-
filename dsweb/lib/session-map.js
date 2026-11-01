@@ -84,13 +84,22 @@ export function createSessionMap({ file = defaultFile() } = {}) {
       return entry && typeof entry.webSessionId === 'string' ? entry.webSessionId : '';
     },
 
-    /** Bind a freshly created web session; nothing has been sent yet. */
-    bind(dshSessionId, webSessionId, protocol) {
+    /**
+     * Bind a freshly created web session; nothing has been sent yet.
+     *
+     * With `messages` (the log the session was created against), the entry
+     * stores that digest with cursor 0, so until the first commit the map
+     * only continues the exact log it bound — a crash before the commit can
+     * never digest([])-match a rewritten log into a foreign delta (the
+     * SessionMap model's fix finding). Without `messages` the shipped shape
+     * stays: digest([]) matches any rewritten log.
+     */
+    bind(dshSessionId, webSessionId, protocol, messages) {
       data.sessions[dshSessionId] = {
         webSessionId,
         parentMessageId: 0,
         cursor: 0,
-        digest: digest([]),
+        digest: digest(messages ?? []),
         ...protocol === undefined ? {} : { protocol },
         updatedAt: new Date().toISOString(),
       };

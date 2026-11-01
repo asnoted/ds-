@@ -554,7 +554,9 @@ export function createWebModelAdapter({
           webSessionId = await create(credential, options.signal);
           fresh = isTurn;
           if (isTurn) {
-            map.bind(key, webSessionId, protocol);
+            // Pass the bind-time log: a crash-window restart then rebuilds
+            // rather than digest([])-matching a reworded log as "same".
+            map.bind(key, webSessionId, protocol, pending.fresh);
             onBind(key, webSessionId);
           }
         }
