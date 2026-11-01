@@ -276,7 +276,7 @@ export async function solvePow(challengeHex, salt, expireAt, difficulty, options
     throw new Error('pow: challenge must be 64 hex chars');
   }
   const target = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) target[i] = parseInt(challengeHex.substr(i * 2, 2), 16);
+  for (let i = 0; i < 32; i++) target[i] = parseInt(challengeHex.slice(i * 2, i * 2 + 2), 16);
   const t0l = (target[0] | (target[1] << 8) | (target[2] << 16) | (target[3] << 24)) >>> 0;
   const t0h = (target[4] | (target[5] << 8) | (target[6] << 16) | (target[7] << 24)) >>> 0;
   const t1l = (target[8] | (target[9] << 8) | (target[10] << 16) | (target[11] << 24)) >>> 0;
