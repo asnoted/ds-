@@ -20,7 +20,7 @@ dsh-dsweb + dsh-dsb
 ```
 ````
 
-模型只写参数对象、不带工具名时, 按唯一匹配的 schema 认领. 见 dsweb/lib/web-model.js 的 toolProtocol.
+模型只写参数对象、不带工具名时, 按唯一匹配的 schema 认领. 见 dsweb/lib/web-model.js 的 schemaMatch.
 
 _Avoid_: 工具调用块, `tool` 围栏, {name:params}
 
