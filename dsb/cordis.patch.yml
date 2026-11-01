@@ -1,0 +1,6 @@
+# dsb 取代 stock agent-loop：先禁用 base 里的 loop，再插入自己的 subclass。
+- id: agent-loop
+  disabled: true
+- insert:
+    - id: dsb
+      name: 'dsh-dsb'

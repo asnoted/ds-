@@ -1,0 +1,11 @@
+# 构建与生成物
+node_modules/
+
+# 配置
+.env
+.DS_Store
+
+# 临时文件
+.cache/
+repomix-output.xml
+dist/

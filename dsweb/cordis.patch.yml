@@ -1,0 +1,4 @@
+# 把 dsweb 插件插入 profile：host 半边提供 /dsh-dsb/* 路由、API 与 deepseek-web 模型（无浏览器半边）。
+- insert:
+    - id: dsweb
+      name: 'dsh-dsweb'
