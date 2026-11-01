@@ -41,6 +41,6 @@ pnpm install
 pnpm test
 ```
 
-`scripts/run-node-tests.mjs` 顺序执行各包里的 `test-*.mjs`（16 套：dsweb 15 + dsb 1；浏览器登录套件没有 Chromium 时会跳过浏览器部分；流回放首次运行会下载固定抓包到 `.cache/`，可用 `DS2API_SAMPLES` 指定已有目录）。
+`pnpm test` 先跑根上的 `test-invariants.mjs`（形式化不变式：对全部 11 个库文件断言性质，种子化随机输入，红套件可精确重放），再由 `scripts/run-node-tests.mjs` 顺序执行各包里的 `test-*.mjs`（15 套：dsweb 14 + dsb 1；浏览器登录套件没有 Chromium 时会跳过浏览器部分；流回放首次运行会下载固定抓包到 `.cache/`，可用 `DS2API_SAMPLES` 指定已有目录）。
 
 真实宿主冒烟：`dsh --profile web` 起来后 `DSH_WEB_URL=… pnpm smoke`，检查 `/dsh-dsb/state` 200、`POST /state` 405、浏览器登录状态与会话路由的回答。
