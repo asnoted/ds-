@@ -10,8 +10,9 @@
  * @module dsh-dsb/token
  */
 
-export function normalizeToken(raw) {
-  let value = typeof raw === 'string' ? raw.trim() : '';
+/** One unwrapping pass: bearer prefix, JSON envelope, stray quotes, whitespace. */
+function stripPass(raw) {
+  let value = raw.trim();
   if (!value) return '';
   value = value.replace(/^Bearer\s+/i, '').trim();
   if (value.startsWith('{')) {
@@ -30,4 +31,17 @@ export function normalizeToken(raw) {
     value = value.slice(1, -1).trim();
   }
   return value.replace(/\s+/g, '');
+}
+
+export function normalizeToken(raw) {
+  let value = stripPass(typeof raw === 'string' ? raw : '');
+  // Repeat until stable so a quoted envelope (a DevTools copy of the whole
+  // localStorage value) still lands on the bare token; every pass only removes
+  // characters, so this terminates.
+  while (value) {
+    const stripped = stripPass(value);
+    if (stripped === value) break;
+    value = stripped;
+  }
+  return value;
 }

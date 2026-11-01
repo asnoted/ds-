@@ -275,7 +275,9 @@ function rawArgs(body, tool) {
   return args;
 }
 
-function parseArgs(source) {
+/** Parse a fence body into a parameters object; never throws, only `undefined`.
+ * Exported so the invariant suite replays the real parser, not a copy. */
+export function parseArgs(source) {
   for (const candidate of [source, unquoteKeys(source), normalizeObject(source), normalizeObject(unquoteKeys(source))]) {
     try {
       const value = JSON.parse(candidate);
@@ -341,7 +343,9 @@ function salvageArgs(source, tool) {
   return { [first]: value, [second]: tail };
 }
 
-function parseAnswer(answer, tools) {
+/** Split a buffered answer into text and tool-call blocks.
+ * Exported so the invariant suite replays the real parser, not a copy. */
+export function parseAnswer(answer, tools) {
   const byName = new Map(namedTools(tools).map((tool) => [tool.name, tool]));
   if (byName.size === 0) return [{ type: 'text', text: answer }];
   const blocks = [];

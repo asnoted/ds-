@@ -38,6 +38,6 @@ dsh --profile <profile> --patch ./model.yml "用 read 读 README.md 的第一行
 dsh plugin --profile web add dsh-dsb dsh-dsweb
 ```
 
-需要与 `dsh-dsb` 一起安装（dsb 是 loop）。测试：`node ../scripts/run-node-tests.mjs tests`（14 套；浏览器登录套件没有 Chromium 时会跳过浏览器部分；流回放首次运行会下载固定抓包到 `.cache/`，可用 `DS2API_SAMPLES` 指定已有目录）；真实宿主冒烟：`dsh --profile web` 起来后 `DSH_WEB_URL=… pnpm smoke`。
+需要与 `dsh-dsb` 一起安装（dsb 是 loop）。测试：`node ../scripts/run-node-tests.mjs tests`（15 套；浏览器登录套件没有 Chromium 时会跳过浏览器部分；流回放首次运行会下载固定抓包到 `.cache/`，可用 `DS2API_SAMPLES` 指定已有目录）；真实宿主冒烟：`dsh --profile web` 起来后 `DSH_WEB_URL=… pnpm smoke`。
 
 代码派生自 [HAN-050917/dsh-plugin-dsweb-harness](https://github.com/HAN-050917/dsh-plugin-dsweb-harness)（MIT），见 `LICENSE`；SSE 抓包来自 [CJackHwang/ds2api](https://github.com/CJackHwang/ds2api)（AGPL-3.0，仅测试时下载，不入库）。
